@@ -1,4 +1,4 @@
-# mqtt_detector.py
+# detector
 import os
 import time
 import json
@@ -69,7 +69,7 @@ class MqttDetectorService:
             print(f"[ERROR] Failed to parse message on {topic}: {e}")
             return
 
-        # Update the relevant sensor value
+        # Update the sens val
         if topic == TOPIC_SMOKE:
             self.last_smoke = value
         elif topic == TOPIC_GAS:
@@ -77,10 +77,10 @@ class MqttDetectorService:
         elif topic == TOPIC_TEMP:
             self.last_temp = value
 
-        # Use the latest timestamp we see
+        # latest timestamp 
         self.last_timestamp = timestamp
 
-        # When we have all three, we can form a SensorReading
+        #  SensorReading:all three vals
         if self.last_smoke is not None and self.last_gas is not None and self.last_temp is not None:
             reading = SensorReading(
                 timestamp=self.last_timestamp,
@@ -95,7 +95,7 @@ class MqttDetectorService:
                 f"Temp={reading.temperature:5.1f}°C"
             )
 
-            # Log reading if logger exists
+            # reading the log file
             self.logger.log_reading(reading)
 
             alerts = self.detector.evaluate(reading)
