@@ -8,9 +8,9 @@ from typing import Optional, Dict, Callable
 @dataclass
 class SensorReading:
     timestamp: float
-    smoke: float          # 0-100
-    gas: float            # 0-100
-    temperature: float    # Celsius
+    smoke: float          # 100
+    gas: float            # 100
+    temperature: float    # C
 
 
 @dataclass
@@ -79,8 +79,6 @@ class SmokeGasFireDetector:
                 prev = self.history[-2]
                 return (r.temperature - prev.temperature) >= self.temp_spike_threshold
             return False
-
-        # Smoke alert
         if smoke_critical(reading):
             if not self._is_false_alarm_filtered(smoke_critical):
                 if not self._should_debounce("SMOKE", now):
@@ -93,8 +91,6 @@ class SmokeGasFireDetector:
                         )
                     })
                     self._mark_alert_sent("SMOKE", now)
-
-        # Gas alert
         if gas_critical(reading):
             if not self._is_false_alarm_filtered(gas_critical):
                 if not self._should_debounce("GAS", now):
@@ -108,7 +104,6 @@ class SmokeGasFireDetector:
                     })
                     self._mark_alert_sent("GAS", now)
 
-        # Fire alert
         if fire_critical(reading):
             if not self._is_false_alarm_filtered(fire_critical):
                 if not self._should_debounce("FIRE", now):
