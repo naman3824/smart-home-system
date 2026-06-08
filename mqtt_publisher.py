@@ -1,4 +1,4 @@
-# mqtt_publisher.py
+#publisher
 import time
 import json
 import random
