@@ -1,4 +1,4 @@
-# logger.py
+# logger
 import csv
 import os
 from typing import Dict
