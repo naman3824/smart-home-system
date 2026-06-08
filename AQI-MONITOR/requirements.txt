@@ -1,0 +1,13 @@
+paho-mqtt
+pandas
+numpy
+streamlit
+plotly
+python-dotenv
+firebase-admin
+twilio
+groq
+torch
+scikit-learn
+folium
+streamlit-folium
