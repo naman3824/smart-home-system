@@ -9,8 +9,6 @@ class DetectorLogger:
     def __init__(self, readings_file: str = "readings.csv", alerts_file: str = "alerts.csv"):
         self.readings_file = readings_file
         self.alerts_file = alerts_file
-
-        # Create files with headers if they don't exist
         if not os.path.exists(self.readings_file):
             with open(self.readings_file, mode="w", newline="") as f:
                 writer = csv.writer(f)
