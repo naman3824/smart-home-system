@@ -16,7 +16,7 @@ TOPIC_TEMP = "home/livingroom/temperature"
 SMOKE_BASE = (0, 20)
 GAS_BASE = (0, 20)
 TEMP_BASE = (25, 35)
-SPIKE_PROBABILITY = 0.3  # 30% chance of an incident, so we see alerts often
+SPIKE_PROBABILITY = 0.3  # 30% chance of an incident
 READ_INTERVAL_SECONDS = 2
 
 
@@ -28,7 +28,7 @@ def generate_reading():
     gas = random.uniform(*GAS_BASE)
     temperature = random.uniform(*TEMP_BASE)
 
-    # Occasionally inject a spike
+    # adding spoke
     if random.random() < SPIKE_PROBABILITY:
         which = random.choice(["smoke", "gas", "temp"])
         if which == "smoke":
@@ -52,7 +52,7 @@ def main():
         while True:
             timestamp, smoke, gas, temperature = generate_reading()
 
-            # For flexibility, send JSON payloads (could also just send raw numbers)
+            # send JSON payloads (could also just send raw numbers but i's more flexi) 
             payload_smoke = json.dumps({"timestamp": timestamp, "value": smoke})
             payload_gas = json.dumps({"timestamp": timestamp, "value": gas})
             payload_temp = json.dumps({"timestamp": timestamp, "value": temperature})
