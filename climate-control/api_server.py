@@ -1,46 +1,54 @@
 """
 Smart Climate Control — FastAPI Server
-Runs the climate sensor loop in a background thread (every 30s)
-AND exposes a /trigger-climate endpoint for on-demand execution.
+Runs the climate sensor loop in an async background task (every 60s).
 
 Endpoints:
     GET /api/all              → everything in one response
     GET /docs                 → Swagger UI
+
+Note: Blynk integration has been removed. Data is served directly
+      to the custom dashboard via the REST API.
 """
 
 import os
-import time
-import threading
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
-import requests as http_requests
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
 from dotenv import load_dotenv
 
 # ──────────────────────────────────────────────
-# CONFIGURATION — Credentials loaded from .env
+# CONFIGURATION & LOGGING
 # ──────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("climate_api")
+
 load_dotenv()
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
-BLYNK_AUTH_TOKEN = os.getenv("BLYNK_AUTH_TOKEN")
 
-CITY = "Gurugram"
-LATITUDE = 28.477511
-LONGITUDE = 77.080851
+if not OPENWEATHER_API_KEY:
+    raise RuntimeError("OPENWEATHER_API_KEY is not set in the environment or .env file.")
+
+CITY = os.getenv("CITY", "Gurugram")
+try:
+    LATITUDE = float(os.getenv("LATITUDE", "28.477511"))
+    LONGITUDE = float(os.getenv("LONGITUDE", "77.080851"))
+except ValueError as e:
+    raise RuntimeError(f"Invalid LATITUDE or LONGITUDE value in .env: {e}")
+
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
-BLYNK_URL = "https://blynk.cloud/external/api/update"
-
-PIN_TEMPERATURE = "V0"
-PIN_HUMIDITY = "V1"
-PIN_CONDITION = "V2"
-PIN_HVAC_STATUS = "V3"
-PIN_TARGET_TEMP = "V4"
 
 POLL_INTERVAL = 60
 API_PORT = 8000
@@ -98,13 +106,18 @@ latest_data = {
     "last_updated": None,
 }
 
-data_lock = threading.Lock()
+# asyncio.Lock is non-blocking and safe for use inside async functions.
+data_lock = asyncio.Lock()
+
+# Shared long-lived HTTP client — initialized at startup, reused across all poll cycles
+# to avoid the overhead of a new TCP connection every 60 seconds.
+http_client: Optional[httpx.AsyncClient] = None
 
 
 # ──────────────────────────────────────────────
 # CORE SENSOR & CONTROL LOGIC
 # ──────────────────────────────────────────────
-def fetch_weather():
+async def fetch_weather(client: httpx.AsyncClient):
     """Fetch current weather from OpenWeather using lat/lon."""
     params = {
         "lat": LATITUDE,
@@ -112,13 +125,13 @@ def fetch_weather():
         "appid": OPENWEATHER_API_KEY,
         "units": "metric",
     }
-    response = http_requests.get(OPENWEATHER_URL, params=params, timeout=10)
+    response = await client.get(OPENWEATHER_URL, params=params, timeout=10.0)
     response.raise_for_status()
     data = response.json()
     return data["main"]["temp"], data["main"]["humidity"], data["weather"][0]["description"]
 
 
-def determine_hvac(temperature, humidity):
+def determine_hvac(temperature: float, humidity: int):
     """Smart Climate Control decision engine."""
     if temperature >= 35.0:
         return "MAX COOLING", 20.0
@@ -130,81 +143,55 @@ def determine_hvac(temperature, humidity):
         return "HEATING", 24.0
 
 
-def push_to_blynk(pin, value):
-    """Push a single value to a Blynk virtual pin."""
-    params = {"token": BLYNK_AUTH_TOKEN, pin: value}
-    response = http_requests.get(BLYNK_URL, params=params, timeout=10)
-    response.raise_for_status()
-
-
-def run_virtual_sensor_and_control():
+async def run_sensor_and_control():
     """
-    Core function — fetches weather, runs HVAC logic, pushes to Blynk,
-    and updates the shared data store. Called by both the background
-    timer loop and the /trigger-climate API endpoint.
-
-    Returns a dict with the fetched data on success.
-    Raises on failure.
+    Core function — fetches weather, runs HVAC logic,
+    and updates the shared data store.
+    Uses the shared long-lived http_client (no new connection per cycle).
     """
-    temperature, humidity, condition = fetch_weather()
+    temperature, humidity, condition = await fetch_weather(http_client)
     hvac_status, target_temp = determine_hvac(temperature, humidity)
 
-    print(f"[Weather]  🌡  Temp: {temperature}°C  |  💧 Humidity: {humidity}%  |  🌤  {condition}")
-    print(f"[HVAC]     🏠  Status: {hvac_status}  |  🎯 Target: {target_temp}°C")
+    logger.info(f"[Weather] Temp: {temperature}°C | Humidity: {humidity}% | Condition: {condition}")
+    logger.info(f"[HVAC] Status: {hvac_status} | Target: {target_temp}°C")
 
-    # Push all data to Blynk
-    push_to_blynk(PIN_TEMPERATURE, temperature)
-    push_to_blynk(PIN_HUMIDITY, humidity)
-    push_to_blynk(PIN_CONDITION, condition)
-    push_to_blynk(PIN_HVAC_STATUS, hvac_status)
-    push_to_blynk(PIN_TARGET_TEMP, target_temp)
-
-    print(f"[Blynk]    ✅  All data pushed → {PIN_TEMPERATURE}, {PIN_HUMIDITY}, {PIN_CONDITION}, {PIN_HVAC_STATUS}, {PIN_TARGET_TEMP}")
-    print("-" * 60)
-
-    # Update shared store
-    now = datetime.now(timezone.utc).isoformat()
-    with data_lock:
+    # Update shared store so /api/all always serves latest data
+    async with data_lock:
         latest_data["weather"]["temperature"] = temperature
         latest_data["weather"]["humidity"] = humidity
         latest_data["weather"]["condition"] = condition
         latest_data["hvac"]["status"] = hvac_status
         latest_data["hvac"]["target_temp"] = target_temp
-        latest_data["last_updated"] = now
-
-    return {
-        "temperature": temperature,
-        "humidity": humidity,
-        "condition": condition,
-        "hvac_status": hvac_status,
-        "target_temp": target_temp,
-        "timestamp": now,
-    }
+        latest_data["last_updated"] = datetime.now(timezone.utc).isoformat()
 
 
 # ──────────────────────────────────────────────
-# BACKGROUND SENSOR LOOP (every 30s)
+# BACKGROUND SENSOR LOOP (every 60s)
 # ──────────────────────────────────────────────
-def sensor_loop():
-    """Background thread — runs run_virtual_sensor_and_control() every POLL_INTERVAL seconds."""
-    print("=" * 60)
-    print("  Smart Climate Control — Background Loop Started")
-    print(f"  City       : {CITY}")
-    print(f"  Interval   : {POLL_INTERVAL}s")
-    print("=" * 60)
-    print()
+async def sensor_loop():
+    """Background async task — runs the sensor flow every POLL_INTERVAL seconds."""
+    logger.info("=" * 60)
+    logger.info("Smart Climate Control — Background Loop Started")
+    logger.info(f"City: {CITY} ({LATITUDE}, {LONGITUDE})")
+    logger.info(f"Interval: {POLL_INTERVAL}s")
+    logger.info("=" * 60)
 
     while True:
         try:
-            run_virtual_sensor_and_control()
-        except http_requests.exceptions.RequestException as e:
-            print(f"[Error]    ❌  Network/API error: {e}")
+            await run_sensor_and_control()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from API: {e.response.status_code} — {e}")
+        except httpx.RequestError as e:
+            logger.error(f"Network/API error: {e}")
         except KeyError as e:
-            print(f"[Error]    ❌  Missing key: {e}")
+            logger.error(f"Missing key in API response: {e}")
         except Exception as e:
-            print(f"[Error]    ❌  Unexpected: {e}")
+            logger.error(f"Unexpected error: {e}")
 
-        time.sleep(POLL_INTERVAL)
+        try:
+            await asyncio.sleep(POLL_INTERVAL)
+        except asyncio.CancelledError:
+            raise  # propagate cleanly on shutdown
 
 
 # ──────────────────────────────────────────────
@@ -212,22 +199,33 @@ def sensor_loop():
 # ──────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """Start the background sensor loop when the app starts."""
-    sensor_thread = threading.Thread(target=sensor_loop, daemon=True)
-    sensor_thread.start()
+    """Initialize shared resources, start the background sensor loop, and clean up on shutdown."""
+    global http_client
 
-    print()
-    print(f"🚀  API server running at  http://localhost:{API_PORT}")
-    print(f"    GET /api/all          → everything")
-    print(f"    GET /docs             → Swagger UI")
-    print()
+    # Single shared client for all poll cycles — avoids new TCP handshake every 60s
+    http_client = httpx.AsyncClient()
+
+    task = asyncio.create_task(sensor_loop())
+
+    logger.info(f"🚀 API server running at http://localhost:{API_PORT}")
+    logger.info(f"   GET /api/all  → everything")
+    logger.info(f"   GET /docs     → Swagger UI")
 
     yield
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await http_client.aclose()
+        logger.info("HTTP client closed — shutdown complete.")
 
 
 app = FastAPI(
     title="Smart Climate Control API",
-    description="Real-time weather & HVAC data for Gurugram, powered by OpenWeather + Blynk.",
+    description="Real-time weather & HVAC data, powered by OpenWeather. Served to the custom dashboard via REST API.",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -247,7 +245,7 @@ app.add_middleware(
 @app.get("/api/all", response_model=AllDataResponse, responses={503: {"model": ErrorResponse}})
 async def get_all():
     """Return all weather + HVAC data in one response."""
-    with data_lock:
+    async with data_lock:
         if latest_data["last_updated"] is None:
             raise HTTPException(status_code=503, detail="No data yet — sensor is still initializing")
         return latest_data
