@@ -1,0 +1,40 @@
+# Full system — all modules including optional ones
+# Install: pip install -r requirements-full.txt
+
+# Core dashboard (same as requirements.txt)
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Face recognition (FaceRecognition.py)
+# Note: face-recognition requires cmake and dlib — see README troubleshooting
+opencv-python>=4.9.0
+face-recognition>=1.3.0
+numpy>=1.26.0
+
+# Smoke/gas/fire sensor via MQTT (mqtt_publisher.py, mqtt_detector.py)
+paho-mqtt>=2.0.0
+
+# WhatsApp / SMS alerts (alerts_twilio.py, main.py)
+twilio>=8.13.0
+
+# AQI dashboard (AQI-MONITOR/dashboard/app.py)
+streamlit>=1.33.0
+plotly>=5.22.0
+pandas>=2.2.0
+
+# AQI ML model (AQI-MONITOR/ml/)
+torch>=2.2.0
+scikit-learn>=1.4.0
+
+# AQI cloud (AQI-MONITOR/cloud/)
+firebase-admin>=6.5.0
+
+# AQI chatbot (AQI-MONITOR/ml/chatbot.py)
+groq>=0.9.0
+
+# AQI map (AQI-MONITOR/dashboard/)
+folium>=0.16.0
+streamlit-folium>=0.20.0

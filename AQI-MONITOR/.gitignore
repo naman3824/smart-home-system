@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+*.log
+venv/
+.venv/
+
+# Large ML model files — use Git LFS or exclude
+# Uncomment below if NOT using Git LFS:
+# ml/*.pt
+# ml/*.npy
+# ml/*.pkl
+# ml/*.h5

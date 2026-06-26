@@ -1,0 +1,2809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Smart Home — Gurugram</title>
+<style>
+  :root {
+    --bg:#0d0f18;--surface:#161928;--surface2:#1e2236;--surface3:#262c42;
+    --border:#2a2f46;--accent:#6c8bef;--accent2:#a78bfa;
+    --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--cyan:#06b6d4;--pink:#ec4899;
+    --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+    --shadow:0 4px 32px rgba(0,0,0,.5);--radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
+
+  /* SIDEBAR */
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:224px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100}
+  .logo{padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+  .logo h1{font-size:18px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(135deg,#a5b8ff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .logo span{font-size:10px;color:var(--text3);display:block;margin-top:3px;letter-spacing:0.3px}
+  .nav{flex:1;padding:8px 0;overflow-y:auto}
+  .nav-section{font-size:9.5px;color:var(--text3);letter-spacing:.9px;text-transform:uppercase;padding:14px 18px 5px}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;transition:all .15s;border-left:3px solid transparent;border-radius:0 8px 8px 0;margin:1px 6px 1px 0}
+  .nav-item:hover{color:var(--text);background:var(--surface2)}
+  .nav-item.active{color:var(--accent);background:rgba(108,139,239,.1);border-left-color:var(--accent)}
+  .nav-item svg{width:15px;height:15px;flex-shrink:0}
+  .nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;display:none}
+  .nav-badge.show{display:inline}
+  .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
+  .time-display{font-size:24px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-1px}
+  .date-display{font-size:10px;color:var(--text3);margin-top:2px}
+  .conn-status{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10px;color:var(--text3)}
+  .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
+  .conn-dot.offline{background:var(--red);box-shadow:0 0 5px var(--red)}
+  .conn-dot.degraded{background:var(--orange);box-shadow:0 0 5px var(--orange)}
+
+  /* MAIN */
+  .main{margin-left:224px;min-height:100vh}
+  .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 22px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+  .topbar-title{font-size:15px;font-weight:600}
+  .topbar-right{display:flex;align-items:center;gap:10px}
+  .weather-chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--text2)}
+  .alert-btn{position:relative;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text2);font-size:12px;transition:all .15s}
+  .alert-btn:hover{border-color:var(--accent);color:var(--text)}
+  .alert-btn .badge{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;display:none}
+  .alert-btn .badge.show{display:block}
+  .content{padding:18px 22px}
+
+  /* PAGE TRANSITIONS */
+  .page{display:none;animation:pageIn .2s ease}
+  .page.active{display:block}
+  @keyframes pageIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+
+  /* GREETING */
+  .greeting-banner{background:linear-gradient(135deg,rgba(108,139,239,.14),rgba(167,139,250,.07));border:1px solid rgba(108,139,239,.2);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px}
+  .greeting-text h2{font-size:18px;font-weight:700;letter-spacing:-.3px}
+  .greeting-text p{font-size:12px;color:var(--text2);margin-top:3px}
+
+  /* SCENES */
+  .scene-row{display:flex;gap:9px;margin-bottom:18px;flex-wrap:wrap}
+  .scene-btn{display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:12.5px;cursor:pointer;transition:all .2s;font-weight:600}
+  .scene-btn .scene-emoji{font-size:16px;line-height:1}
+  .scene-btn:hover{border-color:var(--accent);color:var(--text);background:var(--surface3);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+  .scene-btn.active-scene{border-color:var(--accent);color:var(--accent);background:rgba(108,139,239,.12);box-shadow:0 0 0 1px rgba(108,139,239,.2) inset}
+
+  /* SENSOR GRID */
+  .sensor-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .sensor-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden}
+  .sensor-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:2px 2px 0 0}
+  .temp-card::before{background:linear-gradient(90deg,#f59e0b,#ef4444)}
+  .hum-card::before{background:linear-gradient(90deg,#06b6d4,#3b82f6)}
+  .aqi-card::before{background:linear-gradient(90deg,#22c55e,#eab308,#ef4444)}
+  .pwr-card::before{background:linear-gradient(90deg,#a78bfa,#6c8bef)}
+  .sensor-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+  .sensor-value{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+  .sensor-unit{font-size:13px;color:var(--text2);margin-left:2px;font-weight:400}
+  .sensor-sub{font-size:11px;color:var(--text3);margin-top:5px}
+  .sensor-bar{height:3px;background:var(--surface3);border-radius:2px;margin-top:12px;overflow:hidden}
+  .sensor-bar-fill{height:100%;border-radius:2px;transition:width .8s ease}
+  .sparkline{display:flex;align-items:flex-end;gap:2px;height:24px;margin-top:8px}
+  .spark-bar{flex:1;border-radius:1px 1px 0 0;min-height:2px;transition:height .4s ease}
+
+  /* LAYOUT */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+  .mb-18{margin-bottom:18px}
+
+  /* CARD */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+  .card-header{padding:13px 16px 9px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card-title{font-size:13px;font-weight:600;color:var(--text)}
+  .card-body{padding:14px 16px}
+
+  /* DEVICE CARDS */
+  .device-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .device-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px;transition:all .2s;user-select:none}
+  .device-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .device-card.on{border-color:rgba(108,139,239,.5);background:rgba(108,139,239,.07);box-shadow:0 0 20px rgba(108,139,239,.12)}
+  .device-card.on.light-on{border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.05);box-shadow:0 0 18px rgba(251,191,36,.1)}
+  .device-card.on.ac-on{border-color:rgba(6,182,212,.4);background:rgba(6,182,212,.05);box-shadow:0 0 18px rgba(6,182,212,.1)}
+  .device-icon{font-size:28px;margin-bottom:10px}
+  .device-name{font-size:15px;font-weight:600}
+  .device-status{font-size:12px;color:var(--text3);margin-top:3px}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+  .switch{width:50px;height:28px;background:var(--surface3);border-radius:15px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .switch.on{background:var(--accent)}
+  .switch::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .switch.on::after{transform:translateX(22px)}
+  .slider-row{margin-top:14px;padding:0 8px}
+  .slider-row .slider-label-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .slider-row label{font-size:11.5px;color:var(--text3)}
+  .slider-row .slider-val{font-size:11.5px;color:var(--text2);font-weight:600}
+  /* 8px side padding above keeps the thumb's edges from poking past the card border
+     at min/max values (native range thumbs center on the track edge, so half the
+     thumb width would otherwise overflow the card padding). */
+  input[type=range]{width:100%;display:block;height:5px;-webkit-appearance:none;background:var(--surface3);border-radius:3px;outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;margin-top:-6.5px;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid var(--surface2)}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface2);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+
+  /* FAN */
+  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  /* SVG transform-origin in raw px is relative to the SVG viewport, not the element —
+     that's what was sending the fan blades flying across the whole page on rotation.
+     fill-box + center makes the rotation pivot the element's own bounding-box center. */
+  #floorPlan g[id^="fp-fan-"]{transform-box:fill-box;transform-origin:50% 50%}
+
+  /* FLOOR PLAN */
+  .floor-plan-wrap{position:relative;width:100%}
+  #floorPlan{width:100%;border-radius:10px;display:block;cursor:default}
+  .room-rect{cursor:pointer;transition:fill .3s,stroke .3s,filter .15s}
+  .room-rect:hover{filter:brightness(1.15)}
+  .room-tooltip{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:12px 15px;font-size:12px;pointer-events:none;z-index:200;display:none;min-width:195px;box-shadow:var(--shadow)}
+  .room-tooltip b{font-size:13px;color:var(--text)}
+  .room-tooltip .tt-row{display:flex;justify-content:space-between;margin-top:5px;font-size:11px;color:var(--text2)}
+  .room-tooltip .tt-row span:last-child{color:var(--accent);font-weight:600}
+  /* Slide-in room panel */
+  .fp-panel{position:fixed;right:0;top:0;bottom:0;width:310px;background:var(--surface);border-left:1px solid var(--border);z-index:400;transform:translateX(100%);transition:transform .25s ease;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.5)}
+  .fp-panel.open{transform:translateX(0)}
+  .fp-panel-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .fp-panel-title{font-size:15px;font-weight:700}
+  .fp-panel-body{flex:1;overflow-y:auto;padding:14px 18px}
+  .fp-panel-overlay{position:fixed;inset:0;z-index:399;display:none;background:rgba(0,0,0,.35)}
+  .fp-panel-overlay.open{display:block}
+  
+
+  /* SIMULATION BUTTONS */
+  .sim-btn{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .18s;width:100%;text-align:left}
+  .sim-btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  .sim-smoke{border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.06)}.sim-smoke:hover{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.12)}
+  .sim-gas{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.06)}.sim-gas:hover{border-color:rgba(245,158,11,.55);background:rgba(245,158,11,.12)}
+  .sim-fire{border-color:rgba(249,115,22,.25);background:rgba(249,115,22,.06)}.sim-fire:hover{border-color:rgba(249,115,22,.55);background:rgba(249,115,22,.12)}
+  .sim-member{border-color:rgba(108,139,239,.25);background:rgba(108,139,239,.06)}.sim-member:hover{border-color:rgba(108,139,239,.55);background:rgba(108,139,239,.12)}
+  .sim-intruder{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.1)}.sim-intruder:hover{border-color:rgba(239,68,68,.7);background:rgba(239,68,68,.18)}
+  .sim-scene{border-color:rgba(167,139,250,.25);background:rgba(167,139,250,.06)}.sim-scene:hover{border-color:rgba(167,139,250,.55);background:rgba(167,139,250,.12)}
+  .bar-track{height:9px;background:var(--surface3);border-radius:5px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:5px;transition:width .6s ease}
+  .alert-chip{display:flex;align-items:center;gap:10px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:9px;padding:11px 13px;margin-top:10px;animation:pulseRed 2s infinite}
+  @keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+
+  /* LOGS */
+  .log-entry{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid var(--border);animation:fadeSlideIn .3s ease}
+  .log-entry:last-child{border-bottom:none}
+  @keyframes fadeSlideIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+  .log-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .log-info{flex:1;min-width:0}
+  .log-name{font-size:13px;font-weight:600}
+  .log-event{font-size:11.5px;color:var(--text2);margin-top:1px}
+  .log-time{font-size:10.5px;color:var(--text3);margin-top:2px}
+  .log-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;flex-shrink:0;margin-top:3px;white-space:nowrap}
+  
+  
+  
+  .intruder-banner{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:9px;padding:12px 14px;display:none;align-items:center;gap:12px;margin-bottom:14px;animation:pulseRed 1.8s infinite}
+  .intruder-banner.show{display:flex}
+
+  /* AQI */
+  .aqi-gauge{text-align:center;padding:8px 0}
+  .aqi-number{font-size:58px;font-weight:900;line-height:1}
+  .aqi-category{font-size:14px;font-weight:600;margin-top:5px}
+  .aqi-bar-wrap{height:8px;background:linear-gradient(to right,#22c55e,#eab308,#f97316,#ef4444,#7f1d1d);border-radius:4px;margin:14px 0 4px;position:relative}
+  .aqi-indicator{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--bg);position:absolute;top:-3px;transition:left .8s ease;transform:translateX(-50%)}
+
+  /* ENERGY */
+  .energy-bars-wrap{display:flex;align-items:flex-end;gap:4px;height:96px;padding-bottom:2px}
+  .energy-bar-item{flex:1;border-radius:3px 3px 0 0;min-height:4px;background:rgba(108,139,239,.3);transition:height .5s ease}
+  .energy-bar-item.now{background:var(--accent)}
+  .energy-bar-labels{display:flex;gap:4px;margin-top:4px}
+  .energy-bar-labels span{flex:1;font-size:9px;color:var(--text3);text-align:center}
+
+  /* FAMILY */
+  .member-card{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .member-card:last-child{border-bottom:none}
+  .member-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;position:relative}
+  .presence-ring{position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent;transition:border-color .3s}
+  .home-ring .presence-ring{border-color:var(--green)}
+  .member-info{flex:1}
+  .member-name{font-size:13px;font-weight:600}
+  .member-role{font-size:11px;color:var(--text3)}
+  .member-room{font-size:10px;color:var(--accent);margin-top:1px}
+  .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  
+  
+
+  /* CAMERA */
+  #cameraFeed{width:100%;aspect-ratio:1/1;background:#000;border-radius:9px;object-fit:cover;display:block;max-height:420px}
+  .camera-frame{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#000}
+  .camera-frame.live{border-color:rgba(34,197,94,.4)}
+  .camera-overlay{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.55);border-radius:6px;padding:4px 9px;font-size:11px;font-weight:600;color:#fff;letter-spacing:.5px}
+  .camera-overlay .live-dot{width:7px;height:7px;border-radius:50%;background:var(--red);animation:pulseRed 1.5s infinite}
+  .camera-overlay.off .live-dot{background:var(--text3);animation:none}
+  .camera-timestamp{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.55);border-radius:6px;padding:4px 9px;font-size:11px;color:var(--text2);font-variant-numeric:tabular-nums}
+  .camera-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text3);background:linear-gradient(135deg,#0a0c14,#13161f)}
+  .camera-placeholder .cam-icon{font-size:52px;opacity:.4}
+  .face-result{margin-top:10px;padding:10px 13px;border-radius:8px;font-size:13px;font-weight:500}
+  .face-authorized{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--green)}
+  .face-unauthorized{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);animation:pulseRed 1.5s infinite}
+
+  /* BUTTONS */
+  .btn{padding:6px 13px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer;transition:all .15s}
+  .btn:hover{background:var(--surface3);border-color:var(--accent)}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn-primary:hover{background:#5a7de6}
+  .btn-danger{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:var(--red)}
+  .btn-sm{padding:3px 9px;font-size:11px}
+
+  /* MODAL */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+  .modal-backdrop.open{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:390px;max-width:92vw;box-shadow:var(--shadow)}
+  .modal-title{font-size:15px;font-weight:700;margin-bottom:16px}
+  .form-group{margin-bottom:12px}
+  .form-group label{font-size:10.5px;color:var(--text3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+  .form-group input,.form-group select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;transition:border-color .15s}
+  .form-group input:focus,.form-group select:focus{border-color:var(--accent)}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+  /* TOAST */
+  #alertToast{position:fixed;top:14px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+  .toast{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 15px;font-size:12.5px;min-width:255px;box-shadow:var(--shadow);animation:slideInRight .25s ease;pointer-events:auto}
+  .toast.toast-danger{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.09)}
+  .toast.toast-warn{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06)}
+  .toast.toast-success{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.07)}
+  @keyframes slideInRight{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
+  .toast-title{font-weight:600;margin-bottom:1px}
+  .toast-close{float:right;cursor:pointer;color:var(--text3);margin-left:10px;font-size:14px}
+
+  /* NOTIFICATION DRAWER */
+  .notif-drawer{position:fixed;top:0;right:0;bottom:0;width:320px;background:var(--surface);border-left:1px solid var(--border);z-index:300;transform:translateX(100%);transition:transform .25s ease;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,.4)}
+  .notif-drawer.open{transform:translateX(0)}
+  .notif-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .notif-header h3{font-size:14px;font-weight:600}
+  .notif-list{flex:1;overflow-y:auto;padding:8px 0}
+  .notif-item{padding:11px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+  .notif-item:hover{background:var(--surface2)}
+  .notif-item.unread{border-left:3px solid var(--accent)}
+  .notif-item-title{font-size:12.5px;font-weight:600;margin-bottom:2px}
+  .notif-item-body{font-size:11px;color:var(--text2)}
+  .notif-item-time{font-size:10px;color:var(--text3);margin-top:3px}
+  .notif-overlay{position:fixed;inset:0;z-index:299;display:none}
+  .notif-overlay.open{display:block}
+
+  /* MISC */
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:2px}
+  .room-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+  .room-tab{padding:5px 13px;border-radius:20px;font-size:11.5px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2);transition:all .15s}
+  .room-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .stat-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .stat-row:last-child{border-bottom:none}
+  .stat-val{font-weight:600}
+  .green{color:var(--green)}.red{color:var(--red)}.orange{color:var(--orange)}.cyan{color:var(--cyan)}.accent{color:var(--accent)}.text2{color:var(--text2)}
+  
+
+  @media(max-width:900px){
+    .sidebar{width:60px}
+    .sidebar .logo span,.sidebar .nav-item span,.sidebar .nav-section,.sidebar .date-display,.sidebar .conn-status{display:none}
+    .sidebar .logo h1{font-size:10px;background:none;-webkit-text-fill-color:var(--text2)}
+    .main{margin-left:60px}
+    .nav-item{justify-content:center;padding:11px}
+    .sensor-grid{grid-template-columns:repeat(2,1fr)}
+    .two-col,.three-col{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="logo">
+    <h1>Smart Home</h1>
+    <span>Gurugram, Haryana</span>
+  </div>
+  <div class="nav">
+    <div class="nav-item active" onclick="showPage('overview')" id="nav-overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Overview</span>
+    </div>
+    <div class="nav-item" onclick="showPage('floorplan')" id="nav-floorplan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Floor Plan</span>
+    </div>
+    <div class="nav-item" onclick="showPage('devices')" id="nav-devices">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg><span>Devices</span>
+    </div>
+    <div class="nav-section">Monitoring</div>
+    <div class="nav-item" onclick="showPage('climate')" id="nav-climate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg><span>Climate</span>
+    </div>
+    <div class="nav-item" onclick="showPage('aqi')" id="nav-aqi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 8C8 10 5.9 16.17 3.82 22"/><path d="M9.22 12.5C9.06 12.18 9 11.83 9 11.5c0-1.66 1.34-3 3-3s3 1.34 3 3c0 .65-.2 1.26-.55 1.75"/></svg><span>Air Quality</span>
+    </div>
+    <div class="nav-item" onclick="showPage('energy')" id="nav-energy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Energy</span>
+    </div>
+    <div class="nav-item" onclick="showPage('safety')" id="nav-safety">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>Safety</span>
+    </div>
+    <div class="nav-item" onclick="showPage('simulations')" id="nav-simulations">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 1 21 12M4.93 4.93A10 10 0 0 0 3 12"/><path d="M12 3v2M12 19v2M3 12H1M23 12h-2"/></svg><span>Simulations</span>
+    </div>
+    <div class="nav-section">Security</div>
+    <div class="nav-item" onclick="showPage('security')" id="nav-security">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Security</span>
+      <span class="nav-badge" id="nav-security-badge">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('family')" id="nav-family">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Family</span>
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="time-display" id="clockDisplay">--:--</div>
+    <div class="date-display" id="dateDisplay">Loading...</div>
+    <div class="conn-status"><div class="conn-dot" id="connDot"></div><span id="connLabel">Connecting...</span></div>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="pageTitle">Overview</div>
+    <div class="topbar-right">
+      <div class="weather-chip" id="weatherChip">🌡 -- °C &nbsp;💧 -- %</div>
+      <button class="alert-btn" onclick="toggleNotifDrawer()">🔔 Alerts<span class="badge" id="alertBadge">0</span></button>
+    </div>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="content page active" id="page-overview">
+    <div class="greeting-banner">
+      <div class="greeting-text">
+        <h2 id="greetingText">Good morning, Aditya 👋</h2>
+        <p id="greetingSub">Everything looks fine.</p>
+      </div>
+    </div>
+
+    <div class="scene-row">
+      <button class="scene-btn" onclick="activateScene('morning')" id="scene-morning"><span class="scene-emoji">🌅</span> <span>Morning</span></button>
+      <button class="scene-btn" onclick="activateScene('away')" id="scene-away"><span class="scene-emoji">🚗</span> <span>Away</span></button>
+      <button class="scene-btn" onclick="activateScene('movie')" id="scene-movie"><span class="scene-emoji">🎬</span> <span>Movie</span></button>
+      <button class="scene-btn" onclick="activateScene('night')" id="scene-night"><span class="scene-emoji">🌙</span> <span>Good Night</span></button>
+      <button class="scene-btn" onclick="activateScene('all_off')" id="scene-all_off"><span class="scene-emoji">⬛</span> <span>All Off</span></button>
+    </div>
+
+    <div class="sensor-grid">
+      <div class="sensor-card temp-card">
+        <div class="sensor-label">Temperature</div>
+        <div class="sensor-value" id="ov-temp" style="color:#f59e0b">--<span class="sensor-unit">°C</span></div>
+        <div class="sensor-sub" id="ov-hvac">checking HVAC…</div>
+        <div class="sparkline" id="spark-temp"></div>
+      </div>
+      <div class="sensor-card hum-card">
+        <div class="sensor-label">Humidity</div>
+        <div class="sensor-value" id="ov-hum" style="color:#06b6d4">--<span class="sensor-unit">%</span></div>
+        <div class="sensor-sub" id="ov-hum-note">sweet spot 40–60%</div>
+        <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="ov-hum-bar" style="background:#06b6d4;width:60%"></div></div>
+      </div>
+      <div class="sensor-card aqi-card">
+        <div class="sensor-label">Air Quality (AQI)</div>
+        <div class="sensor-value" id="ov-aqi" style="color:#22c55e">--</div>
+        <div class="sensor-sub" id="ov-aqi-cat">fetching…</div>
+        <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="ov-aqi-bar" style="background:#22c55e;width:30%"></div></div>
+      </div>
+      <div class="sensor-card pwr-card">
+        <div class="sensor-label">Power Draw</div>
+        <div class="sensor-value" id="ov-energy" style="color:#a78bfa">--<span class="sensor-unit">W</span></div>
+        <div class="sensor-sub" id="ov-energy-sub">today: --</div>
+        <div class="sparkline" id="spark-energy"></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚨 Safety Sensors</span><span id="safety-status" style="font-size:11px;color:var(--green)">● All clear</span></div>
+        <div class="card-body">
+          <div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:5px"><span>Smoke (Kitchen)</span><span id="ov-smoke" style="font-weight:600;color:var(--text)">--%</span></div>
+            <div class="bar-track"><div class="bar-fill" id="ov-smoke-bar" style="width:5%;background:var(--green)"></div></div>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px">Alert above 40%</div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:5px"><span>Gas / LPG</span><span id="ov-gas" style="font-weight:600;color:var(--text)">--%</span></div>
+            <div class="bar-track"><div class="bar-fill" id="ov-gas-bar" style="width:5%;background:var(--green)"></div></div>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px">Alert above 40%</div>
+          </div>
+          <div id="ov-fire-alerts"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">👥 Who's home</span><button class="btn btn-sm" onclick="showPage('family')">Manage</button></div>
+        <div class="card-body" id="ov-family-list"></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><span class="card-title">💡 Running right now</span><button class="btn btn-sm" onclick="showPage('devices')">All rooms</button></div>
+        <div class="card-body" id="ov-active-devices"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🔐 Recent activity</span><button class="btn btn-sm" onclick="showPage('security')">Full log</button></div>
+        <div class="card-body" id="ov-recent-logs" style="max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOOR PLAN -->
+  <div class="content page" id="page-floorplan">
+    <div class="card mb-18">
+      <div class="card-header">
+        <span class="card-title">🏠 Floor Plan — 5BHK, Gurugram</span>
+        <span style="font-size:11px;color:var(--text3)">Click any room to control devices</span>
+      </div>
+      <div class="card-body" style="padding:10px">
+        <div class="floor-plan-wrap">
+          <svg id="floorPlan" viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <!-- Room glow filters -->
+              <filter id="glow-warm" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="8" result="blur"/>
+                <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+              </filter>
+              <filter id="glow-cool" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="6" result="blur"/>
+                <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+              </filter>
+              <!-- Entrance pulse -->
+              <radialGradient id="entrance-pulse" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#22c55e" stop-opacity="0.6"/>
+                <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <!-- ══ OUTER SHELL ══ -->
+            <!-- Outer boundary (thick wall) -->
+            <rect x="4" y="4" width="972" height="552" rx="10" fill="#0e1118" stroke="#1a1e2e" stroke-width="4"/>
+            <!-- Inner floor -->
+            <rect x="20" y="20" width="940" height="520" rx="6" fill="#181c28"/>
+            <!-- Wall grid lines (subtle) -->
+            <line x1="20" y1="20" x2="960" y2="20" stroke="#1e2236" stroke-width="1"/>
+            <line x1="20" y1="540" x2="960" y2="540" stroke="#1e2236" stroke-width="1"/>
+
+            <!-- ══ ROOM DEFINITIONS ══ -->
+            <!-- Each room: thick wall rect + inner fill rect + wall detail lines -->
+
+            <!-- LIVING ROOM (top-left) -->
+            <!-- Outer wall -->
+            <rect x="20" y="20" width="264" height="274" fill="#1a1e2c" stroke="#252a3e" stroke-width="12"/>
+            <!-- Inner room fill — will be colored by JS -->
+            <rect id="room-living_room" class="room-rect" x="26" y="26" width="252" height="262" rx="3" fill="#212840" stroke="none"/>
+            <!-- Room label -->
+            <text x="100" y="51" text-anchor="middle" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1.5">LIVING ROOM</text>
+            <text id="fp-living_room-devices" x="100" y="64" text-anchor="middle" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Windows (outer-wall blue bars) -->
+            <rect x="66"  y="20" width="52" height="7" rx="2" fill="#3a6090" opacity=".9"/>
+            <rect x="148" y="20" width="52" height="7" rx="2" fill="#3a6090" opacity=".9"/>
+            <!-- Window glass shimmer -->
+            <rect x="67"  y="21" width="50" height="2" rx="1" fill="#6aafdf" opacity=".4"/>
+            <rect x="149" y="21" width="50" height="2" rx="1" fill="#6aafdf" opacity=".4"/>
+            <!-- SOFA (L-shape) -->
+            <rect x="36"  y="202" width="118" height="36" rx="5" fill="#28325a" stroke="#374470" stroke-width="1"/>
+            <rect x="36"  y="196" width="24"  height="44" rx="4" fill="#28325a" stroke="#374470" stroke-width="1"/>
+            <rect x="128" y="196" width="24"  height="44" rx="4" fill="#28325a" stroke="#374470" stroke-width="1"/>
+            <!-- Cushions -->
+            <rect x="44"  y="205" width="28" height="16" rx="3" fill="#303e6a"/>
+            <rect x="78"  y="205" width="28" height="16" rx="3" fill="#303e6a"/>
+            <rect x="112" y="205" width="26" height="16" rx="3" fill="#303e6a"/>
+            <!-- Coffee table -->
+            <rect x="72" y="248" width="56" height="28" rx="4" fill="#1c2232" stroke="#2c3248" stroke-width="1"/>
+            <circle cx="100" cy="262" r="3" fill="#2c3248"/>
+            <!-- TV unit -->
+            <rect x="188" y="30" width="80" height="54" rx="3" fill="#161b2a" stroke="#2e3654" stroke-width="1"/>
+            <rect x="191" y="33" width="74" height="44" rx="2" fill="#0a0c14"/>
+            <!-- TV screen X lines -->
+            <line x1="191" y1="33" x2="265" y2="77" stroke="#141824" stroke-width="0.6"/>
+            <line x1="265" y1="33" x2="191" y2="77" stroke="#141824" stroke-width="0.6"/>
+            <!-- TV standby light -->
+            <circle cx="228" cy="82" r="2.5" fill="#ef4444" opacity=".6"/>
+            <!-- SVG CEILING LIGHT (living room) -->
+            <g id="fp-light-group-living">
+              <circle id="fp-light-living" cx="152" cy="112" r="14" fill="#212840" stroke="#2e3654" stroke-width="1"/>
+              <circle id="fp-light-glow-living" cx="152" cy="112" r="10" fill="#212840" opacity="0"/>
+              <text id="fp-bulb-living-icon" x="152" y="118" text-anchor="middle" font-size="14">🔦</text>
+            </g>
+            <!-- SVG CEILING FAN (living room) -->
+            <g id="fp-fan-living">
+              <!-- Hub -->
+              <circle cx="82" cy="158" r="5" fill="#3a4870" stroke="#4a5890" stroke-width="1"/>
+              <!-- 4 blades -->
+              <ellipse id="fp-fan-living-b1" cx="82" cy="141" rx="5" ry="14" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse id="fp-fan-living-b2" cx="99" cy="158" rx="14" ry="5"  fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse id="fp-fan-living-b3" cx="82" cy="175" rx="5" ry="14"  fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse id="fp-fan-living-b4" cx="65" cy="158" rx="14" ry="5"  fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="82" cy="158" r="3.5" fill="#4a5890"/>
+            </g>
+            <!-- Door arc (left wall) -->
+            <path d="M20 292 Q46 266 20 240" fill="rgba(74,88,144,0.15)" stroke="#4a5890" stroke-width="1.2" stroke-dasharray="3,2"/>
+            <line x1="20" y1="240" x2="20" y2="292" stroke="#4a5890" stroke-width="2.5"/>
+            <!-- Occupancy dot placeholder -->
+            <g id="fp-occ-living_room"></g>
+
+            <!-- KITCHEN (top-center) -->
+            <rect x="284" y="20" width="202" height="146" fill="#141e24" stroke="#1e3030" stroke-width="12"/>
+            <rect id="room-kitchen" class="room-rect" x="290" y="26" width="190" height="134" rx="3" fill="#1a2830" stroke="none"/>
+            <text x="296" y="46" text-anchor="start" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1.5">KITCHEN</text>
+            <text id="fp-kitchen-devices" x="296" y="56" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window top (right side, away from label) -->
+            <rect x="430" y="20" width="50" height="7" rx="2" fill="#305848" opacity=".9"/>
+            <rect x="431" y="21" width="48" height="2" rx="1" fill="#5ab898" opacity=".4"/>
+            <!-- Counter top (L-shape) - vertical piece shortened to clear label -->
+            <rect x="296" y="100" width="178" height="22" rx="3" fill="#1e3232" stroke="#283e3e" stroke-width="1"/>
+            <rect x="296" y="58"  width="22"  height="44" rx="3" fill="#1e3232" stroke="#283e3e" stroke-width="1"/>
+            <!-- Burners (3) -->
+            <circle cx="318" cy="111" r="8" fill="#16282a" stroke="#283e3e" stroke-width="1.2"/>
+            <circle cx="318" cy="111" r="4" fill="none" stroke="#3a5050" stroke-width="0.8"/>
+            <circle cx="342" cy="111" r="8" fill="#16282a" stroke="#283e3e" stroke-width="1.2"/>
+            <circle cx="342" cy="111" r="4" fill="none" stroke="#3a5050" stroke-width="0.8"/>
+            <circle cx="366" cy="111" r="8" fill="#16282a" stroke="#283e3e" stroke-width="1.2"/>
+            <circle cx="366" cy="111" r="4" fill="none" stroke="#3a5050" stroke-width="0.8"/>
+            <!-- Double sink -->
+            <rect x="404" y="102" width="52" height="18" rx="3" fill="#14202a" stroke="#283e3e" stroke-width="1"/>
+            <rect x="406" y="104" width="22" height="14" rx="2" fill="#0c1620"/>
+            <rect x="430" y="104" width="22" height="14" rx="2" fill="#0c1620"/>
+            <circle cx="418" cy="104" r="2.5" fill="#22383e"/>
+            <!-- Fridge right side -->
+            <rect x="454" y="32" width="22" height="70" rx="3" fill="#1a2c2e" stroke="#283e3e" stroke-width="1"/>
+            <line x1="454" y1="58" x2="476" y2="58" stroke="#283e3e" stroke-width="1"/>
+            <circle cx="468" cy="45" r="2" fill="#283e3e"/>
+            <circle cx="468" cy="70" r="2" fill="#283e3e"/>
+            <!-- Kitchen light -->
+            <g id="fp-light-group-kitchen">
+              <circle id="fp-light-kitchen" cx="455" cy="40" r="9" fill="#1a2830" stroke="#283e3e" stroke-width="1"/>
+              <text id="fp-bulb-kitchen-icon" x="455" y="45" text-anchor="middle" font-size="11">🔦</text>
+            </g>
+
+            <!-- BATHROOM (top center-right) -->
+            <rect x="486" y="20" width="160" height="146" fill="#14182a" stroke="#202040" stroke-width="12"/>
+            <rect id="room-bathroom" class="room-rect" x="492" y="26" width="148" height="134" rx="3" fill="#1a1e2e" stroke="none"/>
+            <text x="500" y="46" text-anchor="start" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1">BATHROOM</text>
+            <text id="fp-bathroom-devices" x="500" y="58" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Bathtub -->
+            <rect x="497" y="72" width="68" height="38" rx="7" fill="#1e1e3e" stroke="#303068" stroke-width="1.2"/>
+            <rect x="500" y="75" width="62" height="28" rx="5" fill="#161630"/>
+            <rect x="497" y="73" width="10" height="10" rx="2" fill="#28286a" opacity=".7"/>
+            <!-- Tub faucet -->
+            <rect x="558" y="73" width="6" height="8" rx="2" fill="#2e2e5a"/>
+            <!-- Toilet -->
+            <ellipse cx="587" cy="106" rx="20" ry="24" fill="#1e1e3e" stroke="#303068" stroke-width="1.2"/>
+            <ellipse cx="587" cy="104" rx="14" ry="17" fill="#161630"/>
+            <!-- Toilet lid hinge -->
+            <line x1="575" y1="88" x2="599" y2="88" stroke="#303068" stroke-width="1.5"/>
+            <!-- Sink small (moved below label, left of bathtub) -->
+            <rect x="498" y="118" width="28" height="22" rx="4" fill="#161630" stroke="#28285a" stroke-width="1"/>
+            <rect x="500" y="120" width="24" height="16" rx="3" fill="#0e0e20"/>
+            <circle cx="512" cy="126" r="3" fill="#242448"/>
+            <!-- Shower area -->
+            <rect x="594" y="72" width="40" height="56" rx="3" fill="#161630" stroke="#28285a" stroke-width="1" stroke-dasharray="3,2"/>
+            <circle cx="614" cy="82" r="5" fill="none" stroke="#303068" stroke-width="1"/>
+            <text x="614" y="105" text-anchor="middle" fill="#28285a" font-size="8" font-family="Segoe UI,sans-serif">SHOWER</text>
+            <!-- Bathroom light -->
+            <g id="fp-light-group-bathroom">
+              <circle id="fp-light-bathroom" cx="624" cy="38" r="9" fill="#1a1e2e" stroke="#28285a" stroke-width="1"/>
+              <text id="fp-bulb-bathroom-icon" x="624" y="43" text-anchor="middle" font-size="11">🔦</text>
+            </g>
+            <!-- Door -->
+            <path d="M486 146 Q512 120 486 94" fill="rgba(74,88,144,0.12)" stroke="#4a5890" stroke-width="1.2" stroke-dasharray="3,2"/>
+            <line x1="486" y1="94" x2="486" y2="146" stroke="#4a5890" stroke-width="2.5"/>
+
+            <!-- ADITYA'S ROOM (top right) -->
+            <rect x="646" y="20" width="168" height="146" fill="#1c1828" stroke="#302040" stroke-width="12"/>
+            <rect id="room-aditya_room" class="room-rect" x="652" y="26" width="156" height="134" rx="3" fill="#22182e" stroke="none"/>
+            <text x="658" y="46" text-anchor="start" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1">ADITYA'S ROOM</text>
+            <text x="658" y="58" text-anchor="start" fill="#3a3058" font-size="7.5" font-family="Segoe UI,sans-serif" font-style="italic">Owner</text>
+            <text id="fp-aditya_room-devices" x="658" y="70" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window right wall (lower, away from label) -->
+            <rect x="807" y="110" width="7" height="40" rx="2" fill="#3a6090" opacity=".9"/>
+            <rect x="808" y="111" width="2" height="38" rx="1" fill="#6aafdf" opacity=".4"/>
+            <!-- Bed -->
+            <rect x="658" y="82" width="110" height="70" rx="5" fill="#241640" stroke="#382454" stroke-width="1.2"/>
+            <rect x="658" y="82" width="110" height="26" rx="5" fill="#2e1c4c" stroke="#382454" stroke-width="1.2"/>
+            <ellipse cx="682" cy="95" rx="17" ry="11" fill="#1c1030"/>
+            <ellipse cx="736" cy="95" rx="17" ry="11" fill="#1c1030"/>
+            <!-- Pillow stitching -->
+            <ellipse cx="682" cy="95" rx="12" ry="7" fill="none" stroke="#2a1840" stroke-width="0.6"/>
+            <ellipse cx="736" cy="95" rx="12" ry="7" fill="none" stroke="#2a1840" stroke-width="0.6"/>
+            <!-- Blanket fold line -->
+            <line x1="658" y1="120" x2="768" y2="120" stroke="#2e1c4c" stroke-width="1"/>
+            <!-- Wardrobe -->
+            <rect x="768" y="82" width="36" height="70" rx="3" fill="#1c1030" stroke="#382454" stroke-width="1"/>
+            <line x1="786" y1="82" x2="786" y2="152" stroke="#382454" stroke-width="1"/>
+            <circle cx="782" cy="117" r="2.5" fill="#382454"/>
+            <circle cx="790" cy="117" r="2.5" fill="#382454"/>
+            <!-- SVG Fan (Aditya) - moved to open floor area near wardrobe -->
+            <g id="fp-fan-aditya">
+              <circle cx="730" cy="125" r="4" fill="#3a4870" stroke="#4a5890" stroke-width="0.8"/>
+              <ellipse cx="730" cy="114" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="741" cy="125" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="730" cy="136" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="719" cy="125" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="730" cy="125" r="3" fill="#4a5890"/>
+            </g>
+            <g id="fp-occ-aditya_room"></g>
+
+            <!-- DIKSHA'S ROOM (far top right) -->
+            <rect x="814" y="20" width="166" height="146" fill="#14162a" stroke="#222242" stroke-width="12"/>
+            <rect id="room-diksha_room" class="room-rect" x="820" y="26" width="154" height="134" rx="3" fill="#181a2e" stroke="none"/>
+            <text x="826" y="46" text-anchor="start" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1">DIKSHA'S ROOM</text>
+            <text id="fp-diksha_room-devices" x="826" y="58" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window top (right portion, away from label) -->
+            <rect x="930" y="20" width="44" height="7" rx="2" fill="#3a6090" opacity=".9"/>
+            <rect x="931" y="21" width="42" height="2" rx="1" fill="#6aafdf" opacity=".4"/>
+            <!-- Bed -->
+            <rect x="826" y="76" width="118" height="72" rx="5" fill="#1c1e3c" stroke="#2e3062" stroke-width="1.2"/>
+            <rect x="826" y="76" width="118" height="26" rx="5" fill="#222450" stroke="#2e3062" stroke-width="1.2"/>
+            <ellipse cx="854" cy="89" rx="19" ry="11" fill="#141628"/>
+            <ellipse cx="906" cy="89" rx="19" ry="11" fill="#141628"/>
+            <ellipse cx="854" cy="89" rx="13" ry="7" fill="none" stroke="#202242" stroke-width="0.6"/>
+            <ellipse cx="906" cy="89" rx="13" ry="7" fill="none" stroke="#202242" stroke-width="0.6"/>
+            <!-- Vanity desk (moved to bottom-right corner, clear of label) -->
+            <rect x="936" y="108" width="38" height="42" rx="2" fill="#12142a" stroke="#222242" stroke-width="1"/>
+            <rect x="938" y="110" width="34" height="20" rx="1" fill="#0c0e1e"/>
+            <rect x="938" y="132" width="34" height="14" rx="1" fill="#161828" stroke="#222242" stroke-width="0.8"/>
+            <line x1="955" y1="132" x2="955" y2="146" stroke="#222242" stroke-width="0.8"/>
+            <!-- SVG Fan (Diksha) - placed above bed, clear of label and desk -->
+            <g id="fp-fan-diksha">
+              <circle cx="897" cy="64" r="4" fill="#3a4870" stroke="#4a5890" stroke-width="0.8"/>
+              <ellipse cx="897" cy="53" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="908" cy="64" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="897" cy="75" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="886" cy="64" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="897" cy="64" r="3" fill="#4a5890"/>
+            </g>
+            <g id="fp-occ-diksha_room"></g>
+
+            <!-- ══ CORRIDOR ══ -->
+            <rect x="284" y="166" width="696" height="78" fill="#0e1018" stroke="#1a1e2c" stroke-width="8"/>
+            <rect x="290" y="172" width="684" height="66" rx="2" fill="#12141e"/>
+            <text x="580" y="208" text-anchor="middle" fill="#1e2232" font-size="9" font-family="Segoe UI,sans-serif" letter-spacing="4" font-weight="600">C O R R I D O R</text>
+            <!-- Corridor ceiling lights strip -->
+            <line x1="310" y1="190" x2="950" y2="190" stroke="#1e2232" stroke-width="1" stroke-dasharray="8,16"/>
+            <!-- Staircase -->
+            <rect x="908" y="174" width="60" height="62" rx="2" fill="#0c0e16" stroke="#18202e" stroke-width="1"/>
+            <line x1="908" y1="186" x2="968" y2="186" stroke="#18202e" stroke-width="1.2"/>
+            <line x1="908" y1="198" x2="968" y2="198" stroke="#18202e" stroke-width="1.2"/>
+            <line x1="908" y1="210" x2="968" y2="210" stroke="#18202e" stroke-width="1.2"/>
+            <line x1="908" y1="222" x2="968" y2="222" stroke="#18202e" stroke-width="1.2"/>
+            <text x="938" y="232" text-anchor="middle" fill="#1e2232" font-size="7.5" font-family="Segoe UI,sans-serif">STAIRS</text>
+            <!-- Corridor door from living room -->
+            <path d="M284 244 Q310 218 284 192" fill="rgba(74,88,144,0.1)" stroke="#4a5890" stroke-width="1.2" stroke-dasharray="3,2"/>
+            <line x1="284" y1="192" x2="284" y2="244" stroke="#4a5890" stroke-width="2.5"/>
+
+            <!-- ══ BOTTOM ROW ══ -->
+
+            <!-- AGRIM'S ROOM (bottom-left) -->
+            <rect x="284" y="244" width="172" height="218" fill="#161e2a" stroke="#222e3e" stroke-width="12"/>
+            <rect id="room-agrim_room" class="room-rect" x="290" y="250" width="160" height="206" rx="3" fill="#1a2232" stroke="none"/>
+            <text x="298" y="270" text-anchor="start" fill="#6070a0" font-size="8.5" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="0.5">AGRIM'S ROOM</text>
+            <text id="fp-agrim_room-devices" x="298" y="282" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window bottom -->
+            <rect x="310" y="462" width="66" height="7" rx="2" fill="#3a6090" opacity=".9"/>
+            <rect x="311" y="463" width="64" height="2" rx="1" fill="#6aafdf" opacity=".4"/>
+            <!-- Bed -->
+            <rect x="295" y="328" width="152" height="116" rx="5" fill="#1c2540" stroke="#283554" stroke-width="1.2"/>
+            <rect x="295" y="328" width="152" height="26" rx="5" fill="#222d4c" stroke="#283554" stroke-width="1.2"/>
+            <ellipse cx="327" cy="341" rx="20" ry="11" fill="#141e2e"/>
+            <ellipse cx="419" cy="341" rx="20" ry="11" fill="#141e2e"/>
+            <ellipse cx="327" cy="341" rx="14" ry="7" fill="none" stroke="#1e2840" stroke-width="0.6"/>
+            <ellipse cx="419" cy="341" rx="14" ry="7" fill="none" stroke="#1e2840" stroke-width="0.6"/>
+            <!-- Study desk + monitor (moved to top-right of room, clear of label) -->
+            <rect x="382" y="258" width="60" height="34" rx="2" fill="#141e2e" stroke="#222e3e" stroke-width="1"/>
+            <rect x="386" y="260" width="32" height="20" rx="2" fill="#0a0e16"/>
+            <rect x="386" y="280" width="11" height="4" rx="1" fill="#1a2232"/>
+            <!-- Chair -->
+            <rect x="392" y="294" width="20" height="20" rx="3" fill="#101828" stroke="#202e3e" stroke-width="1"/>
+            <rect x="395" y="292" width="13" height="4" rx="1" fill="#1a2232"/>
+            <!-- SVG Fan (Agrim) - positioned above bed, clear of label and desk -->
+            <g id="fp-fan-agrim">
+              <circle cx="370" cy="300" r="4" fill="#3a4870" stroke="#4a5890" stroke-width="0.8"/>
+              <ellipse cx="370" cy="289" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="381" cy="300" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="370" cy="311" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="359" cy="300" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="370" cy="300" r="3" fill="#4a5890"/>
+            </g>
+            <!-- Door -->
+            <path d="M284 298 Q310 272 284 246" fill="rgba(74,88,144,0.1)" stroke="#4a5890" stroke-width="1.2" stroke-dasharray="3,2"/>
+            <line x1="284" y1="246" x2="284" y2="298" stroke="#4a5890" stroke-width="2.5"/>
+            <g id="fp-occ-agrim_room"></g>
+
+            <!-- NAMAN'S ROOM (bottom-center) -->
+            <rect x="456" y="244" width="190" height="218" fill="#141e1a" stroke="#1e2e24" stroke-width="12"/>
+            <rect id="room-naman_room" class="room-rect" x="462" y="250" width="178" height="206" rx="3" fill="#18241e" stroke="none"/>
+            <text x="528" y="270" text-anchor="start" fill="#6070a0" font-size="9" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1">NAMAN'S ROOM</text>
+            <text id="fp-naman_room-devices" x="528" y="282" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window bottom -->
+            <rect x="490" y="462" width="66" height="7" rx="2" fill="#305848" opacity=".9"/>
+            <rect x="491" y="463" width="64" height="2" rx="1" fill="#5ab898" opacity=".4"/>
+            <!-- Bed -->
+            <rect x="467" y="326" width="160" height="118" rx="5" fill="#182820" stroke="#243828" stroke-width="1.2"/>
+            <rect x="467" y="326" width="160" height="26" rx="5" fill="#1e3026" stroke="#243828" stroke-width="1.2"/>
+            <ellipse cx="501" cy="339" rx="20" ry="11" fill="#121c18"/>
+            <ellipse cx="593" cy="339" rx="20" ry="11" fill="#121c18"/>
+            <ellipse cx="501" cy="339" rx="14" ry="7" fill="none" stroke="#1c2820" stroke-width="0.6"/>
+            <ellipse cx="593" cy="339" rx="14" ry="7" fill="none" stroke="#1c2820" stroke-width="0.6"/>
+            <!-- Bookshelf -->
+            <rect x="462" y="258" width="28" height="66" rx="2" fill="#12181a" stroke="#1e2a24" stroke-width="1"/>
+            <line x1="462" y1="276" x2="490" y2="276" stroke="#1e2a24" stroke-width="1"/>
+            <line x1="462" y1="294" x2="490" y2="294" stroke="#1e2a24" stroke-width="1"/>
+            <line x1="462" y1="312" x2="490" y2="312" stroke="#1e2a24" stroke-width="1"/>
+            <!-- Books (coloured spines) -->
+            <rect x="464" y="258" width="5" height="16" rx="1" fill="#2a4030"/>
+            <rect x="470" y="260" width="4" height="14" rx="1" fill="#1e3428"/>
+            <rect x="475" y="259" width="5" height="15" rx="1" fill="#304838"/>
+            <rect x="464" y="277" width="6" height="15" rx="1" fill="#2a3838"/>
+            <rect x="471" y="278" width="4" height="14" rx="1" fill="#183028"/>
+            <!-- SVG Fan (Naman) - positioned in open floor area below label -->
+            <g id="fp-fan-naman">
+              <circle cx="600" cy="305" r="4" fill="#3a4870" stroke="#4a5890" stroke-width="0.8"/>
+              <ellipse cx="600" cy="294" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="611" cy="305" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="600" cy="316" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="589" cy="305" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="600" cy="305" r="3" fill="#4a5890"/>
+            </g>
+            <g id="fp-occ-naman_room"></g>
+
+            <!-- KAMAKSHI'S ROOM (bottom-right) -->
+            <rect x="646" y="244" width="168" height="218" fill="#141e14" stroke="#1e2e1e" stroke-width="12"/>
+            <rect id="room-kamakshi_room" class="room-rect" x="652" y="250" width="156" height="206" rx="3" fill="#18221a" stroke="none"/>
+            <text x="657" y="270" text-anchor="start" fill="#6070a0" font-size="7.8" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="0.3">KAMAKSHI'S ROOM</text>
+            <text id="fp-kamakshi_room-devices" x="660" y="282" text-anchor="start" fill="#38435e" font-size="7.5" font-family="Segoe UI,sans-serif"></text>
+            <!-- Window bottom -->
+            <rect x="672" y="462" width="66" height="7" rx="2" fill="#305848" opacity=".9"/>
+            <rect x="673" y="463" width="64" height="2" rx="1" fill="#5ab898" opacity=".4"/>
+            <!-- Bed -->
+            <rect x="657" y="326" width="144" height="118" rx="5" fill="#182418" stroke="#243024" stroke-width="1.2"/>
+            <rect x="657" y="326" width="144" height="26" rx="5" fill="#1e2e1e" stroke="#243024" stroke-width="1.2"/>
+            <ellipse cx="687" cy="339" rx="19" ry="11" fill="#121a12"/>
+            <ellipse cx="773" cy="339" rx="19" ry="11" fill="#121a12"/>
+            <ellipse cx="687" cy="339" rx="13" ry="7" fill="none" stroke="#1c2418" stroke-width="0.6"/>
+            <ellipse cx="773" cy="339" rx="13" ry="7" fill="none" stroke="#1c2418" stroke-width="0.6"/>
+            <!-- Dressing table + mirror (top-right corner, clear of label) -->
+            <rect x="746" y="250" width="46" height="34" rx="2" fill="#12180e" stroke="#1e2a18" stroke-width="1"/>
+            <rect x="748" y="252" width="42" height="18" rx="1" fill="#0a0e08"/>
+            <rect x="748" y="272" width="42" height="10" rx="1" fill="#141c10" stroke="#1e2a18" stroke-width="0.8"/>
+            <line x1="769" y1="272" x2="769" y2="284" stroke="#1e2a18" stroke-width="0.8"/>
+            <!-- Stool in front of dressing table -->
+            <circle cx="769" cy="294" r="7" fill="#101610" stroke="#1e2a18" stroke-width="1"/>
+            <!-- SVG Fan (Kamakshi) - positioned in open floor area, clear of table and bed -->
+            <g id="fp-fan-kamakshi">
+              <circle cx="730" cy="300" r="4" fill="#3a4870" stroke="#4a5890" stroke-width="0.8"/>
+              <ellipse cx="730" cy="289" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="741" cy="300" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="730" cy="311" rx="4" ry="9" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <ellipse cx="719" cy="300" rx="9" ry="4" fill="#2e3a62" stroke="#3a4870" stroke-width="0.5"/>
+              <circle cx="730" cy="300" r="3" fill="#4a5890"/>
+            </g>
+            <!-- Door -->
+            <path d="M646 298 Q672 272 646 246" fill="rgba(74,88,144,0.1)" stroke="#4a5890" stroke-width="1.2" stroke-dasharray="3,2"/>
+            <line x1="646" y1="246" x2="646" y2="298" stroke="#4a5890" stroke-width="2.5"/>
+            <g id="fp-occ-kamakshi_room"></g>
+
+            <!-- BALCONY (left, below living room) -->
+            <rect x="20" y="294" width="264" height="168" fill="#0e141a" stroke="#141e24" stroke-width="8" stroke-dasharray="10,5"/>
+            <rect x="28" y="302" width="248" height="152" rx="3" fill="#101620"/>
+            <text x="152" y="384" text-anchor="middle" fill="#1c2830" font-size="10" font-family="Segoe UI,sans-serif" font-weight="600" letter-spacing="2">BALCONY</text>
+            <!-- Railing -->
+            <rect x="32" y="310" width="240" height="4" rx="2" fill="#182030" stroke="#1e2a36" stroke-width="1"/>
+            <rect x="32" y="318" width="240" height="2" rx="1" fill="#141c28"/>
+            <!-- Rail posts -->
+            <line x1="68"  y1="310" x2="68"  y2="322" stroke="#182030" stroke-width="1.5"/>
+            <line x1="108" y1="310" x2="108" y2="322" stroke="#182030" stroke-width="1.5"/>
+            <line x1="148" y1="310" x2="148" y2="322" stroke="#182030" stroke-width="1.5"/>
+            <line x1="188" y1="310" x2="188" y2="322" stroke="#182030" stroke-width="1.5"/>
+            <line x1="228" y1="310" x2="228" y2="322" stroke="#182030" stroke-width="1.5"/>
+            <!-- Plant pots (detailed) -->
+            <!-- Pot 1 -->
+            <ellipse cx="56" cy="412" rx="16" ry="7" fill="#182020" stroke="#1e2e28" stroke-width="1"/>
+            <path d="M40 390 Q42 412 72 412 Q70 390 40 390" fill="#1a2820" stroke="#1e2e28" stroke-width="1"/>
+            <ellipse cx="56" cy="390" rx="16" ry="6" fill="#20301e" stroke="#2a3e28" stroke-width="1"/>
+            <ellipse cx="56" cy="386" rx="10" ry="5" fill="#243422"/>
+            <line x1="56" y1="380" x2="48" y2="368" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="56" y1="380" x2="64" y2="366" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="56" y1="374" x2="42" y2="374" stroke="#1e3420" stroke-width="1.5"/>
+            <!-- Pot 2 -->
+            <ellipse cx="222" cy="410" rx="14" ry="6" fill="#182020" stroke="#1e2e28" stroke-width="1"/>
+            <path d="M208 390 Q210 410 236 410 Q234 390 208 390" fill="#1a2820" stroke="#1e2e28" stroke-width="1"/>
+            <ellipse cx="222" cy="390" rx="14" ry="5" fill="#20301e" stroke="#2a3e28" stroke-width="1"/>
+            <ellipse cx="222" cy="386" rx="9" ry="4" fill="#243422"/>
+            <line x1="222" y1="380" x2="214" y2="366" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="222" y1="380" x2="230" y2="366" stroke="#1e3420" stroke-width="1.5"/>
+            <!-- Clothes line -->
+            <line x1="68" y1="350" x2="208" y2="350" stroke="#18202a" stroke-width="0.8" stroke-dasharray="2,6"/>
+            <!-- Clothespins -->
+            <rect x="100" y="347" width="4" height="6" rx="1" fill="#1e2830"/>
+            <rect x="156" y="347" width="4" height="6" rx="1" fill="#1e2830"/>
+
+            <!-- UTILITY / STORE (bottom-left below balcony) -->
+            <rect x="20" y="462" width="264" height="98" fill="#0c0e16" stroke="#141624" stroke-width="8"/>
+            <rect x="28" y="470" width="248" height="82" rx="3" fill="#101220"/>
+            <text x="152" y="474" text-anchor="middle" fill="#2a2e44" font-size="9.5" font-family="Segoe UI,sans-serif" font-weight="600" letter-spacing="0.5">UTILITY / STORE</text>
+            <!-- Shelves -->
+            <rect x="34" y="494" width="232" height="10" rx="2" fill="#14182a" stroke="#1e2232" stroke-width="1"/>
+            <rect x="34" y="512" width="232" height="10" rx="2" fill="#14182a" stroke="#1e2232" stroke-width="1"/>
+            <rect x="34" y="530" width="232" height="10" rx="2" fill="#14182a" stroke="#1e2232" stroke-width="1"/>
+            <!-- Washing machine -->
+            <rect x="240" y="494" width="28" height="28" rx="3" fill="#12162a" stroke="#1e2232" stroke-width="1"/>
+            <circle cx="254" cy="508" r="9" fill="#0e1020" stroke="#1e2232" stroke-width="1"/>
+            <circle cx="254" cy="508" r="5" fill="#12162a"/>
+            <!-- Wall between balcony and utility -->
+            <rect x="20" y="460" width="264" height="4" fill="#1a1e2e"/>
+
+            <!-- ENTRANCE MARKER (front door on the balcony's outer wall, clear of other labels) -->
+            <g id="entrance-marker">
+              <rect x="118" y="458" width="68" height="8" rx="3" fill="#1e2e38"/>
+              <text x="152" y="453" text-anchor="middle" fill="#2a3a48" font-size="7.5" font-family="Segoe UI,sans-serif" letter-spacing="1">ENTRANCE</text>
+              <circle id="entrance-pulse-circle" cx="152" cy="462" r="0" fill="none" stroke="#22c55e" stroke-width="1.5" opacity="0"/>
+            </g>
+
+            <!-- GARDEN STRIP (fills the area below bedrooms) -->
+            <rect x="284" y="462" width="696" height="78" fill="#121a14" stroke="#1a2418" stroke-width="1"/>
+            <text x="560" y="486" text-anchor="middle" fill="#1e2e1e" font-size="9.5" font-family="Segoe UI,sans-serif" font-weight="600" letter-spacing="2">GARDEN</text>
+            <!-- Grass texture dashes -->
+            <line x1="300" y1="500" x2="308" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="312" y1="502" x2="320" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="340" y1="500" x2="348" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="352" y1="502" x2="360" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="420" y1="500" x2="428" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="432" y1="502" x2="440" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="500" y1="500" x2="508" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="512" y1="502" x2="520" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="740" y1="500" x2="748" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="752" y1="502" x2="760" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="820" y1="500" x2="828" y2="492" stroke="#1e3020" stroke-width="1.2"/>
+            <line x1="832" y1="502" x2="840" y2="494" stroke="#1e3020" stroke-width="1.2"/>
+            <!-- Garden path stones -->
+            <ellipse cx="632" cy="500" rx="14" ry="6" fill="#1c241a" stroke="#283228" stroke-width="0.8"/>
+            <ellipse cx="664" cy="510" rx="14" ry="6" fill="#1c241a" stroke="#283228" stroke-width="0.8"/>
+            <ellipse cx="600" cy="510" rx="14" ry="6" fill="#1c241a" stroke="#283228" stroke-width="0.8"/>
+            <!-- Small tree -->
+            <circle cx="916" cy="495" r="18" fill="#1e3422" stroke="#284430" stroke-width="1"/>
+            <circle cx="930" cy="505" r="13" fill="#1a2e1e" stroke="#284430" stroke-width="1"/>
+            <rect x="920" y="510" width="6" height="20" rx="1" fill="#2a2018" stroke="#3a3024" stroke-width="0.8"/>
+
+            <!-- SCALE BAR -->
+            <g transform="translate(810,548)">
+              <line x1="0" y1="0" x2="64" y2="0" stroke="#252a40" stroke-width="1.5"/>
+              <line x1="0" y1="-4" x2="0" y2="4" stroke="#252a40" stroke-width="1.5"/>
+              <line x1="64" y1="-4" x2="64" y2="4" stroke="#252a40" stroke-width="1.5"/>
+              <text x="32" y="-7" text-anchor="middle" fill="#252a40" font-size="8.5" font-family="Segoe UI,sans-serif">≈ 5 m</text>
+            </g>
+
+            <!-- TERRACE (fills the previously-empty bottom-right region) -->
+            <rect x="814" y="244" width="166" height="218" fill="#10161a" stroke="#1a2424" stroke-width="8" stroke-dasharray="10,5"/>
+            <rect x="822" y="252" width="150" height="202" rx="3" fill="#121a1c"/>
+            <text x="897" y="270" text-anchor="middle" fill="#1e2e2c" font-size="10" font-family="Segoe UI,sans-serif" font-weight="600" letter-spacing="2">TERRACE</text>
+            <!-- Outdoor seating -->
+            <rect x="838" y="310" width="64" height="34" rx="5" fill="#1a2422" stroke="#243632" stroke-width="1"/>
+            <rect x="838" y="306" width="64" height="10" rx="4" fill="#1e2a26" stroke="#243632" stroke-width="1"/>
+            <!-- Small table -->
+            <circle cx="930" cy="328" r="16" fill="#182220" stroke="#243632" stroke-width="1"/>
+            <circle cx="930" cy="328" r="10" fill="#1c2826"/>
+            <!-- Potted plants -->
+            <ellipse cx="836" cy="420" rx="15" ry="7" fill="#162020" stroke="#1e2e28" stroke-width="1"/>
+            <path d="M821 398 Q823 420 851 420 Q849 398 821 398" fill="#1a2820" stroke="#1e2e28" stroke-width="1"/>
+            <ellipse cx="836" cy="398" rx="15" ry="6" fill="#20301e" stroke="#2a3e28" stroke-width="1"/>
+            <line x1="836" y1="392" x2="828" y2="378" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="836" y1="392" x2="844" y2="378" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="836" y1="386" x2="836" y2="372" stroke="#1e3420" stroke-width="1.5"/>
+            <ellipse cx="958" cy="424" rx="13" ry="6" fill="#162020" stroke="#1e2e28" stroke-width="1"/>
+            <path d="M945 404 Q947 424 971 424 Q969 404 945 404" fill="#1a2820" stroke="#1e2e28" stroke-width="1"/>
+            <ellipse cx="958" cy="404" rx="13" ry="5" fill="#20301e" stroke="#2a3e28" stroke-width="1"/>
+            <line x1="958" y1="398" x2="950" y2="386" stroke="#1e3420" stroke-width="1.5"/>
+            <line x1="958" y1="398" x2="966" y2="386" stroke="#1e3420" stroke-width="1.5"/>
+            <!-- String lights -->
+            <path d="M822 260 Q897 280 972 260" fill="none" stroke="#3a3a20" stroke-width="1" stroke-dasharray="1,5"/>
+            <circle cx="850" cy="267" r="1.5" fill="#5a5a30"/>
+            <circle cx="897" cy="272" r="1.5" fill="#5a5a30"/>
+            <circle cx="944" cy="267" r="1.5" fill="#5a5a30"/>
+
+            <!-- LEGEND -->
+            <g transform="translate(826,348)">
+              <rect x="0" y="0" width="134" height="100" rx="6" fill="#0e1014" stroke="#1a2222" stroke-width="1" opacity="0.92"/>
+              <text x="67" y="16" text-anchor="middle" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif" font-weight="700" letter-spacing="1">LEGEND</text>
+              <rect x="12" y="26" width="14" height="6" rx="1" fill="#3a6090" opacity=".9"/>
+              <text x="32" y="32" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif">Window</text>
+              <line x1="12" y1="48" x2="26" y2="48" stroke="#4a5890" stroke-width="2" stroke-dasharray="3,2"/>
+              <text x="32" y="51" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif">Door</text>
+              <circle cx="18" cy="66" r="6" fill="#3a4870"/>
+              <text x="32" y="69" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif">Ceiling fan</text>
+              <circle cx="18" cy="86" r="6" fill="#22c55e"/>
+              <text x="32" y="89" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif">Member home</text>
+            </g>
+          </svg>
+          <div class="room-tooltip" id="roomTooltip"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">💡 How to use this map</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <span style="font-size:20px">🖱️</span>
+            <div><div style="font-size:12.5px;font-weight:600">Click a room</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Opens a panel with all devices for that room</div></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <span style="font-size:20px">👆👆</span>
+            <div><div style="font-size:12.5px;font-weight:600">Double-click</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Quickly toggles that room's light on/off</div></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <span style="font-size:20px">🟡</span>
+            <div><div style="font-size:12.5px;font-weight:600">Room glow</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Amber = light on · Cyan = AC on · Blue = other device on</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide-in room panel -->
+    <div class="fp-panel-overlay" id="fpPanelOverlay" onclick="closeFpPanel()"></div>
+    <div class="fp-panel" id="fpPanel">
+      <div class="fp-panel-header">
+        <span class="fp-panel-title" id="fpPanelTitle">Room</span>
+        <button class="btn btn-sm" onclick="closeFpPanel()">✕</button>
+      </div>
+      <div class="fp-panel-body" id="fpPanelBody"></div>
+    </div>
+  </div>
+
+  <!-- DEVICES -->
+  <div class="content page" id="page-devices">
+    <div class="room-tabs">
+      <div class="room-tab active" onclick="selectRoom('living_room',this)">Living Room</div>
+      <div class="room-tab" onclick="selectRoom('aditya_room',this)">Aditya's Room</div>
+      <div class="room-tab" onclick="selectRoom('diksha_room',this)">Diksha's Room</div>
+      <div class="room-tab" onclick="selectRoom('agrim_room',this)">Agrim's Room</div>
+      <div class="room-tab" onclick="selectRoom('naman_room',this)">Naman's Room</div>
+      <div class="room-tab" onclick="selectRoom('kamakshi_room',this)">Kamakshi's Room</div>
+      <div class="room-tab" onclick="selectRoom('kitchen',this)">Kitchen</div>
+      <div class="room-tab" onclick="selectRoom('bathroom',this)">Bathroom</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title" id="devRoomTitle">Living Room</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span id="devRoomWatts" style="font-size:12px;color:var(--accent);font-weight:600">-- W</span>
+          <button class="btn btn-sm btn-danger" onclick="turnOffAllInRoom()">All off</button>
+        </div>
+      </div>
+      <div class="card-body"><div class="device-grid" id="deviceGrid"></div></div>
+    </div>
+  </div>
+
+  <!-- CLIMATE -->
+  <div class="content page" id="page-climate">
+    <div class="three-col">
+      <div class="sensor-card temp-card">
+        <div class="sensor-label">Indoor Temperature</div>
+        <div class="sensor-value" id="cl-temp" style="color:#f59e0b">--<span class="sensor-unit">°C</span></div>
+        <div class="sensor-sub" id="cl-feels-like">feels like --°C</div>
+      </div>
+      <div class="sensor-card hum-card">
+        <div class="sensor-label">Humidity</div>
+        <div class="sensor-value" id="cl-hum" style="color:#06b6d4">--<span class="sensor-unit">%</span></div>
+        <div class="sensor-sub" id="cl-hum-status">checking…</div>
+      </div>
+      <div class="sensor-card pwr-card">
+        <div class="sensor-label">HVAC Mode</div>
+        <div style="font-size:17px;font-weight:700;color:var(--accent);margin:8px 0 4px" id="cl-hvac">--</div>
+        <div class="sensor-sub" id="cl-target">Target: --</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card"><div class="card-header"><span class="card-title">🌡 Temperature history</span></div><div class="card-body"><canvas id="tempChart" style="width:100%;height:180px"></canvas></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">💧 Humidity history</span></div><div class="card-body"><canvas id="humChart" style="width:100%;height:180px"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- AQI -->
+  <div class="content page" id="page-aqi">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🌫 Air Quality Index</span><span style="font-size:11px;color:var(--text3)">Gurugram, Haryana · live</span></div>
+        <div class="card-body aqi-gauge">
+          <div class="aqi-number" id="aqi-num" style="color:var(--green)">--</div>
+          <div class="aqi-category" id="aqi-cat" style="color:var(--text2)">loading…</div>
+          <div class="aqi-bar-wrap"><div class="aqi-indicator" id="aqi-ind" style="left:10%"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px"><span>0 Good</span><span>100</span><span>200</span><span>300</span><span>400</span><span>500 Severe</span></div>
+          <div style="margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="stat-row"><span class="text2">PM2.5</span><span class="stat-val" id="aqi-pm25">--</span></div>
+            <div class="stat-row"><span class="text2">PM10</span><span class="stat-val" id="aqi-pm10">--</span></div>
+            <div class="stat-row"><span class="text2">CO₂</span><span class="stat-val" id="aqi-co2">--</span></div>
+            <div class="stat-row"><span class="text2">Humidity</span><span class="stat-val" id="aqi-hum">--</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card"><div class="card-header"><span class="card-title">📊 AQI trend</span></div><div class="card-body"><canvas id="aqiChart" style="width:100%;height:260px"></canvas></div></div>
+    </div>
+    <div class="card"><div class="card-header"><span class="card-title">💊 Health advisory</span></div><div class="card-body" id="aqi-advisory"><div style="color:var(--text2);font-size:13px">Waiting for AQI data…</div></div></div>
+  </div>
+
+  <!-- ENERGY -->
+  <div class="content page" id="page-energy">
+    <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub">live draw</div></div>
+      <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
+      <div class="sensor-card temp-card"><div class="sensor-label">Devices on</div><div class="sensor-value" id="en-count" style="color:var(--green)">--</div><div class="sensor-sub" id="en-total-sub">out of --</div></div>
+      <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card"><div class="card-header"><span class="card-title">⚡ Per room</span></div><div class="card-body" id="en-rooms"></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">📈 Usage over time</span></div>
+        <div class="card-body">
+          <div class="energy-bars-wrap" id="energyBars"></div>
+          <div class="energy-bar-labels" id="energyLabels"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">Each bar = one 5-second reading</div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-header"><span class="card-title">💡 Device breakdown</span></div><div class="card-body" id="en-devices"></div></div>
+  </div>
+
+  <!-- SAFETY -->
+  <div class="content page" id="page-safety">
+    <!-- Live sensor gauges -->
+    <div class="three-col">
+      <div class="sensor-card" style="border-color:rgba(239,68,68,.25);position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#ef4444,#f59e0b)"></div>
+        <div class="sensor-label" style="color:var(--red)">Smoke Level</div>
+        <div class="sensor-value" id="sf-smoke" style="color:var(--red)">--<span class="sensor-unit">%</span></div>
+        <div class="sensor-sub" id="sf-smoke-status">threshold: 40%</div>
+        <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="sf-smoke-bar" style="background:var(--green);width:5%"></div></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">Sensor: Kitchen area</div>
+      </div>
+      <div class="sensor-card" style="border-color:rgba(245,158,11,.25);position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#f59e0b,#eab308)"></div>
+        <div class="sensor-label" style="color:var(--orange)">Gas / LPG Level</div>
+        <div class="sensor-value" id="sf-gas" style="color:var(--orange)">--<span class="sensor-unit">%</span></div>
+        <div class="sensor-sub" id="sf-gas-status">threshold: 40%</div>
+        <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="sf-gas-bar" style="background:var(--green);width:5%"></div></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">Sensor: Kitchen / utility</div>
+      </div>
+      <div class="sensor-card" style="border-color:rgba(239,68,68,.25);position:relative;overflow:hidden">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#f97316,#ef4444)"></div>
+        <div class="sensor-label" style="color:#f97316">Temperature</div>
+        <div class="sensor-value" id="sf-temp" style="color:#f97316">--<span class="sensor-unit">°C</span></div>
+        <div class="sensor-sub" id="sf-temp-status">fire risk above 50°C</div>
+        <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="sf-temp-bar" style="background:var(--green);width:40%"></div></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">Sensor: Hallway (indoor)</div>
+      </div>
+    </div>
+
+    <!-- Status banner -->
+    <div id="sf-all-clear" style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">✅</span>
+      <div>
+        <div style="font-weight:600;color:var(--green)">All safety sensors normal</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">No smoke, gas or fire hazards detected. Thresholds: Smoke &gt;40%, Gas &gt;40%, Temp &gt;50°C</div>
+      </div>
+    </div>
+    <div id="sf-danger-alerts" style="margin-bottom:18px"></div>
+
+    <div class="two-col">
+      <!-- History charts -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📊 Smoke &amp; Gas — last 20 readings</span>
+          <span style="font-size:10.5px;color:var(--orange);font-weight:500">🟡 SIM = simulated spike</span>
+        </div>
+        <div class="card-body">
+          <canvas id="smokeChart" style="width:100%;height:180px"></canvas>
+          <canvas id="gasChart" style="width:100%;height:180px;margin-top:14px"></canvas>
+        </div>
+      </div>
+
+      <!-- Info + actions -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">ℹ️ Detector info</span></div>
+        <div class="card-body">
+          <div class="stat-row"><span class="text2">Smoke threshold</span><span class="stat-val">40%</span></div>
+          <div class="stat-row"><span class="text2">Gas threshold</span><span class="stat-val">40%</span></div>
+          <div class="stat-row"><span class="text2">Fire temp threshold</span><span class="stat-val">50°C</span></div>
+          <div class="stat-row"><span class="text2">Debounce period</span><span class="stat-val">120 s</span></div>
+          <div class="stat-row"><span class="text2">False-alarm filter</span><span class="stat-val">3 consecutive</span></div>
+          <div class="stat-row"><span class="text2">Alert method</span><span class="stat-val">Browser + Twilio</span></div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;display:flex;align-items:center;gap:10px;background:rgba(108,139,239,.07);border-radius:8px;padding:12px">
+            <span style="font-size:20px">🧪</span>
+            <div>
+              <div style="font-size:12.5px;font-weight:600">Want to test alerts?</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">Use the <button onclick="showPage('simulations')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;font-weight:600;padding:0;text-decoration:underline">Simulations tab</button> — spikes will appear on these charts with SIM labels.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert history -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">🕐 Alert history</span></div>
+      <div class="card-body" id="sf-alert-history" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No alerts triggered today</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIMULATIONS -->
+  <div class="content page" id="page-simulations">
+
+    <!-- intro strip -->
+    <div style="background:linear-gradient(135deg,rgba(108,139,239,.12),rgba(167,139,250,.07));border:1px solid rgba(108,139,239,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:28px">🧪</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Simulation control panel</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Trigger real alert pipelines — logs, sounds, notifications, floor-plan pulse, graph spikes. Spikes are labelled <b style="color:var(--orange)">SIM</b> on the charts below.</div>
+      </div>
+    </div>
+
+    <div class="three-col">
+
+      <!-- Safety simulations -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🔥 Safety alerts</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Triggers the detector → gauge spike → chart spike → siren → browser notification → alert log</div>
+          <button class="btn sim-btn sim-smoke" onclick="triggerTestAlert('smoke')">
+            <span style="font-size:20px">💨</span>
+            <div style="text-align:left">
+              <div style="font-weight:700">Smoke spike</div>
+              <div style="font-size:11px;opacity:.7">Smoke → 62% (threshold 40%)</div>
+            </div>
+          </button>
+          <button class="btn sim-btn sim-gas" onclick="triggerTestAlert('gas')">
+            <span style="font-size:20px">⚠️</span>
+            <div style="text-align:left">
+              <div style="font-weight:700">Gas leak</div>
+              <div style="font-size:11px;opacity:.7">LPG → 58% (threshold 40%)</div>
+            </div>
+          </button>
+          <button class="btn sim-btn sim-fire" onclick="triggerTestAlert('fire')">
+            <span style="font-size:20px">🔥</span>
+            <div style="text-align:left">
+              <div style="font-weight:700">Fire risk</div>
+              <div style="font-size:11px;opacity:.7">Temp → 55°C (threshold 50°C)</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Security simulations -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚪 Security events</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Triggers face recognition pipeline → security log → floor-plan entrance pulse → notifications</div>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Aditya')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Aditya arrives</div><div style="font-size:11px;opacity:.7">Owner · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Diksha')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Diksha arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Agrim')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Agrim arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Naman')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Naman arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Kamakshi')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Kamakshi arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
+          <button class="btn sim-btn sim-intruder" onclick="simulateFace('Unknown')">
+            <span style="font-size:18px">🚨</span>
+            <div style="text-align:left"><div style="font-weight:700">Unknown intruder</div><div style="font-size:11px;opacity:.7">Unrecognized face → siren + alert</div></div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scene shortcuts -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🎭 Scene shortcuts</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Bulk device state changes — instantly applies a preset configuration across all rooms</div>
+          <button class="btn sim-btn sim-scene" id="sim-scene-morning" onclick="activateScene('morning')"><span style="font-size:20px">🌅</span><div style="text-align:left"><div style="font-weight:700">Morning</div><div style="font-size:11px;opacity:.7">Lights on, fans moderate, AC off</div></div></button>
+          <button class="btn sim-btn sim-scene" id="sim-scene-away" onclick="activateScene('away')"><span style="font-size:20px">🚗</span><div style="text-align:left"><div style="font-weight:700">Away</div><div style="font-size:11px;opacity:.7">All off, lock on</div></div></button>
+          <button class="btn sim-btn sim-scene" id="sim-scene-movie" onclick="activateScene('movie')"><span style="font-size:20px">🎬</span><div style="text-align:left"><div style="font-weight:700">Movie night</div><div style="font-size:11px;opacity:.7">Dim lights, fan on, TV on</div></div></button>
+          <button class="btn sim-btn sim-scene" id="sim-scene-night" onclick="activateScene('night')"><span style="font-size:20px">🌙</span><div style="text-align:left"><div style="font-weight:700">Good night</div><div style="font-size:11px;opacity:.7">All lights off, fans low</div></div></button>
+          <button class="btn sim-btn sim-scene" id="sim-scene-all_off" onclick="activateScene('all_off')"><span style="font-size:20px">⬛</span><div style="text-align:left"><div style="font-weight:700">All off</div><div style="font-size:11px;opacity:.7">Every device off</div></div></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live charts with simulation markers -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 Smoke history <span style="font-size:11px;color:var(--orange);font-weight:400;margin-left:6px">▲ SIM markers show simulated spikes</span></span>
+        </div>
+        <div class="card-body">
+          <canvas id="simSmokeChart" style="width:100%;height:200px"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 Gas history <span style="font-size:11px;color:var(--orange);font-weight:400;margin-left:6px">▲ SIM markers show simulated spikes</span></span>
+        </div>
+        <div class="card-body">
+          <canvas id="simGasChart" style="width:100%;height:200px"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulation run log -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📋 Simulation run log</span>
+        <button class="btn btn-sm" onclick="clearSimLog()">Clear log</button>
+      </div>
+      <div class="card-body" id="simRunLog" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No simulations run yet this session</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECURITY -->
+  <div class="content page" id="page-security">
+    <div class="intruder-banner" id="intruderBanner">
+      <span style="font-size:28px">🚨</span>
+      <div><div style="font-weight:700;color:var(--red);font-size:14px">INTRUDER ALERT</div><div style="font-size:12px;color:var(--text2)" id="intruderBannerText">Unrecognized face at door</div></div>
+      <button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="dismissIntruder()">Dismiss</button>
+    </div>
+
+    <!-- Top row: status strip -->
+    <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="sensor-card" style="border-color:rgba(34,197,94,.2)">
+        <div class="sensor-label">Front Door</div>
+        <div style="font-size:22px;font-weight:800;margin-top:4px" id="sec-lock-summary">🔒 LOCKED</div>
+        <div class="sensor-sub">Main entrance</div>
+      </div>
+      <div class="sensor-card" style="border-color:rgba(108,139,239,.2)">
+        <div class="sensor-label">Camera</div>
+        <div style="font-size:22px;font-weight:800;margin-top:4px" id="sec-cam-summary">⏸ Offline</div>
+        <div class="sensor-sub">Face recognition feed</div>
+      </div>
+      <div class="sensor-card" style="border-color:rgba(245,158,11,.2)">
+        <div class="sensor-label">Today's events</div>
+        <div style="font-size:22px;font-weight:800;margin-top:4px" id="sec-event-count">0</div>
+        <div class="sensor-sub">members, guests, deliveries</div>
+      </div>
+      <div class="sensor-card" style="border-color:rgba(239,68,68,.2)">
+        <div class="sensor-label">Last intruder alert</div>
+        <div style="font-size:14px;font-weight:700;margin-top:8px;color:var(--text2)" id="sec-last-intruder">None today</div>
+        <div class="sensor-sub">unrecognized faces</div>
+      </div>
+    </div>
+
+    <div class="two-col mb-18">
+      <!-- Camera card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📷 Camera — Face Recognition</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-primary" id="startCamBtn" onclick="startCamera()">Start camera</button>
+            <button class="btn btn-sm btn-danger" id="stopCamBtn" onclick="stopCamera()" style="display:none">Stop</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="camera-frame" id="cameraFrame">
+            <video id="cameraFeed" autoplay muted playsinline></video>
+            <canvas id="faceCanvas" style="display:none"></canvas>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <span class="cam-icon">📷</span>
+              <span style="font-size:12px">Camera is off</span>
+            </div>
+            <div class="camera-overlay off" id="cameraOverlay"><span class="live-dot"></span>FRONT DOOR</div>
+            <div class="camera-timestamp" id="cameraTimestamp"></div>
+          </div>
+          <div id="faceResult" style="margin-top:10px;font-size:13px;color:var(--text2)">Camera off. Hit "Start camera" to begin.</div>
+          <div id="faceModelStatus" style="font-size:11px;color:var(--text3);margin-top:5px;line-height:1.5">Loading face recognition models…</div>
+          <div id="notifPermBanner" style="display:none;margin-top:8px;background:rgba(108,139,239,.1);border:1px solid rgba(108,139,239,.25);border-radius:7px;padding:8px 12px;font-size:11px;color:var(--text2);display:flex;align-items:center;gap:10px">
+            <span>🔔 Allow browser notifications for intruder alerts even when this tab is in the background</span>
+            <button class="btn btn-sm btn-primary" onclick="requestNotifPermission().then(updateNotifBanner)" style="white-space:nowrap;flex-shrink:0">Allow</button>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <span style="font-size:11px;color:var(--text3)">Simulate:</span>
+            <button class="btn btn-sm" onclick="simulateFace('Aditya')">Aditya</button>
+            <button class="btn btn-sm" onclick="simulateFace('Diksha')">Diksha</button>
+            <button class="btn btn-sm" onclick="simulateFace('Agrim')">Agrim</button>
+            <button class="btn btn-sm" onclick="simulateFace('Naman')">Naman</button>
+            <button class="btn btn-sm" onclick="simulateFace('Kamakshi')">Kamakshi</button>
+            <button class="btn btn-sm btn-danger" onclick="simulateFace('Unknown')">Unknown 🚨</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lock + quick actions card -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚪 Front Door Lock</span></div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:18px;padding:14px 4px;border-bottom:1px solid var(--border);margin-bottom:14px">
+            <div id="lockIcon" style="font-size:48px;transition:all .3s;flex-shrink:0">🔒</div>
+            <div>
+              <div id="lockStatus" style="font-size:17px;font-weight:700;color:var(--green)">LOCKED</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">Main entrance · tap to toggle</div>
+            </div>
+            <button class="btn btn-primary" style="margin-left:auto;flex-shrink:0" onclick="toggleLock()">Toggle</button>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Quick log</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+            <button class="btn" onclick="addDeliveryLog()">📦 Log delivery arrival</button>
+            <button class="btn" onclick="addGuestLog()">🙋 Log a guest visit</button>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;border-top:1px solid var(--border);padding-top:14px">Recent activity</div>
+          <div id="sec-mini-log" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📋 Security log</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="logFilter" onchange="renderLogs()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:4px 8px;border-radius:6px;outline:none">
+            <option value="all">All events</option>
+            <option value="member">Members</option>
+            <option value="guest">Guests</option>
+            <option value="delivery">Deliveries</option>
+            <option value="intruder">Intruders</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="showAddLogModal()">+ Add entry</button>
+        </div>
+      </div>
+      <div class="card-body" id="securityLogList" style="max-height:480px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- FAMILY -->
+  <div class="content page" id="page-family">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><span class="card-title">👥 Family members</span><button class="btn btn-sm btn-primary" onclick="showAddMemberModal()">+ Add</button></div>
+        <div class="card-body" id="familyList"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🏠 Presence</span></div>
+        <div class="card-body">
+          <div style="display:flex;justify-content:space-around;text-align:center;padding:16px 0">
+            <div><div id="fam-home-count" style="font-size:42px;font-weight:800;color:var(--green)">0</div><div style="font-size:11px;color:var(--text3);margin-top:3px">At home</div></div>
+            <div><div id="fam-away-count" style="font-size:42px;font-weight:800;color:var(--text3)">0</div><div style="font-size:11px;color:var(--text3);margin-top:3px">Out</div></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Last 5 events</div>
+            <div id="fam-recent-events"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">🤖 Registered faces — in-browser recognition</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;text-align:center" id="faceMemberGrid"></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:14px;padding-top:12px;border-top:1px solid var(--border);line-height:1.7">
+          Photos: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">images/Aditya.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Agrim.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Naman.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Kamakshi.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Diksha.jpeg</code><br>
+          Library: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">face-api.js</code> (runs entirely in your browser) · match threshold 0.55 · unrecognized faces → intruder alert + log
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIFICATION DRAWER -->
+<div class="notif-overlay" id="notifOverlay" onclick="toggleNotifDrawer()"></div>
+<div class="notif-drawer" id="notifDrawer">
+  <div class="notif-header">
+    <h3>Notifications</h3>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm" onclick="clearNotifications()">Clear all</button>
+      <button class="btn btn-sm" onclick="toggleNotifDrawer()">✕</button>
+    </div>
+  </div>
+  <div class="notif-list" id="notifList"><div style="text-align:center;color:var(--text3);font-size:13px;padding:40px 20px">No notifications yet</div></div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-backdrop" id="addMemberModal">
+  <div class="modal">
+    <div class="modal-title">Add family member</div>
+    <div class="form-group"><label>Full name</label><input type="text" id="newMemberName" placeholder="e.g. Riya"/></div>
+    <div class="form-group"><label>Role</label><select id="newMemberRole"><option value="Member">Member</option><option value="Owner">Owner</option><option value="Guest">Frequent Guest</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('addMemberModal')">Cancel</button><button class="btn btn-primary" onclick="addMember()">Add</button></div>
+  </div>
+</div>
+<div class="modal-backdrop" id="addLogModal">
+  <div class="modal">
+    <div class="modal-title">Add security log entry</div>
+    <div class="form-group"><label>Person / name</label><input type="text" id="logPersonName" placeholder="e.g. Rohit (guest)"/></div>
+    <div class="form-group"><label>Type</label><select id="logPersonType" onchange="toggleEstimated()"><option value="guest">Guest</option><option value="delivery">Delivery</option><option value="member">Member</option><option value="intruder">Intruder alert</option></select></div>
+    <div class="form-group"><label>What happened</label><input type="text" id="logEvent" placeholder="e.g. visited, dropped off package"/></div>
+    <div class="form-group" id="estimatedGroup"><label>Estimated arrival (deliveries)</label><input type="text" id="logEstimated" placeholder="HH:MM"/></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal('addLogModal')">Cancel</button><button class="btn btn-primary" onclick="submitLog()">Save</button></div>
+  </div>
+</div>
+<div id="alertToast"></div>
+<script>
+// Use the current page's host so this works both on localhost and when
+// accessed from other devices on the same network (e.g. http://192.168.x.x:8000)
+const API=window.location.origin;
+const WS_URL=(window.location.protocol==='https:'?'wss://':'ws://')+window.location.host+'/ws';
+let currentRoom='living_room',devices={},sensors={},familyMembers=[],securityLogs=[];
+let energyHistory=Array(20).fill(0),tempHistory=Array(20).fill(0),humHistory=Array(20).fill(0),aqiHistory=Array(20).fill(0);
+let lockState=true,cameraStream=null,alertCount=0,lastAqiPush=0,notifications=[],activeScene=null;
+
+const ROOM_NAMES={living_room:'Living Room',aditya_room:"Aditya's Room",diksha_room:"Diksha's Room",agrim_room:"Agrim's Room",naman_room:"Naman's Room",kamakshi_room:"Kamakshi's Room",kitchen:'Kitchen',bathroom:'Bathroom'};
+const MEMBER_ROOM={Aditya:'aditya_room',Diksha:'diksha_room',Agrim:'agrim_room',Naman:'naman_room',Kamakshi:'kamakshi_room'};
+
+// CLOCK
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clockDisplay').textContent=now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('dateDisplay').textContent=now.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+  const h=now.getHours();
+  const greet=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+  const owner=familyMembers.find(m=>m.role==='Owner');
+  const homeCount=familyMembers.filter(m=>m.status==='home').length;
+  setText('greetingText',`${greet}, ${owner?.name||'Aditya'} 👋`);
+  setText('greetingSub',homeCount>0?`${homeCount} member${homeCount>1?'s':''} at home. Everything looks fine.`:'Everyone is out. House is secured.');
+}
+setInterval(updateClock,1000);updateClock();
+
+// NAVIGATION
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',security:'Security',family:'Family'};
+function showPage(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('nav-'+page).classList.add('active');
+  document.getElementById('pageTitle').textContent=PAGE_TITLES[page]||page;
+  if(page==='devices')renderDeviceGrid(currentRoom);
+  if(page==='family')renderFamily();
+  if(page==='security'){renderLogs();updateIntruderBanner();}
+  if(page==='energy')renderEnergy();
+  if(page==='safety')renderSafety();
+  if(page==='simulations')renderSimulations();
+  if(page==='floorplan')updateFloorPlan();
+}
+
+// CONNECTION STATUS
+// Three states:
+//   connected  — WebSocket live (real-time updates)
+//   degraded   — WS down but REST API working (polling mode, data still updates every 5s)
+//   offline    — both WS and REST API unreachable
+function setConnected(state){
+  const dot=document.getElementById('connDot'),lbl=document.getElementById('connLabel');
+  if(!dot||!lbl)return;
+  if(state==='connected'){
+    dot.className='conn-dot';dot.style.background='';dot.style.boxShadow='';
+    lbl.textContent='Connected';
+  } else if(state==='degraded'){
+    dot.className='conn-dot';
+    dot.style.background='var(--orange)';dot.style.boxShadow='0 0 5px var(--orange)';
+    lbl.textContent='Polling (no WS)';
+  } else {
+    dot.className='conn-dot offline';dot.style.background='';dot.style.boxShadow='';
+    lbl.textContent='Offline';
+  }
+}
+
+let wsConnected=false;
+
+function connectWebSocket(){
+  try{
+    const ws=new WebSocket(WS_URL);
+    let opened=false;
+    ws.onopen=()=>{
+      opened=true;wsConnected=true;setConnected('connected');
+    };
+    ws.onmessage=e=>{
+      try{
+        const data=JSON.parse(e.data);if(!data.sensors)return;
+        sensors=data.sensors;const watts=data.energy_watts||0,now=Date.now();
+        energyHistory.push(watts);energyHistory.shift();
+        tempHistory.push(sensors.temperature||0);tempHistory.shift();
+        humHistory.push(sensors.humidity||0);humHistory.shift();
+        if(now-lastAqiPush>=60000){aqiHistory.push(sensors.aqi||0);aqiHistory.shift();lastAqiPush=now;}
+        updateSensorUI(sensors,watts);updateFloorPlan();updateCharts();updateSparklines();
+        if(document.getElementById('page-energy').classList.contains('active'))renderEnergy();
+        if(document.getElementById('page-safety').classList.contains('active'))renderSafety();
+      }catch(e){console.warn('WS message parse error:',e);}
+    };
+    ws.onerror=()=>{/* handled in onclose */};
+    ws.onclose=()=>{
+      wsConnected=false;
+      // If it never opened, WS isn't supported/available — show degraded (REST still works)
+      // rather than "Offline" which implies the whole server is unreachable.
+      if(!opened)setConnected('degraded');
+      else setConnected('degraded');
+      // Retry with exponential backoff — 4s, 8s, then cap at 15s
+      const delay=wsRetryCount<3?4000:wsRetryCount<6?8000:15000;
+      wsRetryCount=Math.min(wsRetryCount+1,10);
+      setTimeout(connectWebSocket,delay);
+    };
+  }catch(e){
+    setConnected('degraded');
+    setTimeout(connectWebSocket,8000);
+  }
+}
+let wsRetryCount=0;
+
+// API
+async function apiFetch(path,options){
+  try{const r=await fetch(API+path,options);if(!r.ok)return null;setConnected(wsConnected?'connected':'degraded');return await r.json();}
+  catch(e){setConnected('offline');return null;}
+}
+
+async function loadAll(){
+  const[status,family,logs]=await Promise.all([apiFetch('/api/status'),apiFetch('/api/family'),apiFetch('/api/security/logs')]);
+  if(status){
+    devices=status.devices||{};sensors=status.sensors||{};
+    const w=status.energy_watts||0;
+    energyHistory=energyHistory.map(()=>w);tempHistory=tempHistory.map(()=>sensors.temperature||0);
+    humHistory=humHistory.map(()=>sensors.humidity||0);aqiHistory=aqiHistory.map(()=>sensors.aqi||0);
+    updateSensorUI(sensors,w);
+  }
+  if(family)familyMembers=family;
+  if(logs)securityLogs=logs;
+  renderOverview();updateCharts();updateClock();updateSparklines();
+}
+
+async function refreshSensors(){
+  const status=await apiFetch('/api/status');if(!status)return;
+  devices=status.devices||{};sensors=status.sensors||{};
+  const w=status.energy_watts||0,now=Date.now();
+  energyHistory.push(w);energyHistory.shift();
+  tempHistory.push(sensors.temperature||0);tempHistory.shift();
+  humHistory.push(sensors.humidity||0);humHistory.shift();
+  if(now-lastAqiPush>=60000){aqiHistory.push(sensors.aqi||0);aqiHistory.shift();lastAqiPush=now;}
+  updateSensorUI(sensors,w);updateFloorPlan();updateCharts();updateSparklines();renderOverview();
+  // Keep active pages live
+  if(document.getElementById('page-energy').classList.contains('active'))renderEnergy();
+  if(document.getElementById('page-safety').classList.contains('active'))renderSafety();
+}
+
+// SPARKLINES
+function updateSparklines(){
+  drawSparkline('spark-temp',tempHistory,'#f59e0b');
+  drawSparkline('spark-energy',energyHistory,'#a78bfa');
+}
+function drawSparkline(id,data,color){
+  const el=document.getElementById(id);if(!el)return;
+  const valid=data.filter(v=>v>0);if(!valid.length)return;
+  const mn=Math.min(...valid),mx=Math.max(...valid)||1;
+  el.innerHTML=data.map((v,i)=>{
+    const h=Math.max(4,((v-mn)/(mx-mn||1))*22);
+    const isLast=i===data.length-1;
+    return`<div class="spark-bar" style="height:${h}px;background:${isLast?color:color+'55'};flex:1;border-radius:1px 1px 0 0"></div>`;
+  }).join('');
+}
+
+// SENSOR UI
+function aqiColor(v){if(!v)return'#22c55e';if(v<=50)return'#22c55e';if(v<=100)return'#84cc16';if(v<=200)return'#f59e0b';if(v<=300)return'#ef4444';if(v<=400)return'#b91c1c';return'#7f1d1d';}
+function smokeColor(v){return v>40?'#ef4444':v>20?'#f59e0b':'#22c55e';}
+function safeVal(v){return(v!==null&&v!==undefined&&!isNaN(v))?v:0;}
+
+function updateSensorUI(s,watts){
+  // If server reports 0 but devices are on locally, compute from local state
+  if(watts===0&&Object.keys(devices).length>0){
+    watts=Object.entries(devices).reduce((total,[,devs])=>
+      total+Object.entries(devs).reduce((sum,[dk,dv])=>sum+(dv.on?effWatts(dk,dv):0),0),0);
+  }
+  // Apply any active test-alert override so overview safety card matches the Safety page
+  s=applySafetyOverride(s);
+  const temp=safeVal(s.temperature),hum=safeVal(s.humidity),aqi=safeVal(s.aqi),smoke=safeVal(s.smoke),gas=safeVal(s.gas);
+  document.getElementById('weatherChip').innerHTML=`🌡 ${temp}°C &nbsp;💧 ${hum}%`;
+  setText('ov-temp',`${temp}<span class="sensor-unit">°C</span>`);
+  setText('ov-hum',`${hum}<span class="sensor-unit">%</span>`);
+  setText('ov-aqi',aqi||'--');
+  setText('ov-hvac',`HVAC: ${s.hvac_status||'--'}`);
+  setText('ov-aqi-cat',s.aqi_category||'--');
+  setText('ov-energy',`${watts}<span class="sensor-unit">W</span>`);
+  setText('ov-energy-sub',`today: ${(watts*8/1000).toFixed(2)} kWh · ₹${(watts*8/1000*8.5).toFixed(0)}`);
+  setText('ov-smoke',`${smoke}%`);setText('ov-gas',`${gas}%`);
+  setText('ov-hum-note',hum<40?'a bit dry in here':hum>70?'feeling muggy':'40–60% is comfortable');
+  setBar('ov-hum-bar',Math.min(100,hum),'#06b6d4');
+  setBar('ov-aqi-bar',Math.min(100,(aqi/500)*100),aqiColor(aqi));
+  setBar('ov-smoke-bar',Math.min(100,smoke),smokeColor(smoke));
+  setBar('ov-gas-bar',Math.min(100,gas),smokeColor(gas));
+  const danger=smoke>40||gas>40;
+  setText('safety-status',danger?'⚠ ALERT':'● All clear');
+  document.getElementById('safety-status').style.color=danger?'var(--red)':'var(--green)';
+  setText('cl-temp',`${temp}<span class="sensor-unit">°C</span>`);
+  setText('cl-hum',`${hum}<span class="sensor-unit">%</span>`);
+  setText('cl-hvac',s.hvac_status||'--');setText('cl-target',`Target: ${s.hvac_target||'--'} °C`);
+  const hi=temp>27?(temp+0.33*(hum/100*6.105*Math.exp(17.27*temp/(237.3+temp)))-4).toFixed(1):temp;
+  setText('cl-feels-like',`feels like ${hi}°C`);
+  setText('cl-hum-status',hum<40?'too dry':hum>70?'too humid':'comfortable');
+  const ac=aqiColor(aqi);
+  setText('aqi-num',aqi||'--');setText('aqi-cat',s.aqi_category||'--');
+  const an=document.getElementById('aqi-num'),ac2=document.getElementById('aqi-cat');
+  if(an)an.style.color=ac;if(ac2)ac2.style.color=ac;
+  const aqiPos=Math.min(94,Math.max(3,(aqi/500)*100));
+  const aqiInd=document.getElementById('aqi-ind');if(aqiInd)aqiInd.style.left=aqiPos+'%';
+  setText('aqi-pm25',s.pm25?s.pm25+' µg/m³':'--');setText('aqi-pm10',s.pm10?s.pm10+' µg/m³':'--');
+  setText('aqi-co2',s.co2_ppm?s.co2_ppm+' ppm':'--');setText('aqi-hum',hum+' %');
+  updateAQIAdvisory(aqi,s.aqi_category);
+  updateFireAlerts('ov-fire-alerts',smoke,gas,temp);
+  if(document.getElementById('page-safety')?.classList.contains('active'))renderSafety();
+}
+
+function updateAQIAdvisory(aqi,cat){
+  const map={'Good':{icon:'😊',text:"Air's clean — good time to open the windows.",c:'var(--green)'},
+    'Satisfactory':{icon:'🙂',text:'Acceptable. Sensitive people might want to limit outdoor exposure.',c:'#84cc16'},
+    'Moderate':{icon:'😐',text:'Moderate pollution. Take it easy outside if you have asthma or allergies.',c:'var(--orange)'},
+    'Poor':{icon:'😷',text:'Everyone may feel effects. Wear a mask if going out.',c:'var(--orange)'},
+    'Very Poor':{icon:'🚫',text:"Seriously bad. Stay indoors, shut windows, skip outdoor exercise.",c:'var(--red)'},
+    'Severe':{icon:'☠️',text:'SEVERE. Health emergency — avoid going out at all.',c:'var(--red)'}};
+  const a=map[cat]||map['Moderate'];
+  const el=document.getElementById('aqi-advisory');if(!el)return;
+  el.innerHTML=`<div style="display:flex;gap:14px;align-items:flex-start"><div style="font-size:32px;flex-shrink:0">${a.icon}</div><div>
+    <div style="font-size:14px;font-weight:600;color:${a.c};margin-bottom:5px">${cat||'--'}</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.5">${a.text}</div>
+    ${aqi>200?'<div style="font-size:12px;color:var(--text3);margin-top:8px">Tip: close windows · run air purifier · wear N95 outside</div>':''}
+  </div></div>`;
+}
+
+function updateFireAlerts(id,smoke,gas,temp){
+  const el=document.getElementById(id);if(!el)return;
+  let html='';
+  if(smoke>40)html+=`<div class="alert-chip"><span style="font-size:22px">💨</span><div><b style="color:var(--red)">SMOKE DETECTED</b><div style="font-size:12px;color:var(--text2);margin-top:2px">Level at ${smoke}% — above 40% threshold</div></div></div>`;
+  if(gas>40)html+=`<div class="alert-chip"><span style="font-size:22px">⚠️</span><div><b style="color:var(--red)">GAS LEAK</b><div style="font-size:12px;color:var(--text2);margin-top:2px">Reading at ${gas}% — ventilate immediately</div></div></div>`;
+  if(temp>50)html+=`<div class="alert-chip"><span style="font-size:22px">🔥</span><div><b style="color:var(--red)">FIRE RISK</b><div style="font-size:12px;color:var(--text2);margin-top:2px">Temperature ${temp}°C — abnormally high</div></div></div>`;
+  el.innerHTML=html;
+}
+
+// OVERVIEW
+function renderOverview(){
+  const famEl=document.getElementById('ov-family-list');
+  if(famEl)famEl.innerHTML=familyMembers.map(m=>`<div class="member-card">
+    <div class="member-avatar" style="background:${m.color}">${m.avatar}</div>
+    <div class="member-info"><div class="member-name">${m.name}</div><div class="member-role">${m.role}</div></div>
+    <div class="status-dot dot-${m.status}"></div></div>`).join('');
+  const devEl=document.getElementById('ov-active-devices');
+  if(devEl){
+    let active=[];
+    for(const[room,devs]of Object.entries(devices))for(const[dk,dv]of Object.entries(devs))if(dv.on){let w=effWatts(dk,dv);active.push({room:ROOM_NAMES[room]||room,name:dk,watts:w});}
+    devEl.innerHTML=active.length
+      ?active.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+        <span>${deviceEmoji(d.name)} ${formatDevName(d.name)} <span style="color:var(--text3);font-size:10.5px">(${d.room})</span></span>
+        <span style="color:var(--accent);font-size:11px;font-weight:600">${d.watts}W</span></div>`).join('')
+      :'<div style="color:var(--text3);font-size:13px;padding:10px 0">Looks like everything\'s off — good for the bill 👍</div>';
+  }
+  const logEl=document.getElementById('ov-recent-logs');
+  if(logEl)logEl.innerHTML=securityLogs.slice(0,5).map(logHTML).join('');
+}
+
+// SCENES
+const SCENES={
+  morning:{living_room:{light:{on:true,brightness:90},fan:{on:false,speed:0},tv:{on:false},ac:{on:false}},kitchen:{light:{on:true,brightness:100}},label:'Morning mode — lights on, AC off'},
+  away:{living_room:{light:{on:false},fan:{on:false,speed:0},tv:{on:false},ac:{on:false}},aditya_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},diksha_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},agrim_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},naman_room:{light:{on:false},fan:{on:false,speed:0}},kamakshi_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},kitchen:{light:{on:false}},bathroom:{light:{on:false}},label:'Away mode — everything off'},
+  movie:{living_room:{light:{on:true,brightness:20},fan:{on:true,speed:2},tv:{on:true},ac:{on:false}},label:'Movie mode — dim lights, TV on'},
+  night:{living_room:{light:{on:false},fan:{on:false,speed:0},tv:{on:false},ac:{on:false}},aditya_room:{light:{on:false},fan:{on:true,speed:2},ac:{on:true,temp:22}},diksha_room:{light:{on:false},fan:{on:true,speed:1},ac:{on:false}},agrim_room:{light:{on:false},fan:{on:true,speed:2},ac:{on:false}},naman_room:{light:{on:false},fan:{on:true,speed:1}},kamakshi_room:{light:{on:false},fan:{on:true,speed:1},ac:{on:false}},kitchen:{light:{on:false}},bathroom:{light:{on:false}},label:'Good night — bedrooms set, living off'},
+  all_off:{living_room:{light:{on:false},fan:{on:false,speed:0},tv:{on:false},ac:{on:false}},aditya_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},diksha_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},agrim_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},naman_room:{light:{on:false},fan:{on:false,speed:0}},kamakshi_room:{light:{on:false},fan:{on:false,speed:0},ac:{on:false}},kitchen:{light:{on:false}},bathroom:{light:{on:false}},label:'All devices off'}
+};
+
+async function activateScene(name){
+  const scene=SCENES[name];if(!scene)return;
+  document.querySelectorAll('.scene-btn').forEach(b=>b.classList.remove('active-scene'));
+  document.getElementById('scene-'+name)?.classList.add('active-scene');
+  activeScene=name;
+  for(const[room,devs]of Object.entries(scene)){
+    if(room==='label'||!devices[room])continue;
+    for(const[dk,vals]of Object.entries(devs)){
+      if(!devices[room][dk])continue;
+      const merged={...devices[room][dk],...vals};
+      await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:dk,value:merged})});
+      devices[room][dk]={...devices[room][dk],...vals};
+    }
+  }
+  updateFloorPlan();renderOverview();
+  if(document.getElementById('page-devices').classList.contains('active'))renderDeviceGrid(currentRoom);
+  showToast(scene.label||name,'success');
+  pushNotification('Scene activated',scene.label||name);
+  // Log to simulation run log
+  const now=new Date();
+  simRunLog.unshift({cat:'scene',label:`Scene: ${scene.label||name}`,detail:'Bulk device state applied across all rooms',time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),date:now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})});
+  if(document.getElementById('page-simulations').classList.contains('active'))renderSimulations();
+}
+
+// ─── FLOOR PLAN ───────────────────────────────────────────
+
+// Room fill colours by state
+const ROOM_FILLS = {
+  default:{
+    living_room:'#212840',aditya_room:'#22182e',diksha_room:'#181a2e',
+    agrim_room:'#1a2232',naman_room:'#18241e',kamakshi_room:'#18221a',
+    kitchen:'#1a2830',bathroom:'#1a1e2e'
+  }
+};
+// Glow tints when devices are on
+function roomActiveFill(room){
+  const devs=devices[room]||{};
+  const lightOn=devs.light?.on;
+  const acOn=devs.ac?.on;
+  const fanOn=devs.fan?.on&&devs.fan.speed>0;
+  const tvOn=devs.tv?.on;
+  if(lightOn&&acOn) return '#1e2a40'; // mixed blue-warm
+  if(lightOn)       return '#2a2a1a'; // warm amber tint
+  if(acOn)          return '#161e2a'; // cool cyan tint
+  if(fanOn||tvOn)   return '#1a1e30'; // soft blue
+  return ROOM_FILLS.default[room]||'#1e2236';
+}
+function roomStroke(room){
+  const devs=devices[room]||{};
+  if(devs.light?.on)       return['rgba(251,191,36,.55)','2'];
+  if(devs.ac?.on)          return['rgba(6,182,212,.5)','2'];
+  if(Object.values(devs).some(d=>d.on)) return['rgba(108,139,239,.4)','1.5'];
+  return['none','0'];
+}
+
+// Animate SVG fan group by spinning the <g> element
+function animateFanGroup(groupId,room){
+  const g=document.getElementById(groupId);if(!g)return;
+  const dev=devices[room]?.fan;
+  if(dev?.on&&dev.speed>0){
+    const dur=(1.2/dev.speed).toFixed(2);
+    g.style.animation=`spin ${dur}s linear infinite`;
+  } else {
+    g.style.animation='none';
+  }
+}
+
+// Update light bulb indicator (emoji changes + circle glow)
+function updateLightIndicator(iconId,circId,glowId,room){
+  const icon=document.getElementById(iconId),circ=document.getElementById(circId),glow=document.getElementById(glowId);
+  if(!icon)return;
+  const on=devices[room]?.light?.on;
+  const brightness=(devices[room]?.light?.brightness||100)/100;
+  icon.textContent=on?'💡':'🔦';
+  if(circ)circ.setAttribute('fill',on?`rgba(255,240,120,${0.3+brightness*0.5})`:'#212840');
+  if(glow){glow.setAttribute('fill',on?`rgba(255,210,60,${brightness*0.5})`:'none');glow.setAttribute('opacity',on?'1':'0');}
+}
+
+// Update occupancy dots inside a room
+function updateOccupancy(occGroupId,room,cx,cy){
+  const g=document.getElementById(occGroupId);if(!g)return;
+  const home=familyMembers.filter(m=>m.status==='home'&&MEMBER_ROOM[m.name]===room);
+  if(!home.length){g.innerHTML='';return;}
+  g.innerHTML=home.map((m,i)=>`
+    <circle cx="${cx+(i*18)}" cy="${cy}" r="9" fill="${m.color}" stroke="var(--bg)" stroke-width="2" opacity="0.9"/>
+    <text x="${cx+(i*18)}" y="${cy+4}" text-anchor="middle" font-size="8" font-weight="700" fill="white" font-family="Segoe UI,sans-serif">${m.avatar.charAt(0)}</text>
+  `).join('');
+}
+
+function updateFloorPlan(){
+  const rooms=['living_room','aditya_room','diksha_room','agrim_room','naman_room','kamakshi_room','kitchen','bathroom'];
+  rooms.forEach(room=>{
+    const el=document.getElementById('room-'+room);if(!el)return;
+    // Room fill + stroke based on device state
+    el.setAttribute('fill',roomActiveFill(room));
+    const[sc,sw]=roomStroke(room);
+    el.setAttribute('stroke',sc);el.setAttribute('stroke-width',sw);
+    // Device text label
+    const labelEl=document.getElementById('fp-'+room+'-devices');
+    if(labelEl&&devices[room]){
+      const on=Object.entries(devices[room]).filter(([,d])=>d.on).map(([k])=>formatDevName(k));
+      labelEl.textContent=on.length?on.join(' · '):'all off';
+    }
+  });
+  // SVG fan groups — spin by animating the <g>
+  [['fp-fan-living','living_room'],['fp-fan-aditya','aditya_room'],
+   ['fp-fan-diksha','diksha_room'],['fp-fan-agrim','agrim_room'],
+   ['fp-fan-naman','naman_room'],['fp-fan-kamakshi','kamakshi_room']]
+  .forEach(([gid,room])=>animateFanGroup(gid,room));
+  // Light indicators
+  updateLightIndicator('fp-bulb-living-icon','fp-light-living','fp-light-glow-living','living_room');
+  updateLightIndicator('fp-bulb-kitchen-icon','fp-light-kitchen',null,'kitchen');
+  updateLightIndicator('fp-bulb-bathroom-icon','fp-light-bathroom',null,'bathroom');
+  // Occupancy dots (cx, cy = where to place dots in each room)
+  updateOccupancy('fp-occ-living_room','living_room', 200, 272);
+  updateOccupancy('fp-occ-aditya_room','aditya_room', 768, 148);
+  updateOccupancy('fp-occ-diksha_room','diksha_room', 940, 148);
+  updateOccupancy('fp-occ-agrim_room','agrim_room',   437, 452);
+  updateOccupancy('fp-occ-naman_room','naman_room',   615, 452);
+  updateOccupancy('fp-occ-kamakshi_room','kamakshi_room',780,452);
+}
+
+// Floor plan room click panel
+let fpPanelOpen=false;
+function showFloorPlanRoom(roomId){
+  const panel=document.getElementById('fpPanel');
+  const overlay=document.getElementById('fpPanelOverlay');
+  if(!panel)return;
+  document.getElementById('fpPanelTitle').textContent=ROOM_NAMES[roomId]||roomId;
+  const body=document.getElementById('fpPanelBody');
+  // Member living here
+  const resident=familyMembers.find(m=>MEMBER_ROOM[m.name]===roomId);
+  const residentHTML=resident?`<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:12px">
+    <div style="width:32px;height:32px;border-radius:50%;background:${resident.color};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">${resident.avatar}</div>
+    <div><div style="font-size:13px;font-weight:600">${resident.name}</div>
+    <div style="font-size:10px;color:${resident.status==='home'?'var(--green)':'var(--text3)'}">${resident.status==='home'?'● At home':'○ Away'}</div></div>
+  </div>`:'';
+  // Room wattage
+  const roomW=devices[roomId]?Object.entries(devices[roomId]).reduce((s,[k,v])=>s+(v.on?effWatts(k,v):0),0):0;
+  body.innerHTML=residentHTML+
+    `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:12px">
+      <span>Total draw</span><span style="color:var(--accent);font-weight:600">${roomW}W</span>
+    </div>`+
+    (devices[roomId]?`<div class="device-grid" style="grid-template-columns:1fr 1fr">${renderDevicesHTML(roomId)}</div>`:'<div style="color:var(--text3);font-size:13px">No devices</div>');
+  panel.classList.add('open');
+  overlay.classList.add('open');
+  fpPanelOpen=true;
+}
+function closeFpPanel(){
+  document.getElementById('fpPanel')?.classList.remove('open');
+  document.getElementById('fpPanelOverlay')?.classList.remove('open');
+  fpPanelOpen=false;
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const wrap=document.querySelector('.floor-plan-wrap');
+  let clickTimer=null;
+  document.querySelectorAll('.room-rect').forEach(rect=>{
+    rect.addEventListener('click',function(){
+      // Delay single-click action slightly so a follow-up dblclick can cancel it,
+      // preventing the panel from flickering open/closed on double-click
+      const roomId=this.id.replace('room-','');
+      if(clickTimer)clearTimeout(clickTimer);
+      clickTimer=setTimeout(()=>{showFloorPlanRoom(roomId);clickTimer=null;},180);
+    });
+    rect.addEventListener('dblclick',function(e){
+      e.stopPropagation();
+      if(clickTimer){clearTimeout(clickTimer);clickTimer=null;}
+      const roomId=this.id.replace('room-','');
+      if(!devices[roomId]?.light)return;
+      toggleDev(roomId,'light');
+      // Still open the panel so the new state is visible
+      showFloorPlanRoom(roomId);
+    });
+    rect.addEventListener('mousemove',function(e){
+      const roomId=this.id.replace('room-','');
+      if(!devices[roomId])return;
+      const tt=document.getElementById('roomTooltip');
+      const on=Object.entries(devices[roomId]).filter(([,d])=>d.on).map(([k])=>formatDevName(k));
+      const watts=Object.entries(devices[roomId]).reduce((s,[k,v])=>s+(v.on?effWatts(k,v):0),0);
+      const resident=familyMembers.find(m=>MEMBER_ROOM[m.name]===roomId);
+      tt.innerHTML=`<b>${ROOM_NAMES[roomId]||roomId}</b>`+
+        (resident?`<div class="tt-row"><span>👤 ${resident.name}</span><span style="color:${resident.status==='home'?'var(--green)':'var(--text3)'}">${resident.status}</span></div>`:'') +
+        `<div class="tt-row"><span>${on.length?on.join(', '):'All off'}</span><span>${watts>0?watts+'W':''}</span></div>`+
+        `<div style="font-size:10px;color:var(--text3);margin-top:4px">Click to open · Double-click to toggle light</div>`;
+      const r2=wrap.getBoundingClientRect();
+      tt.style.left=(e.clientX-r2.left+14)+'px';
+      tt.style.top=(e.clientY-r2.top+12)+'px';
+      tt.style.display='block';
+    });
+    rect.addEventListener('mouseleave',()=>{
+      document.getElementById('roomTooltip').style.display='none';
+    });
+  });
+});
+
+// DEVICES
+function selectRoom(roomId,el){
+  currentRoom=roomId;
+  document.querySelectorAll('.room-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');renderDeviceGrid(roomId);
+}
+
+function renderDeviceGrid(roomId){
+  const grid=document.getElementById('deviceGrid'),title=document.getElementById('devRoomTitle');
+  if(!grid)return;if(title)title.textContent=ROOM_NAMES[roomId]||roomId;
+  if(!devices[roomId]){grid.innerHTML='<div style="color:var(--text3)">No devices</div>';return;}
+  grid.innerHTML=renderDevicesHTML(roomId);updateRoomWatts(roomId);
+}
+
+function renderDevicesHTML(roomId){
+  const devs=devices[roomId];if(!devs)return'';
+  return Object.entries(devs).map(([dk,dv])=>{
+    const isOn=!!dv.on;
+    const extra=dk==='light'&&isOn?' light-on':dk==='ac'&&isOn?' ac-on':'';
+    const fanAnim=dk==='fan'&&isOn&&dv.speed>0?`style="display:inline-block;animation:spin ${(1.2/dv.speed).toFixed(2)}s linear infinite"`:'';
+    return `<div class="device-card${isOn?' on':''}${extra}">
+      <div class="device-icon"><span ${fanAnim}>${deviceEmoji(dk)}</span></div>
+      <div class="device-name">${formatDevName(dk)}</div>
+      <div class="device-status">${deviceStatus(dv,dk)}</div>
+      <div class="toggle-row"><span style="font-size:11px;color:var(--text3)">${isOn?effWatts(dk,dv)+'W':'off'}</span>
+        <div class="switch${isOn?' on':''}" onclick="toggleDev('${roomId}','${dk}')"></div></div>
+      ${dk==='light'?`<div class="slider-row"><div class="slider-label-row"><label>Brightness</label><span class="slider-val">${dv.brightness||80}%</span></div><input type="range" min="1" max="100" value="${dv.brightness||80}" data-room="${roomId}" data-device="light" data-prop="brightness" oninput="updateSlider(this,'brightness')"></div>`:''}
+      ${dk==='fan'?`<div class="slider-row"><div class="slider-label-row"><label>Speed</label><span class="slider-val">${dv.speed||0}/5</span></div><input type="range" min="0" max="5" value="${dv.speed||0}" data-room="${roomId}" data-device="fan" data-prop="speed" oninput="updateSlider(this,'speed')"></div>`:''}
+      ${dk==='ac'?`<div class="slider-row"><div class="slider-label-row"><label>Set temp</label><span class="slider-val">${dv.temp||24}°C</span></div><input type="range" min="16" max="30" value="${dv.temp||24}" data-room="${roomId}" data-device="ac" data-prop="temp" oninput="updateSlider(this,'temp')"></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function effWatts(dk,dv){let w=dv.watts||0;if(dk==='fan')w=Math.round(w*((dv.speed||0)/5));if(dk==='light')w=Math.round(w*((dv.brightness||100)/100));return w;}
+
+async function toggleDev(room,dk){
+  const dev=devices[room]?.[dk];if(!dev)return;const newOn=!dev.on;
+  const result=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:dk,value:{on:newOn}})});
+  if(result?.ok){
+    devices[room][dk].on=newOn;
+    if(document.getElementById('page-devices').classList.contains('active'))renderDeviceGrid(room);
+    if(document.getElementById('page-floorplan').classList.contains('active')){
+      updateFloorPlan();
+      // Only refresh the slide-in panel if it's already open for this room
+      if(fpPanelOpen&&document.getElementById('fpPanelTitle').textContent===(ROOM_NAMES[room]||room)){
+        showFloorPlanRoom(room);
+      }
+    }
+    updateRoomWatts(room);renderOverview();
+    showToast(`${formatDevName(dk)} ${newOn?'on':'off'} — ${ROOM_NAMES[room]}`,'info');
+  }
+}
+
+async function updateSlider(input,prop){
+  const room=input.dataset.room,dk=input.dataset.device,val=parseFloat(input.value);
+  const valEl=input.parentElement.querySelector('.slider-val');
+  if(valEl)valEl.textContent=prop==='brightness'?val+'%':prop==='temp'?val+'°C':val+'/5';
+  const newOn=dk==='fan'?val>0:(devices[room]?.[dk]?.on??true);
+  const result=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:dk,value:{[prop]:val,on:newOn}})});
+  if(result?.ok&&devices[room]?.[dk]){
+    devices[room][dk][prop]=val;devices[room][dk].on=newOn;
+    if(document.getElementById('page-devices').classList.contains('active'))renderDeviceGrid(room);
+    if(document.getElementById('page-floorplan').classList.contains('active')){
+      updateFloorPlan();
+      if(fpPanelOpen&&document.getElementById('fpPanelTitle').textContent===(ROOM_NAMES[room]||room)){
+        showFloorPlanRoom(room);
+      }
+    }
+    updateRoomWatts(room);renderOverview();
+  }
+}
+
+function updateRoomWatts(roomId){
+  const el=document.getElementById('devRoomWatts');if(!el||!devices[roomId])return;
+  let w=0;for(const[dk,dv]of Object.entries(devices[roomId]))if(dv.on)w+=effWatts(dk,dv);el.textContent=w+'W';
+}
+
+async function turnOffAllInRoom(){
+  if(!devices[currentRoom])return;
+  for(const dk of Object.keys(devices[currentRoom])){
+    if(devices[currentRoom][dk].on){
+      await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:currentRoom,device:dk,value:{on:false}})});
+      devices[currentRoom][dk].on=false;
+    }
+  }
+  renderDeviceGrid(currentRoom);updateFloorPlan();renderOverview();showToast(`All ${ROOM_NAMES[currentRoom]} devices off`,'warn');
+}
+
+// ENERGY
+async function renderEnergy(){
+  // Always recompute watts from current local device state first (fixes 0W bug)
+  let localWatts=Object.entries(devices).reduce((t,[,devs])=>t+Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0),0);
+  const data=await apiFetch('/api/energy');
+  const totalWatts=data?.total_watts||localWatts;
+  const kwhToday=data?.kwh_today||(totalWatts*8/1000).toFixed(2);
+  const costToday=data?.cost_today||(totalWatts*8/1000*8.5).toFixed(2);
+  setText('en-watts',`${totalWatts}<span class="sensor-unit">W</span>`);
+  setText('en-kwh',`${kwhToday}<span class="sensor-unit">kWh</span>`);
+  setText('en-cost',`₹${parseFloat(costToday).toFixed(2)} at ₹8.5/unit`);
+  const monthly=(parseFloat(kwhToday)*30).toFixed(1);
+  setText('en-monthly',`${monthly}<span class="sensor-unit">kWh</span>`);
+  setText('en-monthly-cost',`₹${(parseFloat(monthly)*8.5).toFixed(0)} est.`);
+  let count=0,total=0;
+  for(const devs of Object.values(devices))for(const d of Object.values(devs)){total++;if(d.on)count++;}
+  setText('en-count',count);setText('en-total-sub',`out of ${total} total`);
+  const roomsEl=document.getElementById('en-rooms');
+  if(roomsEl){
+    // Compute room breakdown from local state (always accurate)
+    const breakdown={};
+    for(const[room,devs]of Object.entries(devices)){
+      breakdown[room]=Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0);
+    }
+    const maxW=Math.max(1,...Object.values(breakdown));
+    const colors=['#6c8bef','#a78bfa','#06b6d4','#22c55e','#f59e0b','#ef4444','#ec4899','#84cc16'];
+    roomsEl.innerHTML=Object.entries(breakdown).map(([room,w],i)=>`<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--text2)">${ROOM_NAMES[room]||room}</span><span style="font-weight:600">${w}W</span></div>
+      <div class="bar-track" style="height:7px;border-radius:3px"><div class="bar-fill" style="width:${w/maxW*100}%;background:${colors[i%colors.length]}"></div></div></div>`).join('');
+  }
+  const devEl=document.getElementById('en-devices');
+  if(devEl){
+    let rows=[];
+    for(const[room,devs]of Object.entries(devices))for(const[dk,dv]of Object.entries(devs))rows.push({room:ROOM_NAMES[room]||room,name:formatDevName(dk),on:dv.on,watts:dv.on?effWatts(dk,dv):0});
+    rows.sort((a,b)=>b.watts-a.watts);
+    const hdr='font-size:10px;color:var(--text3);padding:6px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.4px';
+    const cell='font-size:12px;padding:7px 0;border-bottom:1px solid var(--border)';
+    devEl.innerHTML=`<div style="display:grid;grid-template-columns:2fr 2fr 1fr 1fr;gap:0">
+      <div style="${hdr}">Device</div><div style="${hdr}">Room</div><div style="${hdr}">Status</div><div style="${hdr};text-align:right">Watts</div>
+      ${rows.map(r=>`<div style="${cell}">${r.name}</div><div style="${cell};color:var(--text2)">${r.room}</div>
+        <div style="${cell};color:${r.on?'var(--green)':'var(--text3)'}">${r.on?'On':'Off'}</div>
+        <div style="${cell};text-align:right;font-weight:${r.watts>0?600:400};color:${r.watts>200?'var(--orange)':r.watts>0?'var(--text)':'var(--text3)'}">${r.watts}</div>`).join('')}
+    </div>`;
+  }
+  const barsEl=document.getElementById('energyBars'),labsEl=document.getElementById('energyLabels');
+  if(barsEl){
+    const maxE=Math.max(1,...energyHistory);
+    barsEl.innerHTML=energyHistory.map((w,i)=>`<div class="energy-bar-item${i===19?' now':''}" style="height:${Math.max(4,w/maxE*92)}px" title="${w}W"></div>`).join('');
+    labsEl.innerHTML=energyHistory.map((_,i)=>`<span>${i===19?'now':''}</span>`).join('');
+  }
+}
+
+// ── SAFETY PAGE ──────────────────────────────────
+// smokeHistory and gasHistory store {value, sim} objects.
+// sim:true means this reading came from a manual simulation (shown as SIM marker on charts).
+let smokeHistory=Array(20).fill({value:0,sim:false});
+let gasHistory=Array(20).fill({value:0,sim:false});
+let safetyAlertLog=[];
+let simRunLog=[];
+let lastSafetyHistoryPush=0;
+
+function renderSafety(){
+  let s=sensors;if(!s||!Object.keys(s).length)return;
+  s=applySafetyOverride(s);
+  const smoke=safeVal(s.smoke),gas=safeVal(s.gas),temp=safeVal(s.temperature);
+
+  // Update gauge cards
+  setText('sf-smoke',`${smoke}<span class="sensor-unit">%</span>`);
+  setText('sf-gas',  `${gas}<span class="sensor-unit">%</span>`);
+  setText('sf-temp', `${temp}<span class="sensor-unit">°C</span>`);
+
+  const sColor=smoke>40?'var(--red)':smoke>20?'var(--orange)':'var(--green)';
+  const gColor=gas>40?'var(--red)':gas>20?'var(--orange)':'var(--green)';
+  const tColor=temp>50?'var(--red)':temp>40?'var(--orange)':'#f97316';
+
+  setText('sf-smoke-status',smoke>40?'⚠ ABOVE THRESHOLD':smoke>20?'elevated — watch closely':'normal');
+  setText('sf-gas-status',  gas>40?'⚠ ABOVE THRESHOLD':gas>20?'elevated — watch closely':'normal');
+  setText('sf-temp-status', temp>50?'⚠ FIRE RISK':temp>40?'warm — monitor':'normal');
+
+  document.getElementById('sf-smoke').style.color=sColor;
+  document.getElementById('sf-gas').style.color=gColor;
+  document.getElementById('sf-temp').style.color=tColor;
+
+  setBar('sf-smoke-bar',Math.min(100,smoke),smoke>40?'#ef4444':smoke>20?'#f59e0b':'#22c55e');
+  setBar('sf-gas-bar',  Math.min(100,gas),  gas>40?'#ef4444':gas>20?'#f59e0b':'#22c55e');
+  setBar('sf-temp-bar', Math.min(100,(temp/80)*100),temp>50?'#ef4444':temp>40?'#f59e0b':'#22c55e');
+
+  // Status banner
+  const danger=smoke>40||gas>40||temp>50;
+  const clear=document.getElementById('sf-all-clear');
+  const alerts=document.getElementById('sf-danger-alerts');
+  if(clear)clear.style.display=danger?'none':'flex';
+  if(alerts){
+    let html='';
+    if(smoke>40)html+=`<div class="alert-chip" style="margin-bottom:8px"><span style="font-size:22px">💨</span><div><b style="color:var(--red)">SMOKE DETECTED</b><div style="font-size:12px;color:var(--text2);margin-top:2px">Level at ${smoke}% — above 40% threshold. Check kitchen area.</div></div></div>`;
+    if(gas>40)html+=`<div class="alert-chip" style="margin-bottom:8px"><span style="font-size:22px">⚠️</span><div><b style="color:var(--red)">GAS LEAK DETECTED</b><div style="font-size:12px;color:var(--text2);margin-top:2px">LPG at ${gas}% — open windows, don't use electrical switches.</div></div></div>`;
+    if(temp>50)html+=`<div class="alert-chip" style="margin-bottom:8px"><span style="font-size:22px">🔥</span><div><b style="color:var(--red)">FIRE RISK — HIGH TEMPERATURE</b><div style="font-size:12px;color:var(--text2);margin-top:2px">Temperature ${temp}°C — abnormally high indoors.</div></div></div>`;
+    alerts.innerHTML=html;
+  }
+
+  // Push to history every 10s (normal readings, not simulated)
+  const now=Date.now();
+  if(now-lastSafetyHistoryPush>=10000){
+    smokeHistory.push({value:smoke,sim:false});smokeHistory.shift();
+    gasHistory.push({value:gas,sim:false});gasHistory.shift();
+    lastSafetyHistoryPush=now;
+  }
+  drawLineChartAnnotated('smokeChart',smokeHistory,'#ef4444','%');
+  drawLineChartAnnotated('gasChart',gasHistory,'#f59e0b','%');
+
+  // Alert history
+  const histEl=document.getElementById('sf-alert-history');
+  if(histEl){
+    histEl.innerHTML=safetyAlertLog.length
+      ?safetyAlertLog.slice().reverse().map(a=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:16px">${a.type==='smoke'?'💨':a.type==='gas'?'⚠️':'🔥'}</span>
+          <div><div style="font-size:12.5px;font-weight:600;color:var(--red)">${a.message}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.time}</div></div></div>`).join('')
+      :'<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No alerts triggered today</div>';
+  }
+}
+
+let safetyOverride=null; // {type, value, expiresAt} - temporarily overrides a sensor for demo purposes
+
+function triggerTestAlert(type){
+  const msgs={smoke:'Smoke spike simulated — level exceeded 40%',gas:'Gas leak simulated — LPG level exceeded 40%',fire:'Fire risk simulated — temperature exceeded 50°C'};
+  const overrides={smoke:{key:'smoke',value:62},gas:{key:'gas',value:58},fire:{key:'temperature',value:55}};
+  const o=overrides[type];
+
+  // Immediately push the spike value into the charts WITH the sim marker — no waiting for 10s timer
+  if(type==='smoke'){
+    smokeHistory.push({value:o.value,sim:true});smokeHistory.shift();
+    lastSafetyHistoryPush=Date.now(); // reset timer so the next natural push is 10s after the sim
+  }
+  if(type==='gas'){
+    gasHistory.push({value:o.value,sim:true});gasHistory.shift();
+    lastSafetyHistoryPush=Date.now();
+  }
+  if(type==='fire'){
+    // Fire affects temperature — show it on the smoke chart as a temp spike (secondary)
+    // Fire sim still labels itself clearly in the run log
+  }
+
+  // Log to simulation run log with consistent shape
+  const now2=new Date();
+  simRunLog.unshift({
+    cat:type,
+    label:{smoke:'Smoke spike',gas:'Gas leak',fire:'Fire risk'}[type],
+    detail:`${o.key} pushed to ${o.value}${type==='fire'?'°C':'%'} (threshold ${type==='fire'?50:40}${type==='fire'?'°C':'%'})`,
+    time:now2.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+    date:now2.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+  });
+  const alertEntry={type,message:msgs[type],time:now2.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})};
+  safetyAlertLog.push(alertEntry);
+
+  showToast(msgs[type],'danger');
+  sendBrowserNotif(`🚨 Safety Alert — ${type.toUpperCase()}`,msgs[type]);
+  playIntruderSiren();
+
+  // Set sensor override for 8s so gauges visually spike
+  safetyOverride={key:o.key,value:o.value,expiresAt:Date.now()+8000};
+  const tick=()=>{
+    renderSafety();
+    if(safetyOverride)setTimeout(tick,1000);
+  };
+  setTimeout(tick,1000);
+
+  renderSafety();
+  // Refresh charts on simulations page too if visible
+  if(document.getElementById('page-simulations').classList.contains('active'))renderSimulations();
+}
+
+// Apply any active test-alert override on top of real sensor values (for demo purposes only)
+function applySafetyOverride(s){
+  if(!safetyOverride)return s;
+  if(Date.now()>safetyOverride.expiresAt){safetyOverride=null;return s;}
+  return {...s,[safetyOverride.key]:safetyOverride.value};
+}
+
+// SECURITY LOGS
+function logHTML(log){
+  const cfg={member:{bg:'#4f46e5',icon:'👤'},guest:{bg:'#0891b2',icon:'🙋'},delivery:{bg:'#d97706',icon:'📦'},intruder:{bg:'#ef4444',icon:'🚨'}};
+  const c=cfg[log.type]||cfg.guest;
+  const isInt=log.type==='intruder';
+  const wrap=isInt?' style="background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:10px 10px 10px 0;margin-bottom:4px"':'';
+  const badge=log.status==='authorized'?'authorized':log.status==='unauthorized'?'unauthorized':'visitor';
+  return`<div class="log-entry"${wrap}>
+    <div class="log-avatar" style="background:${c.bg}">${c.icon}</div>
+    <div class="log-info"><div class="log-name">${log.person}</div>
+      <div class="log-event">${log.event}${log.estimated?` <span style="color:var(--text3)">(expected ${log.estimated})</span>`:''}</div>
+      <div class="log-time">${log.date} · ${log.time}</div></div>
+    <div class="log-badge badge-${badge}">${log.status}</div></div>`;
+}
+
+function renderLogs(){
+  const filter=document.getElementById('logFilter')?.value||'all';
+  const filtered=filter==='all'?securityLogs:securityLogs.filter(l=>l.type===filter);
+  document.getElementById('securityLogList').innerHTML=filtered.length?filtered.map(logHTML).join(''):'<div style="color:var(--text3);font-size:13px;padding:24px;text-align:center">Nothing here yet</div>';
+  renderSecuritySummary();
+}
+
+function renderSecuritySummary(){
+  // Today's event count (everything logged today)
+  const today=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const todayCount=securityLogs.filter(l=>l.date===today || !l.date).length || securityLogs.length;
+  setText('sec-event-count', securityLogs.length);
+
+  // Last intruder alert
+  const lastIntruder=securityLogs.find(l=>l.type==='intruder');
+  const liEl=document.getElementById('sec-last-intruder');
+  if(liEl){
+    if(lastIntruder){
+      liEl.textContent=`${lastIntruder.time} · ${lastIntruder.date}`;
+      liEl.style.color='var(--red)';
+    } else {
+      liEl.textContent='None today';
+      liEl.style.color='var(--text2)';
+    }
+  }
+
+  // Mini recent-activity log (top 4)
+  const miniEl=document.getElementById('sec-mini-log');
+  if(miniEl){
+    const cfg={member:{bg:'#4f46e5',icon:'👤'},guest:{bg:'#0891b2',icon:'🙋'},delivery:{bg:'#d97706',icon:'📦'},intruder:{bg:'#ef4444',icon:'🚨'}};
+    miniEl.innerHTML=securityLogs.slice(0,4).map(l=>{
+      const c=cfg[l.type]||cfg.guest;
+      return `<div style="display:flex;align-items:center;gap:9px;font-size:12px">
+        <div style="width:24px;height:24px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">${c.icon}</div>
+        <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${l.person}</b> <span style="color:var(--text3)">${l.event}</span></div>
+        <div style="color:var(--text3);font-size:10.5px;flex-shrink:0">${l.time}</div>
+      </div>`;
+    }).join('') || '<div style="color:var(--text3);font-size:12px;text-align:center;padding:10px 0">No activity yet</div>';
+  }
+}
+
+function updateIntruderBanner(){
+  const banner=document.getElementById('intruderBanner');
+  const latest=securityLogs.find(l=>l.type==='intruder');
+  if(latest&&banner){banner.classList.add('show');document.getElementById('intruderBannerText').textContent=`${latest.person} at ${latest.time} — ${latest.event}`;}
+}
+function dismissIntruder(){document.getElementById('intruderBanner').classList.remove('show');}
+
+async function addDeliveryLog(){
+  const person=prompt('Service/person name:');if(!person)return;
+  const estimated=prompt('Estimated arrival HH:MM (blank if unknown):')||'';
+  const result=await apiFetch('/api/security/logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({person,type:'delivery',event:'package delivered',status:'visitor',estimated})});
+  if(result){securityLogs.unshift(result);renderLogs();showToast(`${person} logged`,'info');}
+}
+async function addGuestLog(){
+  const person=prompt('Guest name:');if(!person)return;
+  const result=await apiFetch('/api/security/logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({person,type:'guest',event:'visited',status:'authorized'})});
+  if(result){securityLogs.unshift(result);renderLogs();showToast(`${person} logged as guest`,'info');}
+}
+function toggleEstimated(){document.getElementById('estimatedGroup').style.display=document.getElementById('logPersonType').value==='delivery'?'':'none';}
+function showAddLogModal(){toggleEstimated();document.getElementById('addLogModal').classList.add('open');}
+async function submitLog(){
+  const person=document.getElementById('logPersonName').value.trim();
+  const type=document.getElementById('logPersonType').value;
+  const event=document.getElementById('logEvent').value.trim()||'visited';
+  const estimated=document.getElementById('logEstimated').value.trim();
+  if(!person){alert('Please enter a name');return;}
+  const status=type==='intruder'?'unauthorized':type==='member'?'authorized':'visitor';
+  const result=await apiFetch('/api/security/logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({person,type,event,status,estimated})});
+  if(result){securityLogs.unshift(result);renderLogs();}
+  closeModal('addLogModal');
+  ['logPersonName','logEvent','logEstimated'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+}
+
+// FAMILY
+function renderFamily(){
+  const list=document.getElementById('familyList');
+  if(list)list.innerHTML=familyMembers.map(m=>`<div class="member-card">
+    <div class="member-avatar${m.status==='home'?' home-ring':''}" style="background:${m.color}">${m.avatar}<div class="presence-ring"></div></div>
+    <div class="member-info"><div class="member-name">${m.name}</div><div class="member-role">${m.role}</div>
+      ${MEMBER_ROOM[m.name]?`<div class="member-room">${ROOM_NAMES[MEMBER_ROOM[m.name]]}</div>`:''}
+    </div>
+    <div style="display:flex;align-items:center;gap:7px">
+      <button class="btn btn-sm" onclick="toggleMemberStatus(${m.id})">${m.status==='home'?'🏠':'🚗'}</button>
+      ${m.role!=='Owner'?`<button class="btn btn-sm btn-danger" onclick="removeMember(${m.id})">✕</button>`:''}
+    </div></div>`).join('');
+  setText('fam-home-count',familyMembers.filter(m=>m.status==='home').length);
+  setText('fam-away-count',familyMembers.filter(m=>m.status==='away').length);
+  const fg=document.getElementById('faceMemberGrid');
+  if(fg)fg.innerHTML=familyMembers.slice(0,5).map(m=>`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 8px;text-align:center">
+    <div class="member-avatar" style="background:${m.color};margin:0 auto 8px">${m.avatar}</div>
+    <div style="font-size:12px;font-weight:600">${m.name}</div><div style="font-size:10px;color:var(--text3)">${m.role}</div>
+    <div style="font-size:10px;color:var(--green);margin-top:4px">✓ registered</div></div>`).join('');
+  const evEl=document.getElementById('fam-recent-events');
+  if(evEl)evEl.innerHTML=securityLogs.slice(0,5).map(l=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>${l.person}</span><span style="color:var(--text3)">${l.time} · ${l.date}</span></div>`).join('');
+}
+function toggleMemberStatus(id){
+  const m=familyMembers.find(m=>m.id===id);
+  if(m){
+    m.status=m.status==='home'?'away':'home';
+    renderFamily();renderOverview();updateClock();
+    if(document.getElementById('page-floorplan').classList.contains('active'))updateFloorPlan();
+  }
+}
+async function removeMember(id){if(!confirm('Remove?'))return;await apiFetch(`/api/family/${id}`,{method:'DELETE'});familyMembers=familyMembers.filter(m=>m.id!==id);renderFamily();}
+function showAddMemberModal(){document.getElementById('addMemberModal').classList.add('open');}
+async function addMember(){
+  const name=document.getElementById('newMemberName').value.trim(),role=document.getElementById('newMemberRole').value;if(!name)return;
+  const result=await apiFetch('/api/family/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,role})});
+  if(result){familyMembers.push(result);renderFamily();showToast(`${name} added`,'success');}
+  closeModal('addMemberModal');document.getElementById('newMemberName').value='';
+}
+
+// ─────────────────────────────────────────────────
+// BROWSER NOTIFICATIONS (Web Notifications API)
+// ─────────────────────────────────────────────────
+let notifPermission = 'default';
+
+async function requestNotifPermission(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'granted'){ notifPermission='granted'; return; }
+  if(Notification.permission !== 'denied'){
+    const perm = await Notification.requestPermission();
+    notifPermission = perm;
+  }
+}
+
+function sendBrowserNotif(title, body, icon='🚨'){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  const n = new Notification(title, {
+    body,
+    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">' + icon + '</text></svg>',
+    badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏠</text></svg>',
+    tag: 'smarthome-alert',
+    requireInteraction: true
+  });
+  n.onclick = () => { window.focus(); n.close(); showPage('security'); };
+}
+
+// ─────────────────────────────────────────────────
+// SOUND ALERTS (Web Audio API — no audio files needed)
+// ─────────────────────────────────────────────────
+let audioCtx = null;
+let sirenInterval = null;
+
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playIntruderSiren(){
+  try{
+    const ctx = getAudioCtx();
+    if(ctx.state === 'suspended') ctx.resume();
+    let pulse = 0;
+    const totalPulses = 6; // 3 seconds of alert
+
+    sirenInterval = setInterval(() => {
+      if(pulse >= totalPulses){ clearInterval(sirenInterval); sirenInterval=null; return; }
+
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Alternate between 880Hz (high) and 440Hz (low) for siren effect
+      const freq = pulse % 2 === 0 ? 880 : 440;
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      // Sweep pitch up/down for more alarming sound
+      osc.frequency.linearRampToValueAtTime(pulse % 2 === 0 ? 1200 : 300, ctx.currentTime + 0.45);
+
+      gain.gain.setValueAtTime(0.0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + 0.05);
+      gain.gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.45);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+      pulse++;
+    }, 500);
+  } catch(e){ console.warn('Audio alert failed:', e.message); }
+}
+
+function playMemberArrivalBeep(){
+  try{
+    const ctx = getAudioCtx();
+    if(ctx.state === 'suspended') ctx.resume();
+    // Two friendly ascending beeps
+    [0, 0.2].forEach((delay, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(i === 0 ? 523 : 659, ctx.currentTime + delay); // C5 → E5
+      gain.gain.setValueAtTime(0.0, ctx.currentTime + delay);
+      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + delay + 0.02);
+      gain.gain.linearRampToValueAtTime(0.0, ctx.currentTime + delay + 0.15);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.2);
+    });
+  } catch(e){ console.warn('Audio beep failed:', e.message); }
+}
+
+// ─────────────────────────────────────────────────
+// FACE RECOGNITION
+// ─────────────────────────────────────────────────
+let cameraClockInterval=null;
+let faceDetectionInterval=null;
+let faceModelsReady=false;
+let faceLabeledDescriptors=[]; // faceapi.LabeledFaceDescriptors[]
+let faceMatcher=null; // built once after models load, reused on every detection
+let faceDetectBusy=false; // guards against overlapping detection runs
+let lastFaceDetection={name:null,at:0}; // cooldown tracking
+let DETECTOR_OPTIONS=null; // created lazily once faceapi has loaded (see loadFaceModels)
+
+const FACE_API_SCRIPT_URLS=[
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js'
+];
+const FACE_API_WEIGHTS_URLS=[
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights',
+  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights'
+];
+const KNOWN_FACES=[
+  {name:'Aditya',  file:'/images/Aditya.jpeg'},
+  {name:'Diksha',  file:'/images/Diksha.jpeg'},
+  {name:'Agrim',   file:'/images/Agrim.jpeg'},
+  {name:'Naman',   file:'/images/Naman.jpeg'},
+  {name:'Kamakshi',file:'/images/Kamakshi.jpeg'}
+];
+
+// Dynamically load a <script> tag, resolving/rejecting on load/error
+function loadScript(src){
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src=src;s.async=true;
+    s.onload=()=>resolve();
+    s.onerror=()=>reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+// Try each face-api.js CDN URL in turn until the library loads successfully
+async function loadFaceApiLibrary(){
+  if(typeof faceapi!=='undefined')return true;
+  for(const url of FACE_API_SCRIPT_URLS){
+    try{await loadScript(url);if(typeof faceapi!=='undefined')return true;}
+    catch(e){console.warn(e.message);}
+  }
+  return false;
+}
+
+// Try loading the 3 required model bundles from a given weights base URL
+async function loadModelsFrom(base){
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(base),
+    faceapi.nets.faceLandmark68Net.loadFromUri(base),
+    faceapi.nets.faceRecognitionNet.loadFromUri(base)
+  ]);
+}
+
+// Load face-api.js (with CDN fallbacks) + model weights + compute reference
+// descriptors from /images/*.jpeg. Runs once, lazily, on first camera start.
+async function loadFaceModels(){
+  if(faceModelsReady)return true;
+  const statusEl=document.getElementById('faceModelStatus');
+
+  if(statusEl)statusEl.textContent='Loading face recognition library…';
+  const libOk=await loadFaceApiLibrary();
+  if(!libOk){
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--orange)">Face recognition library failed to load from all CDNs (check your internet connection). Camera still works — use the simulate buttons below.</span>';
+    return false;
+  }
+  // Smaller inputSize = much faster detection with negligible accuracy loss
+  // for a single, reasonably-close face (default is 416, which is slow).
+  DETECTOR_OPTIONS=new faceapi.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.5});
+
+  let modelsOk=false,lastErr=null;
+  for(const base of FACE_API_WEIGHTS_URLS){
+    try{
+      if(statusEl)statusEl.textContent='Loading face recognition models…';
+      await loadModelsFrom(base);
+      modelsOk=true;
+      break;
+    }catch(e){lastErr=e;console.warn(`Model weights failed from ${base}:`,e.message);}
+  }
+  if(!modelsOk){
+    if(statusEl)statusEl.innerHTML=`<span style="color:var(--orange)">Could not load recognition models from any source (${lastErr?.message||'unknown error'}). Use the simulate buttons below.</span>`;
+    return false;
+  }
+
+  if(statusEl)statusEl.textContent='Learning registered faces…';
+  const results=[];
+  for(const person of KNOWN_FACES){
+    try{
+      const img=await faceapi.fetchImage(person.file);
+      const det=await faceapi.detectSingleFace(img,DETECTOR_OPTIONS)
+        .withFaceLandmarks().withFaceDescriptor();
+      if(det)results.push(new faceapi.LabeledFaceDescriptors(person.name,[det.descriptor]));
+      else console.warn(`No face found in reference photo for ${person.name}`);
+    }catch(e){console.warn(`Could not load reference photo for ${person.name}:`,e);}
+  }
+  faceLabeledDescriptors=results;
+  // Build the matcher once — rebuilding it on every detection cycle is wasteful
+  // and (with a malformed input shape) was the cause of the generic "person 1" labels.
+  faceMatcher=results.length?new faceapi.FaceMatcher(results,0.55):null;
+  faceModelsReady=true;
+  if(statusEl){
+    statusEl.innerHTML=results.length
+      ?`✅ Recognizing ${results.length}/${KNOWN_FACES.length} registered faces`
+      :'<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
+  }
+  return results.length>0;
+}
+
+// Runs every ~1.5s while camera is on: detect a face in the video frame and
+// match it against the known reference descriptors.
+async function detectFaceLoop(){
+  if(!cameraStream||!faceModelsReady||!faceMatcher)return;
+  const video=document.getElementById('cameraFeed');
+  if(!video||video.readyState<2)return; // not enough data yet
+  if(faceDetectBusy)return; // skip overlapping runs if a previous detection is still in flight
+  faceDetectBusy=true;
+
+  try{
+    const detection=await faceapi.detectSingleFace(video,DETECTOR_OPTIONS)
+      .withFaceLandmarks().withFaceDescriptor();
+
+    if(!detection){
+      setText('faceResult','📹 Camera running… no face in frame');
+      return;
+    }
+
+    const match=faceMatcher.findBestMatch(detection.descriptor);
+    const name=match.label==='unknown'?'Unknown':match.label;
+    const now=Date.now();
+
+    // Cooldown: don't re-fire the same result repeatedly (30s for known members, 20s for intruder)
+    const cooldown=name==='Unknown'?20000:30000;
+    if(lastFaceDetection.name===name&&(now-lastFaceDetection.at)<cooldown){
+      setText('faceResult',name==='Unknown'
+        ?`📹 Unrecognized face still in frame (distance ${match.distance.toFixed(2)})`
+        :`📹 ${name} still in frame`);
+      return;
+    }
+    lastFaceDetection={name,at:now};
+
+    if(name==='Unknown'){
+      setText('faceResult',`<span style="color:var(--red)">🚨 Unrecognized face detected (distance ${match.distance.toFixed(2)})</span>`);
+    } else {
+      setText('faceResult',`<span style="color:var(--green)">✅ ${name} recognized (distance ${match.distance.toFixed(2)})</span>`);
+    }
+    // Reuse the existing simulate pathway — fires alerts, logs, sounds, floor-plan pulse, etc.
+    simulateFace(name);
+  }catch(e){
+    // Don't spam errors to the UI; just log for debugging
+    console.warn('Face detection error:',e);
+  }finally{
+    faceDetectBusy=false;
+  }
+}
+
+async function startCamera(){
+  // Request notification permission when camera starts — natural moment to ask
+  await requestNotifPermission();
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({video:true});
+    document.getElementById('cameraFeed').srcObject=cameraStream;
+    document.getElementById('startCamBtn').style.display='none';
+    document.getElementById('stopCamBtn').style.display='';
+    document.getElementById('faceResult').innerHTML='<div style="color:var(--text2)">📹 Camera running…</div>';
+    document.getElementById('cameraPlaceholder').style.display='none';
+    document.getElementById('cameraFrame').classList.add('live');
+    const overlay=document.getElementById('cameraOverlay');
+    overlay.classList.remove('off');
+    overlay.innerHTML='<span class="live-dot"></span>LIVE · FRONT DOOR';
+    setText('sec-cam-summary','🔴 Live');
+    // Start timestamp clock on the feed
+    if(cameraClockInterval)clearInterval(cameraClockInterval);
+    cameraClockInterval=setInterval(()=>{
+      const ts=document.getElementById('cameraTimestamp');
+      if(ts)ts.textContent=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    },1000);
+
+    // Load face recognition models (only happens once) then start the detection loop
+    lastFaceDetection={name:null,at:0};
+    loadFaceModels().then(ok=>{
+      if(ok&&cameraStream){
+        if(faceDetectionInterval)clearInterval(faceDetectionInterval);
+        faceDetectionInterval=setInterval(detectFaceLoop,1200);
+      }
+    });
+  } catch(e){
+    document.getElementById('faceResult').innerHTML=`<div style="color:var(--red)">Camera blocked: ${e.message}</div>`;
+  }
+}
+
+function stopCamera(){
+  if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}
+  document.getElementById('cameraFeed').srcObject=null;
+  document.getElementById('startCamBtn').style.display='';
+  document.getElementById('stopCamBtn').style.display='none';
+  document.getElementById('faceResult').textContent='Camera stopped.';
+  document.getElementById('cameraPlaceholder').style.display='flex';
+  document.getElementById('cameraFrame').classList.remove('live');
+  const overlay=document.getElementById('cameraOverlay');
+  overlay.classList.add('off');
+  overlay.innerHTML='<span class="live-dot"></span>FRONT DOOR';
+  document.getElementById('cameraTimestamp').textContent='';
+  setText('sec-cam-summary','⏸ Offline');
+  if(cameraClockInterval){clearInterval(cameraClockInterval);cameraClockInterval=null;}
+  if(faceDetectionInterval){clearInterval(faceDetectionInterval);faceDetectionInterval=null;}
+}
+
+// Pulse the entrance marker on the floor plan (green=authorized, red=intruder)
+function pulseEntrance(color){
+  const c=document.getElementById('entrance-pulse-circle');
+  if(!c)return;
+  c.setAttribute('stroke',color);
+  c.setAttribute('opacity','0.9');
+  c.setAttribute('r','4');
+  // Animate radius outward + fade via simple JS interval (avoids SMIL compatibility issues)
+  let r=4,o=0.9;
+  const iv=setInterval(()=>{
+    r+=1.6;o-=0.05;
+    c.setAttribute('r',r);
+    c.setAttribute('opacity',Math.max(0,o));
+    if(o<=0){clearInterval(iv);c.setAttribute('r','0');}
+  },40);
+}
+
+async function simulateFace(name){
+  // Unlock audio context on user gesture (browser requirement)
+  getAudioCtx();
+
+  // Log this simulation run
+  const now=new Date();
+  simRunLog.unshift({
+    cat:name==='Unknown'?'intruder':'member',
+    label:name==='Unknown'?'Intruder detected':`${name} arrived home`,
+    detail:name==='Unknown'?'Unrecognized face — siren + alert triggered':`Face recognized at front door`,
+    time:now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+    date:now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+  });
+  if(document.getElementById('page-simulations').classList.contains('active'))renderSimulations();
+
+  const resultEl=document.getElementById('faceResult');
+  if(name==='Unknown'){
+    resultEl.innerHTML=`<div class="face-result face-unauthorized">🚨 INTRUDER ALERT — unrecognized face at front door!</div>`;
+    const result=await apiFetch('/api/security/intruder',{method:'POST'});
+    if(result) securityLogs.unshift(result);
+
+    // 1. In-app toast + notification drawer
+    showToast('⚠ Unrecognized face at door!','danger');
+    pushNotification('🚨 Intruder Alert','Unrecognized face detected at front door');
+
+    // 2. Browser-level popup notification (works even if tab not focused)
+    sendBrowserNotif('🚨 Smart Home — Intruder Alert!','Unrecognized face detected at front door. Check camera immediately.');
+
+    // 3. Audio siren
+    playIntruderSiren();
+
+    // 4. Pulse entrance marker on floor plan — red
+    pulseEntrance('#ef4444');
+
+    alertCount++;
+    const badge=document.getElementById('alertBadge');
+    if(badge){badge.textContent=alertCount;badge.classList.add('show');}
+    const nb=document.getElementById('nav-security-badge');
+    if(nb){nb.textContent=alertCount;nb.classList.add('show');}
+    updateIntruderBanner();
+  } else {
+    resultEl.innerHTML=`<div class="face-result face-authorized">✅ ${name} recognized — welcome home!</div>`;
+    const result=await apiFetch('/api/security/member-detected',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    if(result) securityLogs.unshift(result);
+
+    showToast(`${name} recognized`,'success');
+    pushNotification('👤 Member arrived',`${name} has returned home`);
+
+    // Friendly browser notification for member arrival
+    sendBrowserNotif(`👤 ${name} is home!`,`Face recognized at front door — ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`, '👤');
+
+    // Friendly arrival beep
+    playMemberArrivalBeep();
+
+    // Pulse entrance marker on floor plan — green
+    pulseEntrance('#22c55e');
+
+    const member=familyMembers.find(m=>m.name===name);
+    if(member) member.status='home';
+  }
+  if(document.getElementById('page-security').classList.contains('active')) renderLogs();
+  renderOverview();
+  updateClock();
+  updateFloorPlan();
+}
+
+// LOCK
+function toggleLock(){
+  lockState=!lockState;document.getElementById('lockIcon').textContent=lockState?'🔒':'🔓';
+  const st=document.getElementById('lockStatus');st.textContent=lockState?'LOCKED':'UNLOCKED';st.style.color=lockState?'var(--green)':'var(--orange)';
+  const summary=document.getElementById('sec-lock-summary');
+  if(summary){summary.textContent=lockState?'🔒 LOCKED':'🔓 UNLOCKED';summary.style.color=lockState?'':'var(--orange)';}
+  showToast(`Front door ${lockState?'locked':'unlocked'}`,lockState?'info':'warn');
+}
+
+// NOTIFICATIONS
+function pushNotification(title,body){
+  notifications.unshift({title,body,time:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),read:false});
+  if(notifications.length>30)notifications.pop();renderNotifList();
+}
+function renderNotifList(){
+  const el=document.getElementById('notifList');if(!el)return;
+  el.innerHTML=notifications.length?notifications.map((n,i)=>`<div class="notif-item${n.read?'':' unread'}" onclick="markRead(${i})">
+    <div class="notif-item-title">${n.title}</div><div class="notif-item-body">${n.body}</div><div class="notif-item-time">${n.time}</div></div>`).join('')
+    :'<div style="text-align:center;color:var(--text3);font-size:13px;padding:40px 20px">No notifications yet</div>';
+}
+function markRead(i){notifications[i].read=true;renderNotifList();}
+function clearNotifications(){notifications=[];renderNotifList();}
+function toggleNotifDrawer(){
+  document.getElementById('notifDrawer').classList.toggle('open');
+  document.getElementById('notifOverlay').classList.toggle('open');
+  notifications.forEach(n=>n.read=true);renderNotifList();
+}
+
+// CHARTS
+// Standard chart (plain number array) — unchanged, used by temp/hum/aqi charts
+function drawLineChart(canvasId,data,color,unit){
+  const canvas=document.getElementById(canvasId);if(!canvas)return;
+  const rect=canvas.getBoundingClientRect();
+  const W=rect.width||canvas.offsetWidth||400,H=rect.height||canvas.offsetHeight||180;
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);
+  const valid=data.filter(v=>v>0);
+  if(valid.length<2){ctx.fillStyle='#64748b';ctx.font='12px Segoe UI';ctx.textAlign='center';ctx.fillText('Waiting for data…',W/2,H/2);return;}
+  const mn=Math.min(...valid)*.95,mx=Math.max(...valid)*1.05;
+  const pad={t:18,r:16,b:26,l:40},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  ctx.strokeStyle='#2a2f46';ctx.lineWidth=0.8;
+  for(let i=0;i<=4;i++){const y=pad.t+(i/4)*cH;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+cW,y);ctx.stroke();ctx.fillStyle='#64748b';ctx.font='10px Segoe UI';ctx.textAlign='right';ctx.fillText((mx-(i/4)*(mx-mn)).toFixed(1),pad.l-4,y+3);}
+  const pts=data.map((v,i)=>({x:pad.l+(i/(data.length-1))*cW,y:pad.t+cH-((Math.max(mn,v)-mn)/(mx-mn))*cH}));
+  const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+cH);grad.addColorStop(0,color+'44');grad.addColorStop(1,color+'06');
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(pts[pts.length-1].x,pad.t+cH);ctx.lineTo(pts[0].x,pad.t+cH);ctx.fillStyle=grad;ctx.fill();
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();
+  const last=pts[pts.length-1];ctx.beginPath();ctx.arc(last.x,last.y,4,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+  ctx.fillStyle='#e2e8f0';ctx.font='bold 10px Segoe UI';ctx.textAlign='center';ctx.fillText(data[data.length-1].toFixed(1)+unit,last.x,last.y-9);
+}
+
+// Annotated chart — accepts {value, sim} objects, draws vertical dashed line + SIM label at simulated points
+function drawLineChartAnnotated(canvasId,data,color,unit){
+  const canvas=document.getElementById(canvasId);if(!canvas)return;
+  const rect=canvas.getBoundingClientRect();
+  const W=rect.width||canvas.offsetWidth||400,H=rect.height||canvas.offsetHeight||180;
+  canvas.width=W;canvas.height=H;
+  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);
+  const values=data.map(d=>d.value);
+  const valid=values.filter(v=>v>0);
+  if(valid.length<2){ctx.fillStyle='#64748b';ctx.font='12px Segoe UI';ctx.textAlign='center';ctx.fillText('Waiting for data…',W/2,H/2);return;}
+  const mn=Math.min(...valid)*.9,mx=Math.max(...valid)*1.1;
+  const pad={t:22,r:16,b:26,l:40},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  // Grid
+  ctx.strokeStyle='#2a2f46';ctx.lineWidth=0.8;
+  for(let i=0;i<=4;i++){const y=pad.t+(i/4)*cH;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+cW,y);ctx.stroke();ctx.fillStyle='#64748b';ctx.font='10px Segoe UI';ctx.textAlign='right';ctx.fillText((mx-(i/4)*(mx-mn)).toFixed(1),pad.l-4,y+3);}
+  // Points
+  const pts=data.map((d,i)=>({x:pad.l+(i/(data.length-1))*cW,y:pad.t+cH-((Math.max(mn,d.value)-mn)/(mx-mn))*cH,sim:d.sim,value:d.value}));
+  // Area fill
+  const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+cH);grad.addColorStop(0,color+'44');grad.addColorStop(1,color+'06');
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(pts[pts.length-1].x,pad.t+cH);ctx.lineTo(pts[0].x,pad.t+cH);ctx.fillStyle=grad;ctx.fill();
+  // Line
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();
+  // Threshold line at 40%
+  if(mx>0){const threshY=pad.t+cH-((40-mn)/(mx-mn))*cH;if(threshY>=pad.t&&threshY<=pad.t+cH){ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(239,68,68,.4)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,threshY);ctx.lineTo(pad.l+cW,threshY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(239,68,68,.6)';ctx.font='9px Segoe UI';ctx.textAlign='left';ctx.fillText('⚠ 40%',pad.l+3,threshY-3);}}
+  // SIM marker: dashed vertical line + SIM badge + point dot
+  pts.forEach(p=>{
+    if(!p.sim)return;
+    // Vertical dashed line
+    ctx.save();ctx.setLineDash([3,2]);ctx.strokeStyle='#f59e0b';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(p.x,pad.t);ctx.lineTo(p.x,pad.t+cH);ctx.stroke();ctx.restore();
+    // SIM badge background
+    const badgeW=26,badgeH=13;ctx.fillStyle='rgba(245,158,11,0.9)';ctx.beginPath();const bx=p.x-badgeW/2,by=pad.t+1;ctx.roundRect?ctx.roundRect(bx,by,badgeW,badgeH,3):ctx.rect(bx,by,badgeW,badgeH);ctx.fill();
+    ctx.fillStyle='#000';ctx.font='bold 8px Segoe UI';ctx.textAlign='center';ctx.fillText('SIM',p.x,by+9);
+    // Dot at spike
+    ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fillStyle='#f59e0b';ctx.fill();
+    ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+    // Value label above dot
+    ctx.fillStyle='#f59e0b';ctx.font='bold 9px Segoe UI';ctx.textAlign='center';ctx.fillText(p.value.toFixed(0)+unit,p.x,p.y-10);
+  });
+  // Last point dot + label
+  const last=pts[pts.length-1];
+  if(!last.sim){ctx.beginPath();ctx.arc(last.x,last.y,4,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();ctx.fillStyle='#e2e8f0';ctx.font='bold 10px Segoe UI';ctx.textAlign='center';ctx.fillText(last.value.toFixed(1)+unit,last.x,last.y-9);}
+}
+
+// Simulations page render
+let simLogEntries=[]; // separate from safetyAlertLog, tracks all sim runs including face/scenes
+
+function renderSimulations(){
+  drawLineChartAnnotated('simSmokeChart',smokeHistory,'#ef4444','%');
+  drawLineChartAnnotated('simGasChart',gasHistory,'#f59e0b','%');
+  const logEl=document.getElementById('simRunLog');
+  if(!logEl)return;
+  const all=[...simRunLog]; // combined: safety + face sims (face sims add entries in simulateFace)
+  if(!all.length){logEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No simulations run yet this session</div>';return;}
+  const icons={smoke:'💨',gas:'⚠️',fire:'🔥',member:'👤',intruder:'🚨',scene:'🎭'};
+  const colors={smoke:'var(--red)',gas:'var(--orange)',fire:'#f97316',member:'var(--accent)',intruder:'var(--red)',scene:'#a78bfa'};
+  logEl.innerHTML=all.map(e=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(0,0,0,.3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${icons[e.cat]||'🧪'}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:${colors[e.cat]||'var(--text)'}">${e.label}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">${e.detail}</div>
+      </div>
+      <div style="font-size:10.5px;color:var(--text3);flex-shrink:0;text-align:right">${e.time}<br><span style="font-size:9px">${e.date||''}</span></div>
+    </div>`).join('');
+}
+
+function clearSimLog(){simRunLog=[];renderSimulations();}
+function updateCharts(){drawLineChart('tempChart',tempHistory,'#f59e0b','°C');drawLineChart('humChart',humHistory,'#06b6d4','%');drawLineChart('aqiChart',aqiHistory,'#6c8bef','');}
+
+// TOAST
+function showToast(msg,type='info'){
+  const c=document.getElementById('alertToast'),t=document.createElement('div');
+  t.className=`toast${type==='danger'?' toast-danger':type==='warn'?' toast-warn':type==='success'?' toast-success':''}`;
+  t.innerHTML=`<span class="toast-close" onclick="this.parentElement.remove()">✕</span><div class="toast-title">${msg}</div>`;
+  c.appendChild(t);setTimeout(()=>{if(t.parentNode)t.remove();},4500);
+}
+
+// MODALS
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-backdrop').forEach(m=>{m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});});
+
+// HELPERS
+function setText(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
+function setBar(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct||0))+'%';if(color)el.style.background=color;}
+function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
+function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️'}[n]||'⚙️';}
+function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;return'on';}
+
+// WEBSOCKET
+// INIT
+async function init(){
+  await loadAll();
+  connectWebSocket();
+  setInterval(refreshSensors,5000);
+  setInterval(async()=>{const logs=await apiFetch('/api/security/logs');if(logs){securityLogs=logs;renderOverview();renderSecuritySummary();}},10000);
+  await requestNotifPermission();
+  updateNotifBanner();
+  renderSecuritySummary();
+}
+
+function updateNotifBanner(){
+  const banner=document.getElementById('notifPermBanner');
+  if(!banner)return;
+  if(!('Notification' in window)||Notification.permission==='granted'){
+    banner.style.display='none';
+  } else {
+    banner.style.display='flex';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
