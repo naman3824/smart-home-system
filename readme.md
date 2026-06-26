@@ -21,11 +21,11 @@ Smart Home Dashboard is a real-time home automation system that integrates five 
 
 | Module | Team Member | What it does |
 |--------|------------|--------------|
-| Face Recognition | Aditya | Browser-based face ID via face-api.js + webcam |
-| Smoke / Gas / Fire | Agrim | Real-time detector with threshold alerts & MQTT |
-| AQI Monitor | Naman | PM2.5/PM10 CPCB-formula AQI + LSTM forecasting |
-| Climate Control | Kamakshi | Smart HVAC decisions from live weather data |
-| Dashboard & Integration | Diksha | Single-page frontend, API layer, WebSocket |
+| Face Recognition | Diksha | face recognition system + webcam |
+| Smoke / Gas / Fire | Kamakshi | Real-time detector with threshold alerts & MQTT |
+| AQI Monitor | Agrim | PM2.5/PM10 CPCB-formula AQI + LSTM forecasting |
+| Climate Control | Naman | Smart HVAC decisions from live weather data |
+| Dashboard & Integration | Aditya | frontend, API layer, WebSocket,Browser-based face ID via face-api.js |
 
 ---
 
