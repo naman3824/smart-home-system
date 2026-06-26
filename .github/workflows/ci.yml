@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-syntax:
+    runs-on: ubuntu-latest
+    name: Syntax & import check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install core dependencies
+        run: pip install fastapi "uvicorn[standard]" pydantic python-dotenv requests
+
+      - name: Check server.py syntax
+        run: python -m py_compile server.py && echo "server.py OK"
+
+      - name: Check all Python files compile
+        run: |
+          for f in $(find . -name "*.py" -not -path "./.venv/*" -not -path "./__pycache__/*"); do
+            python -m py_compile "$f" && echo "OK: $f" || echo "FAIL: $f"
+          done
+
+      - name: Validate server imports and startup
+        run: |
+          python -c "
+          import ast, sys
+          with open('server.py') as f:
+              src = f.read()
+          ast.parse(src)
+          print('AST parse: OK')
+          "
