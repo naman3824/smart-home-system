@@ -10,7 +10,6 @@ Built with FastAPI · Vanilla JS · face-api.js · SVG Floor Plan · WebSocket
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-*BTech Computer Science team project — SRM IST Delhi-NCR (2024–2028)*
 
 </div>
 
