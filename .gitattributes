@@ -1,0 +1,26 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Python
+*.py text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.env.example text eol=lf
+
+# Binary — do not diff or merge
+*.pt binary
+*.npy binary
+*.pkl binary
+*.jpeg binary
+*.jpg binary
+*.png binary
+*.webp binary
+
+# Windows line endings for these (if any Windows users open them)
+*.bat text eol=crlf

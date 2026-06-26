@@ -1,0 +1,73 @@
+# ── Environment & secrets ──────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Python ─────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+.installed.cfg
+
+# ── Virtual environments ───────────────────────────
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ── IDEs ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.user
+
+# ── OS files ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ── Runtime / generated data ───────────────────────
+*.log
+*.csv
+*.sqlite
+*.db
+
+# ── Face recognition photos (private) ─────────────
+# The images/ folder ships with placeholder structure only.
+# Add your own photos locally — never commit real faces to a public repo.
+images/*.jpeg
+images/*.jpg
+images/*.png
+images/*.webp
+
+# ── ML model artifacts ─────────────────────────────
+# Large binary files — tracked via Git LFS or excluded entirely
+# Uncomment the line below if you are NOT using Git LFS:
+# AQI-MONITOR/ml/*.pt
+# AQI-MONITOR/ml/*.npy
+# AQI-MONITOR/ml/*.pkl
+
+# ── Node (in case frontend tooling is added later) ─
+node_modules/
+package-lock.json
+yarn.lock
+
+# ── Misc ───────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
