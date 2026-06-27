@@ -262,5 +262,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-Made with ❤️ by the Smart Home team — SRM IST Delhi-NCR
 </div>
