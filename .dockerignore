@@ -1,0 +1,17 @@
+images/
+*.csv
+AQI-MONITOR/
+climate-control/
+FaceRecognition.py
+mqtt_publisher.py
+mqtt_detector.py
+alerts_twilio.py
+main.py
+detector.py
+logger.py
+.git
+.env
+__pycache__/
+*.pyc
+venv/
+.venv/
