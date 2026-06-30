@@ -13,13 +13,14 @@ from typing import Optional, List, Any
 from dataclasses import dataclass
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import db
+import auth
 
 # ── SMOKE / GAS / FIRE DETECTION ──
 from collections import deque
@@ -178,6 +179,20 @@ devices = {
     }
 }
 
+# Initialize the database (creates tables if they don't exist) before
+# anything below tries to read or write from it.
+db.init_db()
+
+# Overlay any persisted device state on top of the defaults above, so devices
+# remember their last on/off/brightness/speed across redeploys instead of
+# always resetting to the hardcoded defaults every time the container restarts.
+_persisted_devices = db.load_all_device_state()
+for _room, _devs in _persisted_devices.items():
+    if _room in devices:
+        for _dev_name, _dev_state in _devs.items():
+            if _dev_name in devices[_room]:
+                devices[_room][_dev_name].update(_dev_state)
+
 # Sensor data
 sensors = {
     "temperature": 28.5,
@@ -203,7 +218,6 @@ _DEFAULT_FAMILY = [
     {"id": 4, "name": "Naman",  "role": "Member", "status": "away", "avatar": "N", "color": "#059669"},
     {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"}
 ]
-db.init_db()
 db.seed_family_if_empty(_DEFAULT_FAMILY)
 family_members = db.get_family_members()
 
@@ -211,6 +225,28 @@ family_members = db.get_family_members()
 # Real entries are added going forward by actual face recognition / manual
 # logging; nothing here is pre-seeded demo data.
 security_logs = db.get_security_logs()
+
+# ── User accounts (authentication) ──────────────────────────────────────
+# One login per family member, not a single shared admin password. On the
+# very first run (empty users table) a random password is generated for
+# each member and printed ONCE to the server console/logs — never stored
+# in source code or committed to git. Whoever has access to the AWS
+# console / docker logs retrieves these once and distributes them, then
+# each person should change their password via /api/auth/change-password.
+_GENERATED_PASSWORDS_THIS_RUN = []
+if db.count_users() == 0:
+    import secrets as _secrets
+    for m in family_members:
+        temp_password = _secrets.token_urlsafe(9)  # ~12 random chars
+        role = "owner" if m["role"].lower() == "owner" else "member"
+        auth.create_user_account(
+            username=m["name"].lower(),
+            password=temp_password,
+            display_name=m["name"],
+            role=role,
+            member_id=m["id"],
+        )
+        _GENERATED_PASSWORDS_THIS_RUN.append((m["name"].lower(), temp_password))
 
 # Smoke/fire detector instance
 detector = SmokeGasFireDetector(smoke_threshold=40.0, gas_threshold=40.0,
@@ -397,9 +433,109 @@ class LogAdd(BaseModel):
     status: str
     estimated: Optional[str] = None
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 # ──────────────────────────────────────────────
 # ENDPOINTS
 # ──────────────────────────────────────────────
+
+# ── Authentication ──────────────────────────────
+SESSION_COOKIE_NAME = "smarthome_session"
+
+
+async def get_current_user(smarthome_session: Optional[str] = Cookie(default=None)):
+    """FastAPI dependency — raises 401 if there's no valid session cookie.
+    Use as: async def some_endpoint(user: dict = Depends(get_current_user))"""
+    user = auth.get_session_user(smarthome_session)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return user
+
+
+async def get_current_user_optional(smarthome_session: Optional[str] = Cookie(default=None)):
+    """Same as above but returns None instead of raising — for endpoints that
+    behave differently when logged in vs not, without hard-blocking access."""
+    return auth.get_session_user(smarthome_session)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.post("/api/auth/login")
+async def login(body: LoginRequest, request: Request, response: Response):
+    user = auth.authenticate(body.username, body.password)
+    if not user:
+        db.add_audit_entry(body.username, "login_failed", ip_address=_client_ip(request))
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = auth.start_session(user["id"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=auth.SESSION_DURATION_HOURS * 3600,
+    )
+    db.add_audit_entry(user["username"], "login", ip_address=_client_ip(request))
+    return {
+        "ok": True,
+        "user": {
+            "username": user["username"],
+            "display_name": user["display_name"],
+            "role": user["role"],
+            "member_id": user["member_id"],
+        }
+    }
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response, smarthome_session: Optional[str] = Cookie(default=None)):
+    user = auth.get_session_user(smarthome_session)
+    if user:
+        db.add_audit_entry(user["username"], "logout", ip_address=_client_ip(request))
+    auth.end_session(smarthome_session)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def get_me(user: dict = Depends(get_current_user)):
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "member_id": user["member_id"],
+    }
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/api/auth/change-password")
+async def change_password(body: ChangePasswordRequest, request: Request, user: dict = Depends(get_current_user)):
+    full_user = db.get_user_by_username(user["username"])
+    if not auth.verify_password(body.current_password, full_user["password_hash"], full_user["password_salt"]):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    new_hash, new_salt = auth.hash_password(body.new_password)
+    db.update_user_password(full_user["id"], new_hash, new_salt)
+    db.add_audit_entry(user["username"], "password_changed", ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.get("/api/audit-log")
+async def get_audit_log(user: dict = Depends(get_current_user)):
+    # Any logged-in member can view the audit log — transparency for the whole household
+    return db.get_audit_log()
+
+
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
@@ -426,7 +562,7 @@ async def get_devices():
         return devices.copy()
 
 @app.post("/api/device/toggle")
-async def toggle_device(body: DeviceToggle):
+async def toggle_device(body: DeviceToggle, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     with state_lock:
         if body.room not in devices:
             raise HTTPException(status_code=404, detail="Room not found")
@@ -437,6 +573,9 @@ async def toggle_device(body: DeviceToggle):
             dev.update(body.value)
         else:
             dev["on"] = body.value
+        db.save_device_state(body.room, body.device, dev)
+        actor = user["username"] if user else "anonymous"
+        db.add_audit_entry(actor, "device_toggle", detail=f"{body.room}.{body.device} -> {body.value}", ip_address=_client_ip(request))
         return {"ok": True, "device": dev, "energy_watts": calculate_energy()}
 
 @app.get("/api/family")
@@ -444,19 +583,22 @@ async def get_family():
     return family_members
 
 @app.post("/api/family/add")
-async def add_family(body: MemberAdd):
+async def add_family(body: MemberAdd, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     colors = ["#4f46e5","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#be185d"]
     avatar = body.name[:2].upper()
     color = colors[len(family_members) % len(colors)]
     member = db.add_family_member(name=body.name, role=body.role, status="away", avatar=avatar, color=color)
     family_members.append(member)
+    db.add_audit_entry(user["username"] if user else "anonymous", "family_member_added", detail=body.name, ip_address=_client_ip(request))
     return member
 
 @app.delete("/api/family/{member_id}")
-async def delete_member(member_id: int):
+async def delete_member(member_id: int, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     global family_members
+    removed = next((m for m in family_members if m["id"] == member_id), None)
     db.delete_family_member(member_id)
     family_members = [m for m in family_members if m["id"] != member_id]
+    db.add_audit_entry(user["username"] if user else "anonymous", "family_member_removed", detail=removed["name"] if removed else str(member_id), ip_address=_client_ip(request))
     return {"ok": True}
 
 @app.get("/api/security/logs")
@@ -599,9 +741,17 @@ async def websocket_endpoint(websocket: WebSocket):
 async def startup_event():
     t = threading.Thread(target=simulate_sensors, daemon=True)
     t.start()
+    db.delete_expired_sessions()
     print("\n" + "="*55)
     print("  Smart Home Dashboard — Server Started")
     print("  Open: http://localhost:8000")
+    if _GENERATED_PASSWORDS_THIS_RUN:
+        print("\n  First run — generated login credentials (SAVE THESE NOW,")
+        print("  shown only once, never stored anywhere in plain text):")
+        for uname, pwd in _GENERATED_PASSWORDS_THIS_RUN:
+            print(f"    {uname:12s}  {pwd}")
+        print("\n  Each person should log in and change their password via")
+        print("  the Account menu — see /api/auth/change-password.")
     print("="*55 + "\n")
 
 if __name__ == "__main__":

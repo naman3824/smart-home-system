@@ -80,6 +80,36 @@ def init_db():
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                username        TEXT NOT NULL UNIQUE,
+                password_hash   TEXT NOT NULL,
+                password_salt   TEXT NOT NULL,
+                display_name    TEXT NOT NULL,
+                role            TEXT NOT NULL DEFAULT 'member',
+                member_id       INTEGER,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                last_login_at   TEXT,
+                FOREIGN KEY (member_id) REFERENCES family_members(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                token       TEXT PRIMARY KEY,
+                user_id     INTEGER NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                expires_at  TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                username    TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                detail      TEXT,
+                ip_address  TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -196,3 +226,107 @@ def kv_set(key, value):
                ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
             (key, value),
         )
+
+
+# ── Users (authentication) ─────────────────────────────────────────────
+
+def create_user(username, password_hash, password_salt, display_name, role="member", member_id=None):
+    with _db_lock, get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO users (username, password_hash, password_salt, display_name, role, member_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (username.lower(), password_hash, password_salt, display_name, role, member_id),
+        )
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def get_user_by_username(username):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username.lower(),)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_id(user_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_users():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, username, display_name, role, member_id, created_at, last_login_at FROM users ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_last_login(user_id):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET last_login_at = datetime('now') WHERE id = ?", (user_id,)
+        )
+
+
+def count_users():
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+
+
+# ── Sessions ────────────────────────────────────────────────────────────
+
+def create_session(token, user_id, expires_at_iso):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires_at_iso),
+        )
+
+
+def get_session(token):
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT sessions.*, users.username, users.display_name, users.role, users.member_id
+               FROM sessions JOIN users ON users.id = sessions.user_id
+               WHERE sessions.token = ?""",
+            (token,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_session(token):
+    with _db_lock, get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+
+def delete_expired_sessions():
+    with _db_lock, get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+
+
+# ── Audit log ───────────────────────────────────────────────────────────
+
+def update_user_password(user_id, new_hash, new_salt):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?",
+            (new_hash, new_salt, user_id),
+        )
+
+
+def add_audit_entry(username, action, detail=None, ip_address=None):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "INSERT INTO audit_log (username, action, detail, ip_address) VALUES (?, ?, ?, ?)",
+            (username, action, detail, ip_address),
+        )
+
+
+def get_audit_log(limit: int = 300):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
