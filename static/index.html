@@ -41,6 +41,35 @@
   .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 22px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
   .topbar-title{font-size:15px;font-weight:600}
   .topbar-right{display:flex;align-items:center;gap:10px}
+
+  /* LOGIN SCREEN */
+  #loginOverlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 20%,#1a2030,#0a0c12 70%)}
+  .login-card{width:360px;max-width:92vw;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px 28px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .login-card h1{font-size:19px;font-weight:700;margin-bottom:4px;text-align:center}
+  .login-card .login-sub{font-size:12px;color:var(--text3);text-align:center;margin-bottom:24px}
+  .login-field{margin-bottom:14px}
+  .login-field label{font-size:11px;color:var(--text3);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+  .login-field input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--text);font-size:14px;outline:none;transition:border-color .15s}
+  .login-field input:focus{border-color:var(--accent)}
+  .login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;font-size:12.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px;display:none}
+  .login-error.show{display:block}
+  .login-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:9px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s}
+  .login-btn:hover{opacity:.9}
+  .login-btn:disabled{opacity:.5;cursor:not-allowed}
+  .login-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:18px;line-height:1.6}
+
+  /* Account menu in topbar */
+  .account-chip{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px 5px 6px;cursor:pointer;font-size:12.5px;font-weight:600;position:relative}
+  .account-chip:hover{border-color:var(--accent)}
+  .account-avatar{width:24px;height:24px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff}
+  .account-menu{position:absolute;top:calc(100% + 8px);right:0;width:200px;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;overflow:hidden;z-index:200}
+  .account-menu.open{display:block}
+  .account-menu .am-header{padding:12px 14px;border-bottom:1px solid var(--border)}
+  .account-menu .am-header .am-name{font-size:13px;font-weight:700}
+  .account-menu .am-header .am-role{font-size:10.5px;color:var(--text3);text-transform:capitalize}
+  .account-menu button{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;color:var(--text2);font-size:12.5px;cursor:pointer}
+  .account-menu button:hover{background:var(--surface2)}
+  .account-menu button.danger{color:#fca5a5}
   .weather-chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--text2)}
   .alert-btn{position:relative;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text2);font-size:12px;transition:all .15s}
   .alert-btn:hover{border-color:var(--accent);color:var(--text)}
@@ -287,6 +316,27 @@
 </head>
 <body>
 
+<!-- LOGIN SCREEN — shown until a valid session is confirmed -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <h1>Smart Home</h1>
+    <div class="login-sub">Gurugram, Haryana — sign in to continue</div>
+    <div class="login-error" id="loginError"></div>
+    <form id="loginForm" onsubmit="return handleLogin(event)">
+      <div class="login-field">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" required>
+      </div>
+      <div class="login-field">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="login-btn" id="loginSubmitBtn">Sign in</button>
+    </form>
+    <div class="login-hint">Your username is your first name (lowercase).<br>First-time login? Ask whoever set up the server for your password.</div>
+  </div>
+</div>
+
 <nav class="sidebar">
   <div class="logo">
     <h1>Smart Home</h1>
@@ -326,6 +376,12 @@
     <div class="nav-item" onclick="showPage('family')" id="nav-family">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Family</span>
     </div>
+    <div class="nav-item" onclick="showPage('audit')" id="nav-audit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>Audit Log</span>
+    </div>
+    <div class="nav-item" onclick="showPage('systemlogs')" id="nav-systemlogs" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>System Logs</span>
+    </div>
   </div>
   <div class="sidebar-footer">
     <div class="time-display" id="clockDisplay">--:--</div>
@@ -340,6 +396,19 @@
     <div class="topbar-right">
       <div class="weather-chip" id="weatherChip">🌡 -- °C &nbsp;💧 -- %</div>
       <button class="alert-btn" onclick="toggleNotifDrawer()">🔔 Alerts<span class="badge" id="alertBadge">0</span></button>
+      <div class="account-chip" onclick="toggleAccountMenu(event)">
+        <div class="account-avatar" id="accountAvatar">?</div>
+        <span id="accountName">—</span>
+        <div class="account-menu" id="accountMenu">
+          <div class="am-header">
+            <div class="am-name" id="amName">—</div>
+            <div class="am-role" id="amRole">—</div>
+          </div>
+          <button onclick="showChangePasswordModal()">🔑 Change password</button>
+          <button onclick="showPage('audit')">📋 Audit log</button>
+          <button class="danger" onclick="handleLogout()">🚪 Sign out</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1378,6 +1447,54 @@
       </div>
     </div>
   </div>
+
+  <!-- AUDIT LOG -->
+  <div class="content page" id="page-audit">
+    <div style="background:rgba(108,139,239,.07);border:1px solid rgba(108,139,239,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:24px">📋</span>
+      <div>
+        <div style="font-weight:700;font-size:13.5px">System audit trail</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Every login, device change, and account action — who did what, and when. Visible to any signed-in family member for full household transparency.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🧾 Recent activity</span>
+        <button class="btn btn-sm" onclick="renderAuditLog()">↻ Refresh</button>
+      </div>
+      <div class="card-body" id="auditLogList" style="max-height:600px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM LOGS (owner only) -->
+  <div class="content page" id="page-systemlogs">
+    <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:24px">⚙️</span>
+      <div>
+        <div style="font-weight:700;font-size:13.5px">Server / application logs</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Crashes, unhandled errors, and server startup events — for diagnosing the live deployment. Owner-only, since it can include internal stack traces.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🖥️ Recent log lines</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="sysLogLevel" onchange="renderSystemLogs()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:4px 8px;border-radius:6px;outline:none">
+            <option value="">All levels</option>
+            <option value="ERROR">Errors only</option>
+            <option value="WARNING">Warnings only</option>
+            <option value="INFO">Info only</option>
+          </select>
+          <button class="btn btn-sm" onclick="renderSystemLogs()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="card-body" id="systemLogList" style="max-height:600px;overflow-y:auto;font-family:'Consolas','Monaco',monospace;font-size:11.5px;line-height:1.7">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Loading…</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- NOTIFICATION DRAWER -->
@@ -1440,7 +1557,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',security:'Security',family:'Family'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',security:'Security',family:'Family',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1454,6 +1571,8 @@ function showPage(page){
   if(page==='safety')renderSafety();
   if(page==='simulations')renderSimulations();
   if(page==='floorplan')updateFloorPlan();
+  if(page==='audit')renderAuditLog();
+  if(page==='systemlogs')renderSystemLogs();
 }
 
 // CONNECTION STATUS
@@ -1520,7 +1639,13 @@ let wsRetryCount=0;
 
 // API
 async function apiFetch(path,options){
-  try{const r=await fetch(API+path,options);if(!r.ok)return null;setConnected(wsConnected?'connected':'degraded');return await r.json();}
+  try{
+    const opts={credentials:'include',...options};
+    const r=await fetch(API+path,opts);
+    if(!r.ok)return null;
+    setConnected(wsConnected?'connected':'degraded');
+    return await r.json();
+  }
   catch(e){setConnected('offline');return null;}
 }
 
@@ -2843,7 +2968,164 @@ function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${
 
 // WEBSOCKET
 // INIT
-async function init(){
+// ─────────────────────────────────────────────────
+// AUTHENTICATION
+// ─────────────────────────────────────────────────
+let currentUser=null;
+
+async function checkSession(){
+  try{
+    const r=await fetch(API+'/api/auth/me',{credentials:'include'});
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null;}
+}
+
+function showLoginScreen(){
+  document.getElementById('loginOverlay').style.display='flex';
+}
+function hideLoginScreen(){
+  document.getElementById('loginOverlay').style.display='none';
+}
+
+async function handleLogin(e){
+  e.preventDefault();
+  const username=document.getElementById('loginUsername').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginError');
+  const btn=document.getElementById('loginSubmitBtn');
+  errEl.classList.remove('show');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await fetch(API+'/api/auth/login',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username,password})
+    });
+    const data=await r.json();
+    if(!r.ok){
+      errEl.textContent=data.detail||'Login failed';
+      errEl.classList.add('show');
+      btn.disabled=false;btn.textContent='Sign in';
+      return false;
+    }
+    currentUser=data.user;
+    applyCurrentUserToUI();
+    hideLoginScreen();
+    await startDashboard();
+  }catch(e){
+    errEl.textContent='Could not reach the server. Please try again.';
+    errEl.classList.add('show');
+  }
+  btn.disabled=false;btn.textContent='Sign in';
+  return false;
+}
+
+async function handleLogout(){
+  try{await fetch(API+'/api/auth/logout',{method:'POST',credentials:'include'});}catch(e){}
+  currentUser=null;
+  document.getElementById('loginUsername').value='';
+  document.getElementById('loginPassword').value='';
+  document.getElementById('loginError').classList.remove('show');
+  showLoginScreen();
+}
+
+function applyCurrentUserToUI(){
+  if(!currentUser)return;
+  const initials=currentUser.display_name.slice(0,2).toUpperCase();
+  setText('accountAvatar',initials);
+  setText('accountName',currentUser.display_name);
+  setText('amName',currentUser.display_name);
+  setText('amRole',currentUser.role);
+  const sysLogNav=document.getElementById('nav-systemlogs');
+  if(sysLogNav)sysLogNav.style.display=currentUser.role==='owner'?'':'none';
+}
+
+function toggleAccountMenu(e){
+  e.stopPropagation();
+  document.getElementById('accountMenu').classList.toggle('open');
+}
+document.addEventListener('click',()=>{document.getElementById('accountMenu')?.classList.remove('open');});
+
+function showChangePasswordModal(){
+  const current=prompt('Current password:');
+  if(current===null)return;
+  const next=prompt('New password (min 8 characters):');
+  if(next===null)return;
+  if(next.length<8){showToast('New password must be at least 8 characters','danger');return;}
+  fetch(API+'/api/auth/change-password',{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({current_password:current,new_password:next})
+  }).then(async r=>{
+    const data=await r.json();
+    if(r.ok){showToast('Password updated','success');}
+    else{showToast(data.detail||'Could not change password','danger');}
+  }).catch(()=>showToast('Could not reach the server','danger'));
+}
+
+async function renderAuditLog(){
+  const listEl=document.getElementById('auditLogList');
+  if(!listEl)return;
+  try{
+    const r=await fetch(API+'/api/audit-log',{credentials:'include'});
+    if(!r.ok){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load audit log</div>';return;}
+    const entries=await r.json();
+    if(!entries.length){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No activity recorded yet</div>';return;}
+    const actionIcons={login:'🔓',login_failed:'⚠️',logout:'🚪',password_changed:'🔑',device_toggle:'💡',family_member_added:'👤',family_member_removed:'👤'};
+    const actionColors={login:'var(--green)',login_failed:'var(--red)',logout:'var(--text3)',password_changed:'var(--accent)',device_toggle:'var(--cyan)',family_member_added:'var(--accent)',family_member_removed:'var(--orange)'};
+    listEl.innerHTML=entries.map(en=>`
+      <div style="display:flex;align-items:flex-start;gap:11px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${actionIcons[en.action]||'📌'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px"><b>${en.username}</b> <span style="color:${actionColors[en.action]||'var(--text2)'}">${(en.action||'').replace(/_/g,' ')}</span></div>
+          ${en.detail?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${en.detail}</div>`:''}
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);flex-shrink:0;text-align:right">${en.created_at}${en.ip_address?`<br>${en.ip_address}`:''}</div>
+      </div>`).join('');
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load audit log</div>';
+  }
+}
+
+async function renderSystemLogs(){
+  const listEl=document.getElementById('systemLogList');
+  if(!listEl)return;
+  const level=document.getElementById('sysLogLevel')?.value||'';
+  try{
+    const url='/api/system-logs?lines=300'+(level?`&level=${encodeURIComponent(level)}`:'');
+    const r=await fetch(API+url,{credentials:'include'});
+    if(r.status===403){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Only the owner account can view system logs.</div>';
+      return;
+    }
+    if(!r.ok){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Could not load system logs.</div>';
+      return;
+    }
+    const data=await r.json();
+    const lines=data.lines||[];
+    if(!lines.length){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">No log entries yet.</div>';
+      return;
+    }
+    listEl.innerHTML=lines.map(ln=>{
+      let color='var(--text3)';
+      if(ln.includes('| ERROR'))color='var(--red)';
+      else if(ln.includes('| WARNING'))color='var(--orange)';
+      else if(ln.includes('| INFO'))color='var(--text2)';
+      const escaped=ln.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div style="color:${color};white-space:pre-wrap;word-break:break-word;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)">${escaped}</div>`;
+    }).reverse().join(''); // newest first
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Could not reach the server.</div>';
+  }
+}
+
+// ─────────────────────────────────────────────────
+// APP BOOTSTRAP
+// ─────────────────────────────────────────────────
+async function startDashboard(){
   await loadAll();
   connectWebSocket();
   setInterval(refreshSensors,5000);
@@ -2860,6 +3142,18 @@ function updateNotifBanner(){
     banner.style.display='none';
   } else {
     banner.style.display='flex';
+  }
+}
+
+async function init(){
+  const session=await checkSession();
+  if(session){
+    currentUser=session;
+    applyCurrentUserToUI();
+    hideLoginScreen();
+    await startDashboard();
+  } else {
+    showLoginScreen();
   }
 }
 
