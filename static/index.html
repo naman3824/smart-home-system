@@ -1020,10 +1020,10 @@
   <!-- ENERGY -->
   <div class="content page" id="page-energy">
     <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub">live draw</div></div>
-      <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
+      <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub" id="en-rate">-- units/hr at this rate</div></div>
+      <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
       <div class="sensor-card temp-card"><div class="sensor-label">Devices on</div><div class="sensor-value" id="en-count" style="color:var(--green)">--</div><div class="sensor-sub" id="en-total-sub">out of --</div></div>
-      <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
+      <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
     </div>
     <div class="two-col">
       <div class="card"><div class="card-header"><span class="card-title">⚡ Per room</span></div><div class="card-body" id="en-rooms"></div></div>
@@ -1034,6 +1034,13 @@
           <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">Each bar = one 5-second reading</div>
         </div>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🧾 DHBVN tariff breakdown — Gurugram</span>
+        <span style="font-size:10.5px;color:var(--text3)">Domestic Category II · effective 01 Apr 2025</span>
+      </div>
+      <div class="card-body" id="en-tariff-breakdown"></div>
     </div>
     <div class="card"><div class="card-header"><span class="card-title">💡 Device breakdown</span></div><div class="card-body" id="en-devices"></div></div>
   </div>
@@ -1582,7 +1589,8 @@ function updateSensorUI(s,watts){
   setText('ov-hvac',`HVAC: ${s.hvac_status||'--'}`);
   setText('ov-aqi-cat',s.aqi_category||'--');
   setText('ov-energy',`${watts}<span class="sensor-unit">W</span>`);
-  setText('ov-energy-sub',`today: ${(watts*8/1000).toFixed(2)} kWh · ₹${(watts*8/1000*8.5).toFixed(0)}`);
+  const unitsToday=watts*8/1000;
+  setText('ov-energy-sub',`today: ${unitsToday.toFixed(2)} units · ₹${estimateDhbvnCost(unitsToday*30).toFixed(0)}/mo est.`);
   setText('ov-smoke',`${smoke}%`);setText('ov-gas',`${gas}%`);
   setText('ov-hum-note',hum<40?'a bit dry in here':hum>70?'feeling muggy':'40–60% is comfortable');
   setBar('ov-hum-bar',Math.min(100,hum),'#06b6d4');
@@ -1897,6 +1905,23 @@ function renderDevicesHTML(roomId){
 
 function effWatts(dk,dv){let w=dv.watts||0;if(dk==='fan')w=Math.round(w*((dv.speed||0)/5));if(dk==='light')w=Math.round(w*((dv.brightness||100)/100));return w;}
 
+// Quick client-side mirror of the backend's DHBVN domestic Category-II slab
+// calculation — used only for the small Overview snippet so it doesn't need
+// to await a fetch. The authoritative figure (with full slab breakdown)
+// always comes from /api/energy on the Energy tab.
+function estimateDhbvnCost(units){
+  const slabs=[[150,2.95],[300,5.25],[500,6.45],[Infinity,7.10]];
+  let remaining=units,prevCap=0,cost=0;
+  for(const[cap,rate]of slabs){
+    if(remaining<=0)break;
+    const slabUnits=Math.min(remaining,cap-prevCap);
+    cost+=slabUnits*rate;
+    remaining-=slabUnits;prevCap=cap;
+  }
+  if(units>300)cost+=5*50; // fixed charge: 5kW sanctioned load × ₹50/kW, above 300 units
+  return cost;
+}
+
 async function toggleDev(room,dk){
   const dev=devices[room]?.[dk];if(!dev)return;const newOn=!dev.on;
   const result=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:dk,value:{on:newOn}})});
@@ -1955,31 +1980,66 @@ async function renderEnergy(){
   // Always recompute watts from current local device state first (fixes 0W bug)
   let localWatts=Object.entries(devices).reduce((t,[,devs])=>t+Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0),0);
   const data=await apiFetch('/api/energy');
-  const totalWatts=data?.total_watts||localWatts;
-  const kwhToday=data?.kwh_today||(totalWatts*8/1000).toFixed(2);
-  const costToday=data?.cost_today||(totalWatts*8/1000*8.5).toFixed(2);
+  const totalWatts=data?.total_watts??localWatts;
+  const unitsToday=data?.units_today??(totalWatts*8/1000);
+  const unitsMonth=data?.units_month_projected??(unitsToday*30);
+  const costToday=data?.cost_today??0;
+  const costMonth=data?.cost_month_projected??0;
+  const ratePerHour=data?.units_now_rate_per_hour??(totalWatts/1000);
+
   setText('en-watts',`${totalWatts}<span class="sensor-unit">W</span>`);
-  setText('en-kwh',`${kwhToday}<span class="sensor-unit">kWh</span>`);
-  setText('en-cost',`₹${parseFloat(costToday).toFixed(2)} at ₹8.5/unit`);
-  const monthly=(parseFloat(kwhToday)*30).toFixed(1);
-  setText('en-monthly',`${monthly}<span class="sensor-unit">kWh</span>`);
-  setText('en-monthly-cost',`₹${(parseFloat(monthly)*8.5).toFixed(0)} est.`);
+  setText('en-rate',`${ratePerHour.toFixed(2)} units/hr at this rate`);
+  setText('en-kwh',`${unitsToday.toFixed(2)}<span class="sensor-unit">units</span>`);
+  setText('en-cost',`₹${costToday.toFixed(2)} · DHBVN Gurugram tariff`);
+  setText('en-monthly',`${unitsMonth.toFixed(1)}<span class="sensor-unit">units</span>`);
+  setText('en-monthly-cost',`₹${costMonth.toFixed(0)} est.`);
+
   let count=0,total=0;
   for(const devs of Object.values(devices))for(const d of Object.values(devs)){total++;if(d.on)count++;}
   setText('en-count',count);setText('en-total-sub',`out of ${total} total`);
+
   const roomsEl=document.getElementById('en-rooms');
   if(roomsEl){
-    // Compute room breakdown from local state (always accurate)
-    const breakdown={};
+    // Compute room breakdown from local state (always accurate), shown in units/day
+    const breakdownWatts={};
     for(const[room,devs]of Object.entries(devices)){
-      breakdown[room]=Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0);
+      breakdownWatts[room]=Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0);
     }
-    const maxW=Math.max(1,...Object.values(breakdown));
+    const breakdownUnits={};
+    for(const[room,w]of Object.entries(breakdownWatts))breakdownUnits[room]=w*8/1000;
+    const maxU=Math.max(0.001,...Object.values(breakdownUnits));
     const colors=['#6c8bef','#a78bfa','#06b6d4','#22c55e','#f59e0b','#ef4444','#ec4899','#84cc16'];
-    roomsEl.innerHTML=Object.entries(breakdown).map(([room,w],i)=>`<div style="margin-bottom:11px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--text2)">${ROOM_NAMES[room]||room}</span><span style="font-weight:600">${w}W</span></div>
-      <div class="bar-track" style="height:7px;border-radius:3px"><div class="bar-fill" style="width:${w/maxW*100}%;background:${colors[i%colors.length]}"></div></div></div>`).join('');
+    roomsEl.innerHTML=Object.entries(breakdownUnits).map(([room,u],i)=>`<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--text2)">${ROOM_NAMES[room]||room}</span><span style="font-weight:600">${u.toFixed(2)} units</span></div>
+      <div class="bar-track" style="height:7px;border-radius:3px"><div class="bar-fill" style="width:${u/maxU*100}%;background:${colors[i%colors.length]}"></div></div></div>`).join('');
   }
+
+  // DHBVN slab breakdown — uses the real tariff calc returned by the backend
+  const tariffEl=document.getElementById('en-tariff-breakdown');
+  if(tariffEl){
+    const monthBreakdown=data?.cost_month_breakdown?.breakdown||[];
+    const fixedCharge=data?.cost_month_breakdown?.fixed_charge||0;
+    if(!monthBreakdown.length){
+      tariffEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:16px">Waiting for energy data…</div>';
+    } else {
+      const hdr='font-size:10px;color:var(--text3);padding:6px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.4px';
+      const cell='font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--border)';
+      tariffEl.innerHTML=`
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Based on this month's projected usage of <b style="color:var(--text2)">${unitsMonth.toFixed(0)} units</b> — DHBVN domestic Category II slabs:</div>
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0">
+          <div style="${hdr}">Slab</div><div style="${hdr};text-align:right">Units</div><div style="${hdr};text-align:right">Rate</div><div style="${hdr};text-align:right">Cost</div>
+          ${monthBreakdown.map(b=>`<div style="${cell}">${b.range} units</div>
+            <div style="${cell};text-align:right">${b.units}</div>
+            <div style="${cell};text-align:right;color:var(--text2)">₹${b.rate}/unit</div>
+            <div style="${cell};text-align:right;font-weight:600">₹${b.cost.toFixed(2)}</div>`).join('')}
+          ${fixedCharge>0?`<div style="${cell}">Fixed charge (above 300 units)</div><div style="${cell}"></div><div style="${cell}"></div><div style="${cell};text-align:right;font-weight:600">₹${fixedCharge.toFixed(2)}</div>`:''}
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:14px;font-weight:700">
+          <span>Estimated monthly bill</span><span style="color:var(--accent)">₹${costMonth.toFixed(2)}</span>
+        </div>`;
+    }
+  }
+
   const devEl=document.getElementById('en-devices');
   if(devEl){
     let rows=[];
