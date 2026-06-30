@@ -45,6 +45,7 @@ ehthumbs.db
 *.csv
 *.sqlite
 *.db
+data/
 
 # ── Face recognition photos (private) ─────────────
 # The images/ folder ships with placeholder structure only.
