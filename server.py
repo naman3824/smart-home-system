@@ -16,11 +16,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 import db
 import auth
+from applog import logger, get_recent_logs
 
 # ── SMOKE / GAS / FIRE DETECTION ──
 from collections import deque
@@ -346,50 +347,57 @@ def simulate_sensors():
     last_aqi_update = 0.0   # track when we last updated AQI
 
     while True:
-        now = time.time()
-        with state_lock:
-            # Temperature and humidity drift every 3s (fast sensors)
-            sensors["temperature"] = round(base_temp + random.uniform(-1.5, 2.0), 1)
-            sensors["humidity"]    = round(base_humidity + random.uniform(-5, 5), 1)
-            sensors["smoke"]       = round(random.uniform(1.5, 8.0), 1)
-            sensors["gas"]         = round(random.uniform(1.0, 6.0), 1)
+        try:
+            now = time.time()
+            with state_lock:
+                # Temperature and humidity drift every 3s (fast sensors)
+                sensors["temperature"] = round(base_temp + random.uniform(-1.5, 2.0), 1)
+                sensors["humidity"]    = round(base_humidity + random.uniform(-5, 5), 1)
+                sensors["smoke"]       = round(random.uniform(1.5, 8.0), 1)
+                sensors["gas"]         = round(random.uniform(1.0, 6.0), 1)
 
-            # AQI updates every 60 seconds — air quality doesn't spike every 3 seconds
-            if now - last_aqi_update >= 60:
-                # Slow drift: ±10 from base, clamp to realistic Gurugram range
-                aqi_base_pm25 = round(max(40, min(220, aqi_base_pm25 + random.uniform(-10, 10))), 1)
-                aqi_base_pm10 = round(max(60, min(300, aqi_base_pm10 + random.uniform(-12, 12))), 1)
-                aqi_val, aqi_cat = calculate_aqi(aqi_base_pm25, aqi_base_pm10)
-                sensors["pm25"]         = aqi_base_pm25
-                sensors["pm10"]         = aqi_base_pm10
-                sensors["aqi"]          = aqi_val
-                sensors["aqi_category"] = aqi_cat
-                sensors["co2_ppm"]      = round(random.uniform(700, 1100), 0)
-                last_aqi_update = now
+                # AQI updates every 60 seconds — air quality doesn't spike every 3 seconds
+                if now - last_aqi_update >= 60:
+                    # Slow drift: ±10 from base, clamp to realistic Gurugram range
+                    aqi_base_pm25 = round(max(40, min(220, aqi_base_pm25 + random.uniform(-10, 10))), 1)
+                    aqi_base_pm10 = round(max(60, min(300, aqi_base_pm10 + random.uniform(-12, 12))), 1)
+                    aqi_val, aqi_cat = calculate_aqi(aqi_base_pm25, aqi_base_pm10)
+                    sensors["pm25"]         = aqi_base_pm25
+                    sensors["pm10"]         = aqi_base_pm10
+                    sensors["aqi"]          = aqi_val
+                    sensors["aqi_category"] = aqi_cat
+                    sensors["co2_ppm"]      = round(random.uniform(700, 1100), 0)
+                    last_aqi_update = now
 
-            # HVAC logic
-            hvac_status, target = determine_hvac(sensors["temperature"], sensors["humidity"])
-            sensors["hvac_status"] = hvac_status
-            sensors["hvac_target"] = target
+                # HVAC logic
+                hvac_status, target = determine_hvac(sensors["temperature"], sensors["humidity"])
+                sensors["hvac_status"] = hvac_status
+                sensors["hvac_target"] = target
 
-            # Smoke/fire detection
-            reading = SensorReading(
-                timestamp=now,
-                smoke=sensors["smoke"],
-                gas=sensors["gas"],
-                temperature=sensors["temperature"]
-            )
-            alerts = detector.evaluate(reading)
-            for alert in alerts:
-                alert_entry = {
-                    "type":    alert["type"],
-                    "level":   alert["level"],
-                    "message": alert["message"],
-                    "time":    datetime.now().strftime("%H:%M:%S")
-                }
-                alert_history.append(alert_entry)
-                if len(alert_history) > 50:
-                    alert_history.pop(0)
+                # Smoke/fire detection
+                reading = SensorReading(
+                    timestamp=now,
+                    smoke=sensors["smoke"],
+                    gas=sensors["gas"],
+                    temperature=sensors["temperature"]
+                )
+                alerts = detector.evaluate(reading)
+                for alert in alerts:
+                    alert_entry = {
+                        "type":    alert["type"],
+                        "level":   alert["level"],
+                        "message": alert["message"],
+                        "time":    datetime.now().strftime("%H:%M:%S")
+                    }
+                    alert_history.append(alert_entry)
+                    if len(alert_history) > 50:
+                        alert_history.pop(0)
+        except Exception as e:
+            # Without this, any unexpected error here would silently kill the
+            # daemon thread forever — sensor data would just freeze at its
+            # last values with absolutely no record of why. Log it and keep
+            # the loop alive instead.
+            logger.error("Sensor simulation loop error: %s", e, exc_info=True)
 
         time.sleep(3)
 
@@ -403,6 +411,17 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"]
 )
+
+# Catch anything that isn't an explicit HTTPException — log the full
+# traceback so a live crash actually leaves a record instead of just
+# becoming a generic 500 with nothing written down anywhere.
+@app.exception_handler(Exception)
+async def log_unhandled_exceptions(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled exception on %s %s: %s",
+        request.method, request.url.path, exc, exc_info=True
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -534,6 +553,21 @@ async def change_password(body: ChangePasswordRequest, request: Request, user: d
 async def get_audit_log(user: dict = Depends(get_current_user)):
     # Any logged-in member can view the audit log — transparency for the whole household
     return db.get_audit_log()
+
+
+@app.get("/api/system-logs")
+async def get_system_logs(lines: int = 200, level: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """
+    Server-side error/debug log — distinct from security_logs (who arrived
+    at the house) and audit_log (who changed what in the dashboard). This is
+    for diagnosing the live deployment: crashes, unhandled exceptions, sensor
+    thread errors, startup events. Gated behind login since it can contain
+    internal detail (stack traces, file paths) not meant for public viewing.
+    """
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner account can view system logs")
+    lines = max(1, min(lines, 1000))
+    return {"lines": get_recent_logs(lines=lines, level=level)}
 
 
 @app.get("/")
@@ -729,8 +763,10 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json(data)
             await __import__('asyncio').sleep(3)
     except WebSocketDisconnect:
-        ws_clients.remove(websocket)
-    except Exception:
+        if websocket in ws_clients:
+            ws_clients.remove(websocket)
+    except Exception as e:
+        logger.error("WebSocket connection error: %s", e, exc_info=True)
         if websocket in ws_clients:
             ws_clients.remove(websocket)
 
@@ -742,6 +778,7 @@ async def startup_event():
     t = threading.Thread(target=simulate_sensors, daemon=True)
     t.start()
     db.delete_expired_sessions()
+    logger.info("Server started — sensor simulation thread running")
     print("\n" + "="*55)
     print("  Smart Home Dashboard — Server Started")
     print("  Open: http://localhost:8000")
@@ -752,6 +789,7 @@ async def startup_event():
             print(f"    {uname:12s}  {pwd}")
         print("\n  Each person should log in and change their password via")
         print("  the Account menu — see /api/auth/change-password.")
+        logger.info("First run — generated %d default user accounts", len(_GENERATED_PASSWORDS_THIS_RUN))
     print("="*55 + "\n")
 
 if __name__ == "__main__":
