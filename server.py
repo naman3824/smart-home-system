@@ -223,6 +223,7 @@ alert_history = []
 
 # ── ENERGY CALCULATION ──
 def calculate_energy():
+    """Returns instantaneous power draw in watts (used internally for the live wattage figure)."""
     total_watts = 0
     for room, devs in devices.items():
         for dev_name, dev in devs.items():
@@ -236,6 +237,65 @@ def calculate_energy():
                     w = int(w * (brightness / 100))
                 total_watts += w
     return total_watts
+
+
+# ── DHBVN Gurugram domestic electricity tariff ──
+# Dakshin Haryana Bijli Vitran Nigam (DHBVN) serves Gurugram. Slabs below are
+# Category II domestic (load up to 5kW — typical for a house), per the HERC
+# tariff order effective 01-04-2025 (FY 2025-26), as published in DHBVN's
+# sales circular. No fixed/minimum monthly charge applies below 300 units.
+# Source: DHBVN sales circular 04_D_2025, cross-checked against HERC tariff
+# order coverage (Tribune India, India TV News, April 2025).
+DHBVN_DOMESTIC_SLABS = [
+    # (units_up_to, rate_per_unit)  — units_up_to=None means "and above"
+    (150, 2.95),
+    (300, 5.25),
+    (500, 6.45),
+    (None, 7.10),
+]
+# Fixed charge applies only once monthly consumption exceeds 300 units
+DHBVN_FIXED_CHARGE_PER_KW_ABOVE_300 = 50.0
+SANCTIONED_LOAD_KW = 5.0  # assumed household sanctioned load for fixed-charge calc
+
+
+def calculate_dhbvn_bill(units: float):
+    """
+    Slab-wise DHBVN Category-II domestic bill calculation.
+    Returns dict with per-slab breakdown, energy charge, fixed charge, and total.
+    """
+    remaining = units
+    prev_cap = 0
+    breakdown = []
+    energy_charge = 0.0
+
+    for cap, rate in DHBVN_DOMESTIC_SLABS:
+        if remaining <= 0:
+            break
+        slab_size = (cap - prev_cap) if cap is not None else remaining
+        units_in_slab = min(remaining, slab_size)
+        if units_in_slab <= 0:
+            prev_cap = cap if cap is not None else prev_cap
+            continue
+        slab_cost = round(units_in_slab * rate, 2)
+        breakdown.append({
+            "range": f"{prev_cap + 1}-{cap}" if cap is not None else f"Above {prev_cap}",
+            "units": round(units_in_slab, 2),
+            "rate": rate,
+            "cost": slab_cost
+        })
+        energy_charge += slab_cost
+        remaining -= units_in_slab
+        prev_cap = cap if cap is not None else prev_cap
+
+    fixed_charge = (SANCTIONED_LOAD_KW * DHBVN_FIXED_CHARGE_PER_KW_ABOVE_300) if units > 300 else 0.0
+
+    return {
+        "units": round(units, 2),
+        "breakdown": breakdown,
+        "energy_charge": round(energy_charge, 2),
+        "fixed_charge": round(fixed_charge, 2),
+        "total": round(energy_charge + fixed_charge, 2)
+    }
 
 # ──────────────────────────────────────────────
 # SENSOR SIMULATION LOOP
@@ -457,7 +517,7 @@ async def get_alerts():
 async def get_energy():
     with state_lock:
         watts = calculate_energy()
-        room_breakdown = {}
+        room_breakdown_watts = {}
         for room, devs in devices.items():
             room_watts = 0
             for dev_name, dev in devs.items():
@@ -469,12 +529,43 @@ async def get_energy():
                     elif dev_name == "light":
                         w = int(w * (dev.get("brightness", 100) / 100))
                     room_watts += w
-            room_breakdown[room] = room_watts
+            room_breakdown_watts[room] = room_watts
+
+        # Units (kWh) consumed today, assuming current draw held for 8 hrs —
+        # same assumption as before, just expressed in units instead of watts.
+        units_today = round(watts * 8 / 1000, 2)
+        # Project a full month at today's daily usage rate
+        units_month_projected = round(units_today * 30, 1)
+
+        today_bill = calculate_dhbvn_bill(units_today)
+        month_bill = calculate_dhbvn_bill(units_month_projected)
+
+        room_breakdown_units = {
+            room: round(w * 8 / 1000, 3) for room, w in room_breakdown_watts.items()
+        }
+
         return {
-            "total_watts": watts,
-            "kwh_today": round(watts * 8 / 1000, 2),
-            "cost_today": round(watts * 8 / 1000 * 8.5, 2),
-            "room_breakdown": room_breakdown
+            "total_watts": watts,                       # kept for live "now" readouts
+            "units_now_rate_per_hour": round(watts / 1000, 3),  # units/hour at current draw
+            "units_today": units_today,
+            "units_month_projected": units_month_projected,
+            "cost_today": today_bill["total"],
+            "cost_today_breakdown": today_bill,
+            "cost_month_projected": month_bill["total"],
+            "cost_month_breakdown": month_bill,
+            "tariff": {
+                "provider": "DHBVN (Dakshin Haryana Bijli Vitran Nigam)",
+                "category": "Domestic — Category II (load up to 5kW)",
+                "effective_from": "2025-04-01",
+                "slabs": [
+                    {"range": "0-150 units", "rate": 2.95},
+                    {"range": "151-300 units", "rate": 5.25},
+                    {"range": "301-500 units", "rate": 6.45},
+                    {"range": "Above 500 units", "rate": 7.10},
+                ]
+            },
+            "room_breakdown": room_breakdown_units,       # units (kWh) per room, today
+            "room_breakdown_watts": room_breakdown_watts  # raw watts, for live device list
         }
 
 # ──────────────────────────────────────────────
