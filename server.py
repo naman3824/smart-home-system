@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import db
+
 # ── SMOKE / GAS / FIRE DETECTION ──
 from collections import deque
 
@@ -192,28 +194,23 @@ sensors = {
     "condition": "partly cloudy"
 }
 
-# Family members
-family_members = [
-    {"id": 1, "name": "Aditya", "role": "Owner", "status": "home", "avatar": "A", "color": "#4f46e5"},
+# Family members — persisted in SQLite (data/smarthome.db), survives redeploys.
+# Defaults below are only inserted once, the very first time the database is created.
+_DEFAULT_FAMILY = [
+    {"id": 1, "name": "Aditya", "role": "Owner", "status": "away", "avatar": "A", "color": "#4f46e5"},
     {"id": 2, "name": "Diksha", "role": "Member", "status": "away", "avatar": "D", "color": "#7c3aed"},
-    {"id": 3, "name": "Agrim",  "role": "Member", "status": "home", "avatar": "Ag", "color": "#0891b2"},
+    {"id": 3, "name": "Agrim",  "role": "Member", "status": "away", "avatar": "Ag", "color": "#0891b2"},
     {"id": 4, "name": "Naman",  "role": "Member", "status": "away", "avatar": "N", "color": "#059669"},
-    {"id": 5, "name": "Kamakshi","role":"Member", "status": "home", "avatar": "K", "color": "#dc2626"}
+    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"}
 ]
+db.init_db()
+db.seed_family_if_empty(_DEFAULT_FAMILY)
+family_members = db.get_family_members()
 
-# Security logs - pre-seeded with realistic entries
-security_logs = [
-    {"id": 1, "person": "Aditya", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=2)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 2, "person": "Kamakshi", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=3, minutes=15)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 3, "person": "Agrim", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=5)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 4, "person": "Zomato Delivery", "type": "delivery", "event": "delivered order", "time": (datetime.now() - timedelta(hours=1, minutes=30)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "visitor", "estimated": (datetime.now() - timedelta(hours=1, minutes=45)).strftime("%H:%M")},
-    {"id": 5, "person": "Rahul (Guest)", "type": "guest", "event": "visited", "time": (datetime.now() - timedelta(hours=4)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 6, "person": "Diksha", "type": "member", "event": "left home", "time": (datetime.now() - timedelta(hours=6)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 7, "person": "Naman",  "type": "member", "event": "left home", "time": (datetime.now() - timedelta(hours=7)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 8, "person": "Unknown Person", "type": "intruder", "event": "unrecognized face detected", "time": (datetime.now() - timedelta(days=1, hours=2)).strftime("%H:%M"), "date": (datetime.now() - timedelta(days=1)).strftime("%d %b"), "status": "unauthorized"},
-    {"id": 9, "person": "Amazon Delivery", "type": "delivery", "event": "package delivered", "time": (datetime.now() - timedelta(days=1, hours=5)).strftime("%H:%M"), "date": (datetime.now() - timedelta(days=1)).strftime("%d %b"), "status": "visitor", "estimated": (datetime.now() - timedelta(days=1, hours=5, minutes=20)).strftime("%H:%M")},
-]
-log_id_counter = 10
+# Security logs — persisted in SQLite, starts empty on a fresh database.
+# Real entries are added going forward by actual face recognition / manual
+# logging; nothing here is pre-seeded demo data.
+security_logs = db.get_security_logs()
 
 # Smoke/fire detector instance
 detector = SmokeGasFireDetector(smoke_threshold=40.0, gas_threshold=40.0,
@@ -388,80 +385,65 @@ async def get_family():
 
 @app.post("/api/family/add")
 async def add_family(body: MemberAdd):
-    global family_members
     colors = ["#4f46e5","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#be185d"]
-    new_id = max(m["id"] for m in family_members) + 1
-    member = {
-        "id": new_id,
-        "name": body.name,
-        "role": body.role,
-        "status": "away",
-        "avatar": body.name[:2].upper(),
-        "color": colors[new_id % len(colors)]
-    }
+    avatar = body.name[:2].upper()
+    color = colors[len(family_members) % len(colors)]
+    member = db.add_family_member(name=body.name, role=body.role, status="away", avatar=avatar, color=color)
     family_members.append(member)
     return member
 
 @app.delete("/api/family/{member_id}")
 async def delete_member(member_id: int):
     global family_members
+    db.delete_family_member(member_id)
     family_members = [m for m in family_members if m["id"] != member_id]
     return {"ok": True}
 
 @app.get("/api/security/logs")
 async def get_security_logs():
-    return list(reversed(security_logs))
+    return db.get_security_logs()
 
 @app.post("/api/security/logs")
 async def add_security_log(body: LogAdd):
-    global log_id_counter
-    entry = {
-        "id": log_id_counter,
-        "person": body.person,
-        "type": body.type,
-        "event": body.event,
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": body.status,
-    }
-    if body.estimated:
-        entry["estimated"] = body.estimated
-    log_id_counter += 1
-    security_logs.append(entry)
+    entry = db.add_security_log(
+        person=body.person,
+        type_=body.type,
+        event=body.event,
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status=body.status,
+        estimated=body.estimated,
+    )
+    security_logs.insert(0, entry)
     return entry
 
 @app.post("/api/security/intruder")
 async def log_intruder():
-    global log_id_counter
-    entry = {
-        "id": log_id_counter,
-        "person": "Unknown Person",
-        "type": "intruder",
-        "event": "unrecognized face detected at front door",
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": "unauthorized"
-    }
-    log_id_counter += 1
-    security_logs.append(entry)
+    entry = db.add_security_log(
+        person="Unknown Person",
+        type_="intruder",
+        event="unrecognized face detected at front door",
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status="unauthorized",
+    )
+    security_logs.insert(0, entry)
     return entry
 
 @app.post("/api/security/member-detected")
 async def log_member_detected(body: dict):
-    global log_id_counter
     name = body.get("name", "Unknown")
-    entry = {
-        "id": log_id_counter,
-        "person": name,
-        "type": "member",
-        "event": "face recognized — arrived home",
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": "authorized"
-    }
-    log_id_counter += 1
-    security_logs.append(entry)
-    # Update member status
+    entry = db.add_security_log(
+        person=name,
+        type_="member",
+        event="face recognized — arrived home",
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status="authorized",
+    )
+    security_logs.insert(0, entry)
+    # Update member status (in-memory + persisted)
+    db.update_member_status(name, "home")
     for m in family_members:
         if m["name"].lower() == name.lower():
             m["status"] = "home"
