@@ -368,6 +368,9 @@
     <div class="nav-item" onclick="showPage('simulations')" id="nav-simulations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 1 21 12M4.93 4.93A10 10 0 0 0 3 12"/><path d="M12 3v2M12 19v2M3 12H1M23 12h-2"/></svg><span>Simulations</span>
     </div>
+    <div class="nav-item" onclick="showPage('automation')" id="nav-automation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg><span>Automation</span>
+    </div>
     <div class="nav-section">Security</div>
     <div class="nav-item" onclick="showPage('security')" id="nav-security">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Security</span>
@@ -1303,6 +1306,34 @@
     </div>
   </div>
 
+  <!-- AUTOMATION -->
+  <div class="content page" id="page-automation">
+    <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(108,139,239,.07));border:1px solid rgba(34,197,94,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">⚡</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Automation rules</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">If a condition becomes true (AQI too high, nobody home, etc.), the matching action runs automatically. Checked every few seconds — each rule has its own cooldown so it won't spam-fire.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">📜 Active rules</span>
+        <button class="btn btn-sm btn-primary" onclick="showAddAutomationModal()">+ New rule</button>
+      </div>
+      <div class="card-body" id="automationRulesList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🕐 Recent automation activity</span></div>
+      <div class="card-body" id="automationRunsList" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No automated actions yet</div>
+      </div>
+    </div>
+  </div>
+
   <!-- SECURITY -->
   <div class="content page" id="page-security">
     <div class="intruder-banner" id="intruderBanner">
@@ -1529,6 +1560,52 @@
     <div class="modal-actions"><button class="btn" onclick="closeModal('addLogModal')">Cancel</button><button class="btn btn-primary" onclick="submitLog()">Save</button></div>
   </div>
 </div>
+<div class="modal-backdrop" id="addAutomationModal">
+  <div class="modal">
+    <div class="modal-title">New automation rule</div>
+    <div class="form-group">
+      <label>Template</label>
+      <select id="autoTemplate" onchange="applyAutomationTemplate()">
+        <option value="custom">Custom (advanced)</option>
+        <option value="sensor_above">When a sensor goes above a value</option>
+        <option value="sensor_below">When a sensor goes below a value</option>
+        <option value="nobody_home">When nobody's been home for a while</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Rule name</label><input type="text" id="autoName" placeholder="e.g. High AQI -> air purifier on"/></div>
+    <div class="form-group"><label>Description (optional)</label><input type="text" id="autoDescription" placeholder="What this rule does, in plain words"/></div>
+
+    <div id="autoConditionFields">
+      <div class="form-group">
+        <label>Sensor</label>
+        <select id="autoConditionKey">
+          <option value="aqi">AQI</option>
+          <option value="temperature">Temperature (°C)</option>
+          <option value="humidity">Humidity (%)</option>
+          <option value="smoke">Smoke (%)</option>
+          <option value="gas">Gas (%)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Threshold</label><input type="number" id="autoConditionThreshold" placeholder="e.g. 200"/></div>
+    </div>
+    <div class="form-group" id="autoMinutesField" style="display:none">
+      <label>Minutes nobody's been home</label><input type="number" id="autoConditionMinutes" placeholder="30" value="30"/>
+    </div>
+
+    <div class="form-group"><label>Then — room</label>
+      <select id="autoActionRoom" onchange="updateAutomationDeviceOptions()"></select>
+    </div>
+    <div class="form-group"><label>Device</label>
+      <select id="autoActionDevice"></select>
+    </div>
+    <div class="form-group"><label>Set to</label>
+      <select id="autoActionOn"><option value="true">On</option><option value="false">Off</option></select>
+    </div>
+    <div class="form-group"><label>Cooldown (seconds before it can fire again)</label><input type="number" id="autoCooldown" value="300"/></div>
+
+    <div class="modal-actions"><button class="btn" onclick="closeModal('addAutomationModal')">Cancel</button><button class="btn btn-primary" onclick="submitAutomationRule()">Create rule</button></div>
+  </div>
+</div>
 <div id="alertToast"></div>
 <script>
 // Use the current page's host so this works both on localhost and when
@@ -1557,7 +1634,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',security:'Security',family:'Family',audit:'Audit Log',systemlogs:'System Logs'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',family:'Family',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1570,6 +1647,7 @@ function showPage(page){
   if(page==='energy')renderEnergy();
   if(page==='safety')renderSafety();
   if(page==='simulations')renderSimulations();
+  if(page==='automation')renderAutomationPage();
   if(page==='floorplan')updateFloorPlan();
   if(page==='audit')renderAuditLog();
   if(page==='systemlogs')renderSystemLogs();
@@ -2962,9 +3040,9 @@ document.querySelectorAll('.modal-backdrop').forEach(m=>{m.addEventListener('cli
 // HELPERS
 function setText(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
 function setBar(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct||0))+'%';if(color)el.style.background=color;}
-function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
-function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️'}[n]||'⚙️';}
-function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;return'on';}
+function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust',air_purifier:'Air Purifier'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
+function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️',air_purifier:'🌬️'}[n]||'⚙️';}
+function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;if(n==='air_purifier')return`speed ${dev.speed}/3`;return'on';}
 
 // WEBSOCKET
 // INIT
@@ -3123,8 +3201,144 @@ async function renderSystemLogs(){
 }
 
 // ─────────────────────────────────────────────────
-// APP BOOTSTRAP
+// AUTOMATION
 // ─────────────────────────────────────────────────
+async function renderAutomationPage(){
+  await renderAutomationRules();
+  await renderAutomationRuns();
+}
+
+async function renderAutomationRules(){
+  const el=document.getElementById('automationRulesList');
+  if(!el)return;
+  const rules=await apiFetch('/api/automation/rules');
+  if(!rules){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load rules</div>';return;}
+  if(!rules.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No rules yet — click "+ New rule" to create one</div>';return;}
+  const condLabel=c=>{
+    if(c.type==='sensor_above')return`${c.key} > ${c.threshold}`;
+    if(c.type==='sensor_below')return`${c.key} < ${c.threshold}`;
+    if(c.type==='nobody_home_minutes')return`nobody home for ${c.minutes} min`;
+    if(c.type==='time_of_day')return`every day at ${String(c.hour).padStart(2,'0')}:${String(c.minute||0).padStart(2,'0')}`;
+    return c.type;
+  };
+  const actLabel=a=>`${a.room}.${a.device} → ${JSON.stringify(a.set)}`;
+  el.innerHTML=rules.map(r=>`
+    <div style="padding:14px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700;${r.enabled?'':'opacity:.4;text-decoration:line-through'}">${r.name}</span>
+          <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${r.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${r.enabled?'var(--green)':'var(--text3)'}">${r.enabled?'ON':'OFF'}</span>
+        </div>
+        ${r.description?`<div style="font-size:11.5px;color:var(--text3);margin-bottom:6px">${r.description}</div>`:''}
+        <div style="font-size:11px;color:var(--text2)">
+          <span style="color:var(--accent)">IF</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${condLabel(r.condition)}</code>
+          &nbsp;<span style="color:var(--accent)">THEN</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${actLabel(r.action)}</code>
+          &nbsp;<span style="color:var(--text3)">· cooldown ${r.cooldown_seconds}s</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-sm" onclick="toggleAutomationRule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAutomationRule(${r.id},this)">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+async function renderAutomationRuns(){
+  const el=document.getElementById('automationRunsList');
+  if(!el)return;
+  const runs=await apiFetch('/api/automation/runs');
+  if(!runs||!runs.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No automated actions yet</div>';return;}
+  el.innerHTML=runs.map(r=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="font-size:16px">⚡</span>
+      <div style="flex:1"><b>${r.rule_name}</b><span style="color:var(--text3);margin-left:6px">${r.detail||''}</span></div>
+      <div style="color:var(--text3);font-size:10.5px;flex-shrink:0">${r.created_at}</div>
+    </div>`).join('');
+}
+
+async function toggleAutomationRule(id){
+  await apiFetch(`/api/automation/rules/${id}/toggle`,{method:'POST'});
+  renderAutomationRules();
+}
+
+async function deleteAutomationRule(id){
+  if(!confirm('Delete this rule?'))return;
+  await apiFetch(`/api/automation/rules/${id}`,{method:'DELETE'});
+  renderAutomationRules();
+}
+
+function showAddAutomationModal(){
+  const roomSel=document.getElementById('autoActionRoom');
+  if(roomSel){
+    roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
+    updateAutomationDeviceOptions();
+  }
+  applyAutomationTemplate();
+  document.getElementById('addAutomationModal').classList.add('open');
+}
+
+function applyAutomationTemplate(){
+  const tpl=document.getElementById('autoTemplate')?.value;
+  const condFields=document.getElementById('autoConditionFields');
+  const minField=document.getElementById('autoMinutesField');
+  if(tpl==='nobody_home'){
+    if(condFields)condFields.style.display='none';
+    if(minField)minField.style.display='';
+  } else {
+    if(condFields)condFields.style.display='';
+    if(minField)minField.style.display='none';
+    if(tpl==='sensor_above'||tpl==='sensor_below'){
+      const keyEl=document.getElementById('autoConditionKey');
+      if(keyEl)keyEl.value=tpl==='sensor_above'?'aqi':'temperature';
+      const thEl=document.getElementById('autoConditionThreshold');
+      if(thEl)thEl.value=tpl==='sensor_above'?'200':'18';
+    }
+  }
+}
+
+function updateAutomationDeviceOptions(){
+  const room=document.getElementById('autoActionRoom')?.value;
+  const devSel=document.getElementById('autoActionDevice');
+  if(!devSel||!room||!devices[room])return;
+  devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
+}
+
+async function submitAutomationRule(){
+  const name=document.getElementById('autoName').value.trim();
+  if(!name){showToast('Please enter a rule name','danger');return;}
+  const tpl=document.getElementById('autoTemplate').value;
+  let condition;
+  if(tpl==='nobody_home'){
+    condition={type:'nobody_home_minutes',minutes:parseInt(document.getElementById('autoConditionMinutes').value)||30};
+  } else {
+    const key=document.getElementById('autoConditionKey').value;
+    const threshold=parseFloat(document.getElementById('autoConditionThreshold').value);
+    if(isNaN(threshold)){showToast('Please enter a valid threshold number','danger');return;}
+    condition={type:tpl==='sensor_below'?'sensor_below':'sensor_above',key,threshold};
+  }
+  const room=document.getElementById('autoActionRoom').value;
+  const device=document.getElementById('autoActionDevice').value;
+  const on=document.getElementById('autoActionOn').value==='true';
+  const cooldown=parseInt(document.getElementById('autoCooldown').value)||300;
+  const body={
+    name,
+    description:document.getElementById('autoDescription').value.trim()||undefined,
+    condition,
+    action:{room,device,set:{on}},
+    cooldown_seconds:cooldown
+  };
+  const r=await fetch(API+'/api/automation/rules',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    closeModal('addAutomationModal');
+    showToast(`Rule "${name}" created`,'success');
+    renderAutomationRules();
+  } else {
+    const err=await r.json();
+    showToast(err.detail||'Could not create rule','danger');
+  }
+}
+
+
 async function startDashboard(){
   await loadAll();
   connectWebSocket();

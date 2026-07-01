@@ -6,6 +6,7 @@ COPY server.py .
 COPY db.py .
 COPY auth.py .
 COPY applog.py .
+COPY automation.py .
 COPY static/ static/
 
 # /app/data holds smarthome.db (SQLite) and logs/server.log. Mount this as a
