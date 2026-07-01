@@ -110,6 +110,25 @@ def init_db():
                 ip_address  TEXT,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS automation_rules (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                name               TEXT NOT NULL,
+                description        TEXT,
+                condition_json     TEXT NOT NULL,
+                action_json        TEXT NOT NULL,
+                enabled            INTEGER NOT NULL DEFAULT 1,
+                cooldown_seconds   INTEGER NOT NULL DEFAULT 300,
+                created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS automation_runs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_id     INTEGER,
+                rule_name   TEXT NOT NULL,
+                detail      TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -328,5 +347,85 @@ def get_audit_log(limit: int = 300):
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── Automation rules ─────────────────────────────────────────────────────
+
+def _row_to_rule(row):
+    import json
+    d = dict(row)
+    d["condition"] = json.loads(d.pop("condition_json"))
+    d["action"] = json.loads(d.pop("action_json"))
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+def get_automation_rules(enabled_only=False):
+    with get_conn() as conn:
+        if enabled_only:
+            rows = conn.execute("SELECT * FROM automation_rules WHERE enabled = 1 ORDER BY id").fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM automation_rules ORDER BY id").fetchall()
+        return [_row_to_rule(r) for r in rows]
+
+
+def get_automation_rule(rule_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM automation_rules WHERE id = ?", (rule_id,)).fetchone()
+        return _row_to_rule(row) if row else None
+
+
+def create_automation_rule(name, description, condition, action, enabled=True, cooldown_seconds=300):
+    import json
+    with _db_lock, get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO automation_rules (name, description, condition_json, action_json, enabled, cooldown_seconds)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (name, description, json.dumps(condition), json.dumps(action), 1 if enabled else 0, cooldown_seconds),
+        )
+        row = conn.execute("SELECT * FROM automation_rules WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return _row_to_rule(row)
+
+
+def update_automation_rule_enabled(rule_id, enabled):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE automation_rules SET enabled = ? WHERE id = ?", (1 if enabled else 0, rule_id)
+        )
+
+
+def delete_automation_rule(rule_id):
+    with _db_lock, get_conn() as conn:
+        conn.execute("DELETE FROM automation_rules WHERE id = ?", (rule_id,))
+
+
+def seed_automation_rules_if_empty(defaults):
+    """Insert starter rules only if the table is empty (first run ever)."""
+    with get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) AS c FROM automation_rules").fetchone()["c"]
+    if count > 0:
+        return
+    for r in defaults:
+        create_automation_rule(
+            name=r["name"], description=r.get("description"),
+            condition=r["condition"], action=r["action"],
+            enabled=r.get("enabled", True), cooldown_seconds=r.get("cooldown_seconds", 300),
+        )
+
+
+def add_automation_run(rule_id, rule_name, detail):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "INSERT INTO automation_runs (rule_id, rule_name, detail) VALUES (?, ?, ?)",
+            (rule_id, rule_name, detail),
+        )
+
+
+def get_automation_runs(limit: int = 100):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM automation_runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]

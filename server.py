@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 import db
 import auth
+import automation
 from applog import logger, get_recent_logs
 
 # ── SMOKE / GAS / FIRE DETECTION ──
@@ -144,7 +145,8 @@ devices = {
         "light": {"on": True,  "brightness": 80, "watts": 12},
         "fan":   {"on": False, "speed": 0,  "watts": 45},
         "tv":    {"on": False, "watts": 120},
-        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500}
+        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
+        "air_purifier": {"on": False, "speed": 2, "watts": 50}
     },
     "aditya_room": {
         "light": {"on": False, "brightness": 70, "watts": 10},
@@ -177,6 +179,12 @@ devices = {
     "bathroom": {
         "light":   {"on": False, "brightness": 100, "watts": 8},
         "exhaust": {"on": False, "watts": 25}
+    },
+    "security": {
+        # Door lock as a real backend-tracked device (was previously
+        # frontend-only state) so automation rules can actually act on it
+        # — e.g. auto-unlock on a fire/smoke alert.
+        "door_lock": {"on": True, "watts": 0}  # on = locked, off = unlocked
     }
 }
 
@@ -248,6 +256,35 @@ if db.count_users() == 0:
             member_id=m["id"],
         )
         _GENERATED_PASSWORDS_THIS_RUN.append((m["name"].lower(), temp_password))
+
+# ── Automation rules ─────────────────────────────────────────────────────
+# A few real starter rules, inserted only on the very first run (empty
+# table). Anyone can add/edit/disable more from the Automation page —
+# these are just sensible defaults, not hardcoded behavior.
+_DEFAULT_AUTOMATION_RULES = [
+    {
+        "name": "High AQI -> air purifier on",
+        "description": "Turns on the living room air purifier at speed 3 whenever AQI rises above 200 (HERC 'Poor' threshold).",
+        "condition": {"type": "sensor_above", "key": "aqi", "threshold": 200},
+        "action": {"room": "living_room", "device": "air_purifier", "set": {"on": True, "speed": 3}},
+        "cooldown_seconds": 600,
+    },
+    {
+        "name": "Nobody home 30 min -> all lights off",
+        "description": "If every family member has been away for 30+ minutes, turns off lights in every room to save energy.",
+        "condition": {"type": "nobody_home_minutes", "minutes": 30},
+        "action": {"room": "living_room", "device": "light", "set": {"on": False}},
+        "cooldown_seconds": 1800,
+    },
+    {
+        "name": "High smoke -> unlock door",
+        "description": "If smoke level exceeds the 40% safety threshold, automatically unlocks the front door so it's not blocking an evacuation.",
+        "condition": {"type": "sensor_above", "key": "smoke", "threshold": 40},
+        "action": {"room": "security", "device": "door_lock", "set": {"on": False}},
+        "cooldown_seconds": 300,
+    },
+]
+db.seed_automation_rules_if_empty(_DEFAULT_AUTOMATION_RULES)
 
 # Smoke/fire detector instance
 detector = SmokeGasFireDetector(smoke_threshold=40.0, gas_threshold=40.0,
@@ -392,6 +429,10 @@ def simulate_sensors():
                     alert_history.append(alert_entry)
                     if len(alert_history) > 50:
                         alert_history.pop(0)
+
+                # Automation rules — checked every tick, each rule has its
+                # own cooldown so this doesn't spam-toggle devices.
+                automation.evaluate_rules(devices, sensors, family_members, state_lock)
         except Exception as e:
             # Without this, any unexpected error here would silently kill the
             # daemon thread forever — sensor data would just freeze at its
@@ -568,6 +609,76 @@ async def get_system_logs(lines: int = 200, level: Optional[str] = None, user: d
         raise HTTPException(status_code=403, detail="Only the owner account can view system logs")
     lines = max(1, min(lines, 1000))
     return {"lines": get_recent_logs(lines=lines, level=level)}
+
+
+# ── Automation rules ────────────────────────────────────────────────────
+
+class AutomationConditionIn(BaseModel):
+    type: str  # sensor_above / sensor_below / nobody_home_minutes / time_of_day
+    key: Optional[str] = None
+    threshold: Optional[float] = None
+    minutes: Optional[int] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    window_minutes: Optional[int] = None
+
+class AutomationActionIn(BaseModel):
+    room: str
+    device: str
+    set: dict
+
+class AutomationRuleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    condition: AutomationConditionIn
+    action: AutomationActionIn
+    enabled: bool = True
+    cooldown_seconds: int = 300
+
+
+@app.get("/api/automation/rules")
+async def list_automation_rules(user: dict = Depends(get_current_user)):
+    return db.get_automation_rules()
+
+
+@app.post("/api/automation/rules")
+async def create_automation_rule(body: AutomationRuleCreate, request: Request, user: dict = Depends(get_current_user)):
+    # Validate the action targets a real device before saving — a rule
+    # pointing at a room/device that doesn't exist would silently no-op
+    # forever, which is worse than rejecting it up front.
+    if body.action.room not in devices or body.action.device not in devices[body.action.room]:
+        raise HTTPException(status_code=400, detail=f"{body.action.room}.{body.action.device} is not a real device")
+    rule = db.create_automation_rule(
+        name=body.name, description=body.description,
+        condition=body.condition.dict(exclude_none=True),
+        action=body.action.dict(),
+        enabled=body.enabled, cooldown_seconds=body.cooldown_seconds,
+    )
+    db.add_audit_entry(user["username"], "automation_rule_created", detail=body.name, ip_address=_client_ip(request))
+    return rule
+
+
+@app.post("/api/automation/rules/{rule_id}/toggle")
+async def toggle_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
+    rule = db.get_automation_rule(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    db.update_automation_rule_enabled(rule_id, not rule["enabled"])
+    db.add_audit_entry(user["username"], "automation_rule_toggled", detail=f"{rule['name']} -> {'enabled' if not rule['enabled'] else 'disabled'}", ip_address=_client_ip(request))
+    return db.get_automation_rule(rule_id)
+
+
+@app.delete("/api/automation/rules/{rule_id}")
+async def delete_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
+    rule = db.get_automation_rule(rule_id)
+    db.delete_automation_rule(rule_id)
+    db.add_audit_entry(user["username"], "automation_rule_deleted", detail=rule["name"] if rule else str(rule_id), ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.get("/api/automation/runs")
+async def list_automation_runs(user: dict = Depends(get_current_user)):
+    return db.get_automation_runs()
 
 
 @app.get("/")
