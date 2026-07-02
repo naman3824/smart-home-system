@@ -129,6 +129,21 @@ def init_db():
                 detail      TEXT,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS routines (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id   INTEGER NOT NULL,
+                member_name TEXT NOT NULL,
+                name        TEXT NOT NULL,
+                hour        INTEGER NOT NULL,
+                minute      INTEGER NOT NULL DEFAULT 0,
+                days        TEXT NOT NULL DEFAULT 'everyday',
+                room        TEXT NOT NULL,
+                device      TEXT NOT NULL,
+                action_json TEXT NOT NULL,
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -429,3 +444,66 @@ def get_automation_runs(limit: int = 100):
             "SELECT * FROM automation_runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── Routines ─────────────────────────────────────────────────────────────
+
+def _row_to_routine(row):
+    import json
+    d = dict(row)
+    d["action"] = json.loads(d.pop("action_json"))
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+def get_routines(member_id=None):
+    with get_conn() as conn:
+        if member_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM routines WHERE member_id = ? ORDER BY hour, minute", (member_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM routines ORDER BY member_id, hour, minute"
+            ).fetchall()
+        return [_row_to_routine(r) for r in rows]
+
+
+def get_routine(routine_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM routines WHERE id = ?", (routine_id,)).fetchone()
+        return _row_to_routine(row) if row else None
+
+
+def create_routine(member_id, member_name, name, hour, minute, days, room, device, action):
+    import json
+    with _db_lock, get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO routines
+               (member_id, member_name, name, hour, minute, days, room, device, action_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (member_id, member_name, name, hour, minute, days, room, device, json.dumps(action)),
+        )
+        row = conn.execute("SELECT * FROM routines WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return _row_to_routine(row)
+
+
+def update_routine_enabled(routine_id, enabled):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE routines SET enabled = ? WHERE id = ?", (1 if enabled else 0, routine_id)
+        )
+
+
+def delete_routine(routine_id):
+    with _db_lock, get_conn() as conn:
+        conn.execute("DELETE FROM routines WHERE id = ?", (routine_id,))
+
+
+def get_enabled_routines_for_tick():
+    """Returns all enabled routines — called every sensor tick."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM routines WHERE enabled = 1"
+        ).fetchall()
+        return [_row_to_routine(r) for r in rows]

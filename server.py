@@ -433,6 +433,8 @@ def simulate_sensors():
                 # Automation rules — checked every tick, each rule has its
                 # own cooldown so this doesn't spam-toggle devices.
                 automation.evaluate_rules(devices, sensors, family_members, state_lock)
+                # Per-member routines — time-based, fires once per day per routine.
+                automation.evaluate_routines(devices, state_lock)
         except Exception as e:
             # Without this, any unexpected error here would silently kill the
             # daemon thread forever — sensor data would just freeze at its
@@ -681,8 +683,95 @@ async def list_automation_runs(user: dict = Depends(get_current_user)):
     return db.get_automation_runs()
 
 
-@app.get("/")
-async def root():
+# ── Routines ───────────────────────────────────────────────────────────────
+
+class RoutineCreate(BaseModel):
+    name: str
+    hour: int                        # 0-23
+    minute: int = 0                  # 0-59
+    days: str = "everyday"           # "everyday" or "monday,wednesday,friday" etc.
+    room: Optional[str] = None       # if None, defaults to the member's own room
+    device: str = "light"
+    action: dict                     # e.g. {"on": False} or {"on": True, "brightness": 50}
+    member_id: Optional[int] = None  # owner can create for any member; others only for themselves
+
+
+@app.get("/api/routines")
+async def list_routines(member_id: Optional[int] = None, user: dict = Depends(get_current_user)):
+    # Non-owners can only see their own routines
+    if user["role"] != "owner" and member_id != user["member_id"]:
+        member_id = user["member_id"]
+    return db.get_routines(member_id=member_id)
+
+
+@app.post("/api/routines")
+async def create_routine_endpoint(body: RoutineCreate, request: Request, user: dict = Depends(get_current_user)):
+    # Determine which member this routine belongs to
+    target_member_id = body.member_id or user["member_id"]
+    if user["role"] != "owner" and target_member_id != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only create routines for yourself")
+
+    # Find the member's name and default room
+    member = next((m for m in family_members if m["id"] == target_member_id), None)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # Resolve room: use provided room or fall back to member's own room
+    MEMBER_ROOM_MAP = {
+        "Aditya": "aditya_room", "Diksha": "diksha_room",
+        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room"
+    }
+    room = body.room or MEMBER_ROOM_MAP.get(member["name"], "living_room")
+
+    # Validate device exists in target room
+    if room not in devices or body.device not in devices[room]:
+        raise HTTPException(status_code=400, detail=f"{room}.{body.device} is not a real device")
+
+    # Validate time
+    if not (0 <= body.hour <= 23 and 0 <= body.minute <= 59):
+        raise HTTPException(status_code=400, detail="Invalid time — hour must be 0-23, minute 0-59")
+
+    routine = db.create_routine(
+        member_id=target_member_id,
+        member_name=member["name"],
+        name=body.name,
+        hour=body.hour,
+        minute=body.minute,
+        days=body.days,
+        room=room,
+        device=body.device,
+        action=body.action,
+    )
+    db.add_audit_entry(user["username"], "routine_created",
+                       detail=f"{member['name']}: {body.name} at {body.hour:02d}:{body.minute:02d}",
+                       ip_address=_client_ip(request))
+    return routine
+
+
+@app.post("/api/routines/{routine_id}/toggle")
+async def toggle_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
+    routine = db.get_routine(routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    if user["role"] != "owner" and routine["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only edit your own routines")
+    db.update_routine_enabled(routine_id, not routine["enabled"])
+    db.add_audit_entry(user["username"], "routine_toggled", detail=routine["name"], ip_address=_client_ip(request))
+    return db.get_routine(routine_id)
+
+
+@app.delete("/api/routines/{routine_id}")
+async def delete_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
+    routine = db.get_routine(routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    if user["role"] != "owner" and routine["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only delete your own routines")
+    db.delete_routine(routine_id)
+    db.add_audit_entry(user["username"], "routine_deleted", detail=routine["name"], ip_address=_client_ip(request))
+    return {"ok": True}
+
+
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 @app.get("/api/status")
