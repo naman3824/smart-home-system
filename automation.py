@@ -137,3 +137,82 @@ def evaluate_rules(devices: dict, sensors: dict, family_members: list, state_loc
         db.add_automation_run(rule_id, rule.get("name", "Unnamed rule"), description)
         db.add_audit_entry("automation", "rule_fired", detail=f"{rule.get('name')}: {description}")
         logger.info("Automation rule fired: %s -> %s", rule.get("name"), description)
+
+
+# ── Per-member routines ────────────────────────────────────────────────────
+# Routines are scoped to individual members and stored separately from
+# general automation rules, but evaluated in the same sensor tick loop.
+# cooldown per routine: once fired, won't fire again for 23 hours so it
+# runs once per day even if the tick loop catches the window multiple times.
+
+_routine_last_fired = {}  # {routine_id: last_fired_timestamp}
+_ROUTINE_COOLDOWN_SECONDS = 23 * 3600  # 23 hours
+
+_DAY_NAMES = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+
+
+def _routine_should_run_today(days: str) -> bool:
+    if days == "everyday":
+        return True
+    today = _DAY_NAMES[datetime.now().weekday()]
+    allowed = [d.strip().lower() for d in days.split(",")]
+    return today in allowed
+
+
+def evaluate_routines(devices: dict, state_lock):
+    """
+    Called every sensor tick alongside evaluate_rules(). For each enabled
+    routine whose time window is now and whose day matches, apply the action.
+    """
+    routines = db.get_enabled_routines_for_tick()
+    now_ts = time.time()
+    now = datetime.now()
+
+    for routine in routines:
+        rid = routine["id"]
+        last_fired = _routine_last_fired.get(rid, 0)
+        if now_ts - last_fired < _ROUTINE_COOLDOWN_SECONDS:
+            continue
+
+        if not _routine_should_run_today(routine.get("days", "everyday")):
+            continue
+
+        # Fire within a 2-minute window of the scheduled time
+        target = now.replace(
+            hour=routine["hour"], minute=routine["minute"],
+            second=0, microsecond=0
+        )
+        if not (target <= now < target + timedelta(minutes=2)):
+            continue
+
+        room = routine["room"]
+        device = routine["device"]
+        action = routine["action"]
+
+        try:
+            with state_lock:
+                if room in devices and device in devices[room]:
+                    devices[room][device].update(action)
+                    db.save_device_state(room, device, devices[room][device])
+                else:
+                    logger.warning(
+                        "Routine %s: target %s.%s does not exist — skipped",
+                        routine["name"], room, device
+                    )
+                    continue
+        except Exception as e:
+            logger.error("Routine %s action failed: %s", routine["name"], e, exc_info=True)
+            continue
+
+        _routine_last_fired[rid] = now_ts
+        detail = f"{room}.{device} → {action} at {routine['hour']:02d}:{routine['minute']:02d}"
+        db.add_automation_run(rid, f"Routine: {routine['name']}", detail)
+        db.add_audit_entry(
+            routine["member_name"].lower(),
+            "routine_fired",
+            detail=f"{routine['name']}: {detail}"
+        )
+        logger.info(
+            "Routine fired for %s: %s → %s",
+            routine["member_name"], routine["name"], detail
+        )
