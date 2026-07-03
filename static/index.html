@@ -376,6 +376,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Security</span>
       <span class="nav-badge" id="nav-security-badge">0</span>
     </div>
+    <div class="nav-item" onclick="showPage('guestaccess')" id="nav-guestaccess">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg><span>Guest Access</span>
+    </div>
     <div class="nav-item" onclick="showPage('family')" id="nav-family">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Family</span>
     </div>
@@ -1337,6 +1340,39 @@
     </div>
   </div>
 
+  <!-- GUEST ACCESS -->
+  <div class="content page" id="page-guestaccess">
+    <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(108,139,239,.07));border:1px solid rgba(34,197,94,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">🪪</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Scheduled guest access</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Add recurring visitors — maid, cook, delivery agent, etc. — with specific allowed days and time windows. Visits outside the schedule are flagged as restricted access even if the face is recognized.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">👥 Scheduled visitors</span>
+        <button class="btn btn-sm btn-primary" onclick="showAddGuestModal()">+ Add visitor</button>
+      </div>
+      <div class="card-body" id="guestScheduleList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 How it works</span></div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--text2)">
+          <div style="display:flex;gap:10px"><span style="color:var(--green);font-size:16px">✅</span><span><b>Within schedule:</b> face detected, name matches a scheduled visitor, current time and day are within their window → logged as "authorized guest"</span></div>
+          <div style="display:flex;gap:10px"><span style="color:var(--orange);font-size:16px">⚠️</span><span><b>Outside schedule:</b> face matches but wrong time or day → logged as "restricted access" with a warning — not a full intruder alert, but flagged for the owner</span></div>
+          <div style="display:flex;gap:10px"><span style="color:var(--red);font-size:16px">🚨</span><span><b>Not in schedule:</b> face not recognized and no schedule matches → full intruder alert (same as before)</span></div>
+          <div style="margin-top:6px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--text3)">To test: use the Simulations tab → Security events → "Unknown 🚨" button, then add that name here as a scheduled visitor and test again.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SECURITY -->
   <div class="content page" id="page-security">
     <div class="intruder-banner" id="intruderBanner">
@@ -1693,6 +1729,56 @@
     </div>
   </div>
 </div>
+<div class="modal-backdrop" id="addGuestModal">
+  <div class="modal">
+    <div class="modal-title">Add scheduled visitor</div>
+    <div class="form-group"><label>Name</label><input type="text" id="guestName" placeholder="e.g. Sunita (maid)"/></div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="guestRole">
+        <option value="maid">Maid / housekeeping</option>
+        <option value="cook">Cook</option>
+        <option value="driver">Driver</option>
+        <option value="guard">Security guard</option>
+        <option value="delivery">Regular delivery agent</option>
+        <option value="guest">Guest</option>
+        <option value="worker">Worker / repair</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Allowed days</label>
+      <select id="guestDays">
+        <option value="everyday">Every day</option>
+        <option value="monday,tuesday,wednesday,thursday,friday,saturday">Monday – Saturday</option>
+        <option value="monday,tuesday,wednesday,thursday,friday">Weekdays only (Mon–Fri)</option>
+        <option value="saturday,sunday">Weekends only</option>
+        <option value="monday,wednesday,friday">Mon, Wed, Fri</option>
+        <option value="tuesday,thursday,saturday">Tue, Thu, Sat</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Allowed from</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="guestStartHour" min="0" max="23" placeholder="HH" style="width:70px" value="7"/>
+        <span style="color:var(--text2)">:</span>
+        <input type="number" id="guestStartMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Allowed until</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="guestEndHour" min="0" max="23" placeholder="HH" style="width:70px" value="9"/>
+        <span style="color:var(--text2)">:</span>
+        <input type="number" id="guestEndMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+      </div>
+    </div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="guestNotes" placeholder="e.g. comes every morning to clean"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('addGuestModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitGuestSchedule()">Save</button>
+    </div>
+  </div>
+</div>
 <div id="alertToast"></div>
 <script>
 // Use the current page's host so this works both on localhost and when
@@ -1721,7 +1807,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',family:'Family',routines:'Routines',audit:'Audit Log',systemlogs:'System Logs'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1731,6 +1817,7 @@ function showPage(page){
   if(page==='devices')renderDeviceGrid(currentRoom);
   if(page==='family')renderFamily();
   if(page==='security'){renderLogs();updateIntruderBanner();}
+  if(page==='guestaccess')renderGuestAccessPage();
   if(page==='energy')renderEnergy();
   if(page==='safety')renderSafety();
   if(page==='simulations')renderSimulations();
@@ -3546,6 +3633,91 @@ async function submitRoutine(){
   }
 }
 
+
+// ─────────────────────────────────────────────────
+// GUEST ACCESS
+// ─────────────────────────────────────────────────
+async function renderGuestAccessPage(){
+  const el=document.getElementById('guestScheduleList');
+  if(!el)return;
+  const guests=await apiFetch('/api/guests');
+  if(!guests||!guests.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No scheduled visitors yet — click "+ Add visitor" to add one</div>';
+    return;
+  }
+  const dayLabel=d=>{
+    if(d==='everyday')return'Every day';
+    if(d==='monday,tuesday,wednesday,thursday,friday,saturday')return'Mon–Sat';
+    if(d==='monday,tuesday,wednesday,thursday,friday')return'Weekdays';
+    if(d==='saturday,sunday')return'Weekends';
+    return d.replace(/,/g,', ');
+  };
+  const roleIcon={maid:'🧹',cook:'👨‍🍳',driver:'🚗',guard:'💂',delivery:'📦',guest:'👤',worker:'🔧'};
+  el.innerHTML=guests.map(g=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:22px;width:36px;text-align:center">${roleIcon[g.role]||'👤'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;${g.enabled?'':'opacity:.4;text-decoration:line-through'}">${g.name}</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+          ${g.role} · ${dayLabel(g.days)} · ${String(g.start_hour).padStart(2,'0')}:${String(g.start_min).padStart(2,'0')} – ${String(g.end_hour).padStart(2,'0')}:${String(g.end_min).padStart(2,'0')}
+        </div>
+        ${g.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic">${g.notes}</div>`:''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+        <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${g.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${g.enabled?'var(--green)':'var(--text3)'}">${g.enabled?'Active':'Paused'}</span>
+        <button class="btn btn-sm" onclick="toggleGuestSchedule(${g.id})">${g.enabled?'Pause':'Resume'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteGuestSchedule(${g.id})">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function showAddGuestModal(){
+  ['guestName','guestNotes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('guestStartHour').value='7';
+  document.getElementById('guestStartMin').value='0';
+  document.getElementById('guestEndHour').value='9';
+  document.getElementById('guestEndMin').value='0';
+  document.getElementById('addGuestModal').classList.add('open');
+}
+
+async function submitGuestSchedule(){
+  const name=document.getElementById('guestName').value.trim();
+  if(!name){showToast('Please enter a name','danger');return;}
+  const startHour=parseInt(document.getElementById('guestStartHour').value);
+  const startMin=parseInt(document.getElementById('guestStartMin').value||'0');
+  const endHour=parseInt(document.getElementById('guestEndHour').value);
+  const endMin=parseInt(document.getElementById('guestEndMin').value||'0');
+  if(isNaN(startHour)||isNaN(endHour)){showToast('Please enter valid times','danger');return;}
+  if(startHour*60+startMin>=endHour*60+endMin){showToast('Start time must be before end time','danger');return;}
+  const body={
+    name,
+    role:document.getElementById('guestRole').value,
+    days:document.getElementById('guestDays').value,
+    start_hour:startHour,start_min:startMin,
+    end_hour:endHour,end_min:endMin,
+    notes:document.getElementById('guestNotes').value.trim()||undefined
+  };
+  const r=await fetch(API+'/api/guests',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    closeModal('addGuestModal');
+    showToast(`${name} added to guest schedule`,'success');
+    renderGuestAccessPage();
+  } else {
+    const err=await r.json().catch(()=>({}));
+    showToast(err.detail||'Could not save guest','danger');
+  }
+}
+
+async function toggleGuestSchedule(id){
+  await apiFetch(`/api/guests/${id}/toggle`,{method:'POST'});
+  renderGuestAccessPage();
+}
+
+async function deleteGuestSchedule(id){
+  if(!confirm('Remove this visitor from the schedule?'))return;
+  await apiFetch(`/api/guests/${id}`,{method:'DELETE'});
+  renderGuestAccessPage();
+}
 
 async function startDashboard(){
   await loadAll();

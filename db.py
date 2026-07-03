@@ -144,6 +144,20 @@ def init_db():
                 enabled     INTEGER NOT NULL DEFAULT 1,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS scheduled_guests (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                role        TEXT NOT NULL DEFAULT 'guest',
+                days        TEXT NOT NULL DEFAULT 'everyday',
+                start_hour  INTEGER NOT NULL DEFAULT 0,
+                start_min   INTEGER NOT NULL DEFAULT 0,
+                end_hour    INTEGER NOT NULL DEFAULT 23,
+                end_min     INTEGER NOT NULL DEFAULT 59,
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                notes       TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -507,3 +521,63 @@ def get_enabled_routines_for_tick():
             "SELECT * FROM routines WHERE enabled = 1"
         ).fetchall()
         return [_row_to_routine(r) for r in rows]
+
+
+# ── Scheduled guests ──────────────────────────────────────────────────────
+
+def get_scheduled_guests(enabled_only=False):
+    with get_conn() as conn:
+        if enabled_only:
+            rows = conn.execute(
+                "SELECT * FROM scheduled_guests WHERE enabled = 1 ORDER BY name"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM scheduled_guests ORDER BY name"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_scheduled_guest_by_name(name):
+    """Case-insensitive lookup — used when a face is detected."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_guests WHERE LOWER(name) = LOWER(?) AND enabled = 1",
+            (name,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_scheduled_guest(name, role, days, start_hour, start_min, end_hour, end_min, notes=None):
+    with _db_lock, get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO scheduled_guests
+               (name, role, days, start_hour, start_min, end_hour, end_min, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, role, days, start_hour, start_min, end_hour, end_min, notes),
+        )
+        row = conn.execute(
+            "SELECT * FROM scheduled_guests WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return dict(row)
+
+
+def update_scheduled_guest_enabled(guest_id, enabled):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE scheduled_guests SET enabled = ? WHERE id = ?",
+            (1 if enabled else 0, guest_id)
+        )
+
+
+def delete_scheduled_guest(guest_id):
+    with _db_lock, get_conn() as conn:
+        conn.execute("DELETE FROM scheduled_guests WHERE id = ?", (guest_id,))
+
+
+def get_scheduled_guest(guest_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_guests WHERE id = ?", (guest_id,)
+        ).fetchone()
+        return dict(row) if row else None
