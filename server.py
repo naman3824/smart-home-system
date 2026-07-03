@@ -696,6 +696,47 @@ class RoutineCreate(BaseModel):
     member_id: Optional[int] = None  # owner can create for any member; others only for themselves
 
 
+class ScheduledGuestCreate(BaseModel):
+    name: str
+    role: str = "guest"      # "guest" | "maid" | "worker" | "delivery" etc.
+    days: str = "everyday"   # "everyday" or comma-separated day names
+    start_hour: int = 0
+    start_min: int = 0
+    end_hour: int = 23
+    end_min: int = 59
+    notes: Optional[str] = None
+
+
+def _check_guest_access(guest: dict) -> tuple[bool, str]:
+    """
+    Checks whether a scheduled guest's current visit is within their
+    allowed time window and day. Returns (is_authorized, reason_string).
+    """
+    from datetime import datetime as _dt
+    now = _dt.now()
+    day_names = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+    today = day_names[now.weekday()]
+
+    allowed_days = guest.get("days", "everyday")
+    if allowed_days != "everyday":
+        allowed = [d.strip().lower() for d in allowed_days.split(",")]
+        if today not in allowed:
+            return False, f"not allowed on {today.capitalize()}s"
+
+    now_mins = now.hour * 60 + now.minute
+    start_mins = guest["start_hour"] * 60 + guest["start_min"]
+    end_mins   = guest["end_hour"]   * 60 + guest["end_min"]
+
+    if not (start_mins <= now_mins <= end_mins):
+        return False, (
+            f"outside allowed hours "
+            f"({guest['start_hour']:02d}:{guest['start_min']:02d}–"
+            f"{guest['end_hour']:02d}:{guest['end_min']:02d})"
+        )
+
+    return True, "within allowed schedule"
+
+
 @app.get("/api/routines")
 async def list_routines(member_id: Optional[int] = None, user: dict = Depends(get_current_user)):
     # Non-owners can only see their own routines
@@ -772,6 +813,103 @@ async def delete_routine(routine_id: int, request: Request, user: dict = Depends
     return {"ok": True}
 
 
+# ── Scheduled guests ──────────────────────────────────────────────────────
+
+@app.get("/api/guests")
+async def list_scheduled_guests(user: dict = Depends(get_current_user)):
+    return db.get_scheduled_guests()
+
+
+@app.post("/api/guests")
+async def create_scheduled_guest(body: ScheduledGuestCreate, request: Request, user: dict = Depends(get_current_user)):
+    if not (0 <= body.start_hour <= 23 and 0 <= body.start_min <= 59 and
+            0 <= body.end_hour <= 23 and 0 <= body.end_min <= 59):
+        raise HTTPException(status_code=400, detail="Invalid time values")
+    if body.start_hour * 60 + body.start_min >= body.end_hour * 60 + body.end_min:
+        raise HTTPException(status_code=400, detail="Start time must be before end time")
+    guest = db.create_scheduled_guest(
+        name=body.name, role=body.role, days=body.days,
+        start_hour=body.start_hour, start_min=body.start_min,
+        end_hour=body.end_hour, end_min=body.end_min, notes=body.notes
+    )
+    db.add_audit_entry(user["username"], "guest_schedule_added",
+                       detail=f"{body.name} ({body.role})", ip_address=_client_ip(request))
+    return guest
+
+
+@app.post("/api/guests/{guest_id}/toggle")
+async def toggle_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
+    guest = db.get_scheduled_guest(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    db.update_scheduled_guest_enabled(guest_id, not guest["enabled"])
+    db.add_audit_entry(user["username"], "guest_schedule_toggled",
+                       detail=guest["name"], ip_address=_client_ip(request))
+    return db.get_scheduled_guest(guest_id)
+
+
+@app.delete("/api/guests/{guest_id}")
+async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
+    guest = db.get_scheduled_guest(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    db.delete_scheduled_guest(guest_id)
+    db.add_audit_entry(user["username"], "guest_schedule_removed",
+                       detail=guest["name"], ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/security/guest-detected")
+async def log_guest_detected(body: dict):
+    """
+    Called when a face is recognized but doesn't match any family member.
+    Checks if the person has a scheduled access entry and whether the
+    current time/day falls within their allowed window.
+    Returns the access decision so the frontend can react appropriately.
+    """
+    name = body.get("name", "Unknown")
+    guest = db.get_scheduled_guest_by_name(name)
+
+    if not guest:
+        # No schedule found — treat as a regular unrecognized intruder
+        entry = db.add_security_log(
+            person=name, type_="intruder",
+            event="unrecognized face — not in guest schedule",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="unauthorized"
+        )
+        security_logs.insert(0, entry)
+        return {"access": "denied", "reason": "not in guest schedule", "log": entry}
+
+    authorized, reason = _check_guest_access(guest)
+
+    if authorized:
+        entry = db.add_security_log(
+            person=name, type_="guest",
+            event=f"{guest['role']} — scheduled access ({reason})",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="authorized"
+        )
+        security_logs.insert(0, entry)
+        return {"access": "granted", "reason": reason, "log": entry}
+    else:
+        # Person is in the schedule but visiting at the wrong time/day
+        entry = db.add_security_log(
+            person=name, type_="intruder",
+            event=f"{guest['role']} — access OUTSIDE allowed schedule ({reason})",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="restricted"
+        )
+        security_logs.insert(0, entry)
+        logger.warning("Scheduled guest %s attempted access outside schedule: %s", name, reason)
+        return {"access": "denied", "reason": reason, "log": entry}
+
+
+@app.get("/")
+async def root():
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 @app.get("/api/status")
