@@ -379,6 +379,9 @@
     <div class="nav-item" onclick="showPage('guestaccess')" id="nav-guestaccess">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg><span>Guest Access</span>
     </div>
+    <div class="nav-item" onclick="showPage('payments')" id="nav-payments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span>Payments</span>
+    </div>
     <div class="nav-item" onclick="showPage('family')" id="nav-family">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Family</span>
     </div>
@@ -1373,6 +1376,50 @@
     </div>
   </div>
 
+  <!-- PAYMENTS -->
+  <div class="content page" id="page-payments">
+    <div style="background:linear-gradient(135deg,rgba(251,191,36,.1),rgba(245,158,11,.07));border:1px solid rgba(251,191,36,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">💰</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Rent & payments</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Track monthly rent shares. Once someone pays (via GPay, cash, bank transfer), mark it here to keep the ledger accurate. No actual payment processing happens inside the app.</div>
+      </div>
+    </div>
+
+    <!-- Month navigation + summary -->
+    <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
+      <div class="sensor-card"><div class="sensor-label">Total rent</div><div class="sensor-value" id="pay-total" style="color:var(--accent)">₹--</div><div class="sensor-sub" id="pay-dueday">due --th</div></div>
+      <div class="sensor-card"><div class="sensor-label">Per person</div><div class="sensor-value" id="pay-share" style="color:var(--cyan)">₹--</div><div class="sensor-sub" id="pay-members">-- members</div></div>
+      <div class="sensor-card"><div class="sensor-label">Collected</div><div class="sensor-value" id="pay-collected" style="color:var(--green)">₹--</div><div class="sensor-sub" id="pay-paid-count">-- paid</div></div>
+      <div class="sensor-card"><div class="sensor-label">Outstanding</div><div class="sensor-value" id="pay-outstanding" style="color:var(--orange)">₹--</div><div class="sensor-sub" id="pay-pending-count">-- pending</div></div>
+    </div>
+
+    <!-- Month picker + settings -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <button class="btn" onclick="changePaymentMonth(-1)">‹ Prev</button>
+      <div style="font-size:14px;font-weight:600;min-width:110px;text-align:center" id="pay-month-label">--</div>
+      <button class="btn" onclick="changePaymentMonth(1)">Next ›</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm" onclick="showRentConfigModal()" id="rentConfigBtn" style="display:none">⚙ Configure rent</button>
+    </div>
+
+    <!-- Payment cards per member -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">🧾 Member payments</span></div>
+      <div class="card-body" id="paymentMemberList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Payment history -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Recent payment activity</span></div>
+      <div class="card-body" id="paymentHistory" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- SECURITY -->
   <div class="content page" id="page-security">
     <div class="intruder-banner" id="intruderBanner">
@@ -1779,6 +1826,47 @@
     </div>
   </div>
 </div>
+<div class="modal-backdrop" id="rentConfigModal">
+  <div class="modal">
+    <div class="modal-title">Configure rent</div>
+    <div class="form-group"><label>Total monthly rent (₹)</label><input type="number" id="rentTotal" placeholder="e.g. 25000" min="0"/></div>
+    <div class="form-group"><label>Due day (1–28)</label><input type="number" id="rentDueDay" placeholder="1" min="1" max="28" value="1"/></div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="rentNotes" placeholder="e.g. includes electricity, split 5 ways"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('rentConfigModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRentConfig()">Save</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="markPaymentModal">
+  <div class="modal">
+    <div class="modal-title">Mark payment</div>
+    <input type="hidden" id="markPaymentId"/>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px" id="markPaymentName"></div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="markPaymentStatus">
+        <option value="paid">✅ Paid</option>
+        <option value="pending">⏳ Pending</option>
+        <option value="waived">🤝 Waived</option>
+      </select>
+    </div>
+    <div class="form-group" id="markPaymentMethodGroup">
+      <label>Payment method</label>
+      <select id="markPaymentMethod">
+        <option value="upi">UPI / GPay / PhonePe</option>
+        <option value="cash">Cash</option>
+        <option value="bank_transfer">Bank transfer</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="markPaymentNotes" placeholder="e.g. paid via GPay ref #1234"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('markPaymentModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitMarkPayment()">Save</button>
+    </div>
+  </div>
+</div>
 <div id="alertToast"></div>
 <script>
 // Use the current page's host so this works both on localhost and when
@@ -1807,7 +1895,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',audit:'Audit Log',systemlogs:'System Logs'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1818,6 +1906,7 @@ function showPage(page){
   if(page==='family')renderFamily();
   if(page==='security'){renderLogs();updateIntruderBanner();}
   if(page==='guestaccess')renderGuestAccessPage();
+  if(page==='payments')renderPaymentsPage();
   if(page==='energy')renderEnergy();
   if(page==='safety')renderSafety();
   if(page==='simulations')renderSimulations();
@@ -3718,6 +3807,137 @@ async function deleteGuestSchedule(id){
   await apiFetch(`/api/guests/${id}`,{method:'DELETE'});
   renderGuestAccessPage();
 }
+
+// ─────────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────────
+let currentPaymentMonth = new Date().toISOString().slice(0,7); // YYYY-MM
+let currentPaymentData = null;
+
+function changePaymentMonth(delta){
+  const [y,m] = currentPaymentMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  currentPaymentMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  renderPaymentsPage();
+}
+
+async function renderPaymentsPage(){
+  // Show config button only for owner
+  const cfgBtn = document.getElementById('rentConfigBtn');
+  if(cfgBtn) cfgBtn.style.display = currentUser?.role==='owner' ? '' : 'none';
+
+  // Month label
+  const [y,m] = currentPaymentMonth.split('-').map(Number);
+  const label = new Date(y, m-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  setText('pay-month-label', label);
+
+  const data = await apiFetch(`/api/payments?month=${currentPaymentMonth}`);
+  if(!data){ document.getElementById('paymentMemberList').innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load payments</div>'; return; }
+  currentPaymentData = data;
+
+  // Summary cards
+  setText('pay-total', `₹${data.total_rent.toLocaleString('en-IN')}`);
+  setText('pay-dueday', `due ${data.due_day}${['th','st','nd','rd'][data.due_day<=3?data.due_day:0]} of month`);
+  setText('pay-share', `₹${data.per_share.toLocaleString('en-IN')}`);
+  setText('pay-members', `${data.payments.length} members`);
+  setText('pay-collected', `₹${data.total_collected.toLocaleString('en-IN')}`);
+  setText('pay-paid-count', `${data.paid_count} paid`);
+  setText('pay-outstanding', `₹${data.total_outstanding.toLocaleString('en-IN')}`);
+  setText('pay-pending-count', `${data.pending_count} pending`);
+
+  // Member payment cards
+  const listEl = document.getElementById('paymentMemberList');
+  if(!listEl) return;
+
+  if(data.total_rent === 0){
+    listEl.innerHTML = `<div style="text-align:center;padding:24px">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">Rent not configured yet.</div>
+      ${currentUser?.role==='owner'?'<button class="btn btn-primary" onclick="showRentConfigModal()">Set up rent now</button>':'<div style="font-size:12px;color:var(--text3)">Ask the owner (Aditya) to configure the monthly rent amount.</div>'}
+    </div>`;
+    return;
+  }
+
+  const statusIcon={paid:'✅',pending:'⏳',waived:'🤝'};
+  const statusColor={paid:'var(--green)',pending:'var(--orange)',waived:'var(--text3)'};
+  const methodLabel={upi:'UPI',cash:'Cash',bank_transfer:'Bank transfer',other:'Other'};
+
+  // Can this logged-in user mark a payment?
+  const canMark = p => currentUser?.role==='owner' || p.member_id===currentUser?.member_id;
+
+  listEl.innerHTML = data.payments.map(p => `
+    <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)">
+      <div style="width:38px;height:38px;border-radius:50%;background:${familyMembers.find(m=>m.id===p.member_id)?.color||'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">
+        ${familyMembers.find(m=>m.id===p.member_id)?.avatar||p.member_name[0]}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700">${p.member_name}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">
+          ₹${p.amount.toLocaleString('en-IN')}
+          ${p.paid_at?` · paid ${new Date(p.paid_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})} via ${methodLabel[p.payment_method]||p.payment_method||'—'}`:''}
+          ${p.notes?` · ${p.notes}`:''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span style="font-size:12px;font-weight:600;color:${statusColor[p.status]}">${statusIcon[p.status]} ${p.status}</span>
+        ${canMark(p)?`<button class="btn btn-sm btn-primary" onclick="openMarkPaymentModal(${p.id},'${p.member_name}','${p.status}')">Update</button>`:''}
+      </div>
+    </div>`).join('');
+
+  // Payment history — load all for this month across members
+  const histEl = document.getElementById('paymentHistory');
+  if(histEl){
+    const paid = data.payments.filter(p=>p.status!=='pending');
+    if(!paid.length){
+      histEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No payments recorded yet for this month</div>';
+    } else {
+      histEl.innerHTML = paid.map(p=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="font-size:16px">${statusIcon[p.status]}</span>
+          <div style="flex:1"><b>${p.member_name}</b> <span style="color:${statusColor[p.status]}">${p.status}</span> ₹${p.amount.toLocaleString('en-IN')}
+          ${p.paid_at?`<span style="color:var(--text3)"> · ${new Date(p.paid_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>`:''}
+          ${p.recorded_by?`<span style="color:var(--text3)"> · by ${p.recorded_by}</span>`:''}
+          </div>
+        </div>`).join('');
+    }
+  }
+}
+
+function showRentConfigModal(){
+  const cfg = currentPaymentData;
+  if(cfg){ document.getElementById('rentTotal').value=cfg.total_rent||''; document.getElementById('rentDueDay').value=cfg.due_day||1; document.getElementById('rentNotes').value=''; }
+  document.getElementById('rentConfigModal').classList.add('open');
+}
+
+async function submitRentConfig(){
+  const total = parseFloat(document.getElementById('rentTotal').value);
+  const dueDay = parseInt(document.getElementById('rentDueDay').value)||1;
+  if(isNaN(total)||total<0){showToast('Please enter a valid rent amount','danger');return;}
+  if(dueDay<1||dueDay>28){showToast('Due day must be between 1 and 28','danger');return;}
+  const r = await apiFetch('/api/payments/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({total_rent:total,due_day:dueDay,notes:document.getElementById('rentNotes').value.trim()||undefined})});
+  if(r){ closeModal('rentConfigModal'); showToast('Rent configured','success'); renderPaymentsPage(); }
+  else showToast('Could not save configuration','danger');
+}
+
+function openMarkPaymentModal(id, name, currentStatus){
+  document.getElementById('markPaymentId').value = id;
+  setText('markPaymentName', `${name}'s payment`);
+  document.getElementById('markPaymentStatus').value = currentStatus;
+  document.getElementById('markPaymentNotes').value = '';
+  document.getElementById('markPaymentModal').classList.add('open');
+}
+
+async function submitMarkPayment(){
+  const id = document.getElementById('markPaymentId').value;
+  const status = document.getElementById('markPaymentStatus').value;
+  const method = document.getElementById('markPaymentMethod').value;
+  const notes = document.getElementById('markPaymentNotes').value.trim();
+  const r = await apiFetch(`/api/payments/${id}/mark`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status,payment_method:method,notes:notes||undefined})});
+  if(r){ closeModal('markPaymentModal'); showToast('Payment updated','success'); renderPaymentsPage(); }
+  else showToast('Could not update payment','danger');
+}
+
 
 async function startDashboard(){
   await loadAll();

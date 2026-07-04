@@ -158,6 +158,29 @@ def init_db():
                 notes       TEXT,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS rent_config (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                total_rent      REAL NOT NULL DEFAULT 0,
+                due_day         INTEGER NOT NULL DEFAULT 1,
+                auto_pay        INTEGER NOT NULL DEFAULT 0,
+                notes           TEXT,
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS payments (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id       INTEGER NOT NULL,
+                member_name     TEXT NOT NULL,
+                amount          REAL NOT NULL,
+                month           TEXT NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'pending',
+                paid_at         TEXT,
+                payment_method  TEXT,
+                notes           TEXT,
+                recorded_by     TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -580,4 +603,78 @@ def get_scheduled_guest(guest_id):
         row = conn.execute(
             "SELECT * FROM scheduled_guests WHERE id = ?", (guest_id,)
         ).fetchone()
+        return dict(row) if row else None
+
+
+# ── Rent config + payments ────────────────────────────────────────────────
+
+def get_rent_config():
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM rent_config ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else {"id": None, "total_rent": 0, "due_day": 1, "auto_pay": 0, "notes": ""}
+
+
+def upsert_rent_config(total_rent, due_day, auto_pay=False, notes=None):
+    with _db_lock, get_conn() as conn:
+        existing = conn.execute("SELECT id FROM rent_config LIMIT 1").fetchone()
+        if existing:
+            conn.execute(
+                """UPDATE rent_config SET total_rent=?, due_day=?, auto_pay=?, notes=?, updated_at=datetime('now')
+                   WHERE id=?""",
+                (total_rent, due_day, 1 if auto_pay else 0, notes, existing["id"])
+            )
+        else:
+            conn.execute(
+                "INSERT INTO rent_config (total_rent, due_day, auto_pay, notes) VALUES (?, ?, ?, ?)",
+                (total_rent, due_day, 1 if auto_pay else 0, notes)
+            )
+    return get_rent_config()
+
+
+def get_payments(month=None, member_id=None):
+    with get_conn() as conn:
+        query = "SELECT * FROM payments WHERE 1=1"
+        params = []
+        if month:
+            query += " AND month = ?"
+            params.append(month)
+        if member_id is not None:
+            query += " AND member_id = ?"
+            params.append(member_id)
+        query += " ORDER BY created_at DESC"
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_or_create_monthly_payments(month, members, per_share):
+    """Ensure every member has a payment record for the given month."""
+    with _db_lock, get_conn() as conn:
+        for m in members:
+            existing = conn.execute(
+                "SELECT id FROM payments WHERE member_id=? AND month=?", (m["id"], month)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO payments (member_id, member_name, amount, month, status) VALUES (?,?,?,?,?)",
+                    (m["id"], m["name"], per_share, month, "pending")
+                )
+    return get_payments(month=month)
+
+
+def mark_payment(payment_id, status, payment_method=None, notes=None, recorded_by=None):
+    from datetime import datetime as _dt
+    paid_at = _dt.now().isoformat() if status == "paid" else None
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            """UPDATE payments SET status=?, paid_at=?, payment_method=?, notes=?, recorded_by=?
+               WHERE id=?""",
+            (status, paid_at, payment_method, notes, recorded_by, payment_id)
+        )
+        row = conn.execute("SELECT * FROM payments WHERE id=?", (payment_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_payment(payment_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM payments WHERE id=?", (payment_id,)).fetchone()
         return dict(row) if row else None

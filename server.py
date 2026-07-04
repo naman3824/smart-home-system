@@ -908,6 +908,95 @@ async def log_guest_detected(body: dict):
         return {"access": "denied", "reason": reason, "log": entry}
 
 
+# ── Payments ──────────────────────────────────────────────────────────────
+
+class RentConfigUpdate(BaseModel):
+    total_rent: float
+    due_day: int = 1       # day of month rent is due (1-28)
+    auto_pay: bool = False
+    notes: Optional[str] = None
+
+class MarkPaymentRequest(BaseModel):
+    status: str            # "paid" | "pending" | "waived"
+    payment_method: Optional[str] = None   # "cash" | "upi" | "bank_transfer" | "other"
+    notes: Optional[str] = None
+
+
+@app.get("/api/payments/config")
+async def get_payment_config(user: dict = Depends(get_current_user)):
+    return db.get_rent_config()
+
+
+@app.post("/api/payments/config")
+async def update_payment_config(body: RentConfigUpdate, request: Request, user: dict = Depends(get_current_user)):
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can update rent configuration")
+    if body.total_rent < 0:
+        raise HTTPException(status_code=400, detail="Rent cannot be negative")
+    if not (1 <= body.due_day <= 28):
+        raise HTTPException(status_code=400, detail="Due day must be between 1 and 28")
+    config = db.upsert_rent_config(body.total_rent, body.due_day, body.auto_pay, body.notes)
+    db.add_audit_entry(user["username"], "rent_config_updated",
+                       detail=f"total=₹{body.total_rent} due_day={body.due_day}",
+                       ip_address=_client_ip(request))
+    return config
+
+
+@app.get("/api/payments")
+async def get_payments(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """
+    Returns payments for a given month (YYYY-MM format).
+    If no month given, defaults to the current month.
+    Auto-creates payment records for all members if none exist yet.
+    """
+    if not month:
+        month = datetime.now().strftime("%Y-%m")
+
+    config = db.get_rent_config()
+    total = config["total_rent"]
+    members = [m for m in family_members]  # all members pay rent
+    n = len(members)
+    per_share = round(total / n, 2) if n > 0 and total > 0 else 0
+
+    payments = db.get_or_create_monthly_payments(month, members, per_share)
+    paid_count = sum(1 for p in payments if p["status"] == "paid")
+    total_collected = sum(p["amount"] for p in payments if p["status"] == "paid")
+
+    return {
+        "month": month,
+        "total_rent": total,
+        "per_share": per_share,
+        "due_day": config["due_day"],
+        "auto_pay": bool(config["auto_pay"]),
+        "payments": payments,
+        "paid_count": paid_count,
+        "pending_count": len(payments) - paid_count,
+        "total_collected": round(total_collected, 2),
+        "total_outstanding": round(total - total_collected, 2),
+    }
+
+
+@app.post("/api/payments/{payment_id}/mark")
+async def mark_payment(payment_id: int, body: MarkPaymentRequest,
+                       request: Request, user: dict = Depends(get_current_user)):
+    payment = db.get_payment(payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+    # Members can only mark their own payment; owner can mark anyone's
+    if user["role"] != "owner" and payment["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only update your own payment")
+    if body.status not in ("paid", "pending", "waived"):
+        raise HTTPException(status_code=400, detail="Status must be paid, pending, or waived")
+    updated = db.mark_payment(
+        payment_id, body.status, body.payment_method, body.notes,
+        recorded_by=user["username"]
+    )
+    db.add_audit_entry(user["username"], "payment_marked",
+                       detail=f"{payment['member_name']} {payment['month']} → {body.status}",
+                       ip_address=_client_ip(request))
+    return updated
+
+
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
