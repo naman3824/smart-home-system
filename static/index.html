@@ -41,6 +41,35 @@
   .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 22px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
   .topbar-title{font-size:15px;font-weight:600}
   .topbar-right{display:flex;align-items:center;gap:10px}
+
+  /* LOGIN SCREEN */
+  #loginOverlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 20%,#1a2030,#0a0c12 70%)}
+  .login-card{width:360px;max-width:92vw;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px 28px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .login-card h1{font-size:19px;font-weight:700;margin-bottom:4px;text-align:center}
+  .login-card .login-sub{font-size:12px;color:var(--text3);text-align:center;margin-bottom:24px}
+  .login-field{margin-bottom:14px}
+  .login-field label{font-size:11px;color:var(--text3);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+  .login-field input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--text);font-size:14px;outline:none;transition:border-color .15s}
+  .login-field input:focus{border-color:var(--accent)}
+  .login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;font-size:12.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px;display:none}
+  .login-error.show{display:block}
+  .login-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:9px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s}
+  .login-btn:hover{opacity:.9}
+  .login-btn:disabled{opacity:.5;cursor:not-allowed}
+  .login-hint{font-size:11px;color:var(--text3);text-align:center;margin-top:18px;line-height:1.6}
+
+  /* Account menu in topbar */
+  .account-chip{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px 5px 6px;cursor:pointer;font-size:12.5px;font-weight:600;position:relative}
+  .account-chip:hover{border-color:var(--accent)}
+  .account-avatar{width:24px;height:24px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:#fff}
+  .account-menu{position:absolute;top:calc(100% + 8px);right:0;width:200px;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;overflow:hidden;z-index:200}
+  .account-menu.open{display:block}
+  .account-menu .am-header{padding:12px 14px;border-bottom:1px solid var(--border)}
+  .account-menu .am-header .am-name{font-size:13px;font-weight:700}
+  .account-menu .am-header .am-role{font-size:10.5px;color:var(--text3);text-transform:capitalize}
+  .account-menu button{display:block;width:100%;text-align:left;padding:10px 14px;background:none;border:none;color:var(--text2);font-size:12.5px;cursor:pointer}
+  .account-menu button:hover{background:var(--surface2)}
+  .account-menu button.danger{color:#fca5a5}
   .weather-chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11.5px;color:var(--text2)}
   .alert-btn{position:relative;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text2);font-size:12px;transition:all .15s}
   .alert-btn:hover{border-color:var(--accent);color:var(--text)}
@@ -287,6 +316,27 @@
 </head>
 <body>
 
+<!-- LOGIN SCREEN — shown until a valid session is confirmed -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <h1>Smart Home</h1>
+    <div class="login-sub">Gurugram, Haryana — sign in to continue</div>
+    <div class="login-error" id="loginError"></div>
+    <form id="loginForm" onsubmit="return handleLogin(event)">
+      <div class="login-field">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" required>
+      </div>
+      <div class="login-field">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="login-btn" id="loginSubmitBtn">Sign in</button>
+    </form>
+    <div class="login-hint">Your username is your first name (lowercase).<br>First-time login? Ask whoever set up the server for your password.</div>
+  </div>
+</div>
+
 <nav class="sidebar">
   <div class="logo">
     <h1>Smart Home</h1>
@@ -318,13 +368,31 @@
     <div class="nav-item" onclick="showPage('simulations')" id="nav-simulations">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 1 21 12M4.93 4.93A10 10 0 0 0 3 12"/><path d="M12 3v2M12 19v2M3 12H1M23 12h-2"/></svg><span>Simulations</span>
     </div>
+    <div class="nav-item" onclick="showPage('automation')" id="nav-automation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg><span>Automation</span>
+    </div>
     <div class="nav-section">Security</div>
     <div class="nav-item" onclick="showPage('security')" id="nav-security">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Security</span>
       <span class="nav-badge" id="nav-security-badge">0</span>
     </div>
+    <div class="nav-item" onclick="showPage('guestaccess')" id="nav-guestaccess">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg><span>Guest Access</span>
+    </div>
+    <div class="nav-item" onclick="showPage('payments')" id="nav-payments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span>Payments</span>
+    </div>
     <div class="nav-item" onclick="showPage('family')" id="nav-family">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Family</span>
+    </div>
+    <div class="nav-item" onclick="showPage('routines')" id="nav-routines">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg><span>Routines</span>
+    </div>
+    <div class="nav-item" onclick="showPage('audit')" id="nav-audit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>Audit Log</span>
+    </div>
+    <div class="nav-item" onclick="showPage('systemlogs')" id="nav-systemlogs" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>System Logs</span>
     </div>
   </div>
   <div class="sidebar-footer">
@@ -340,6 +408,19 @@
     <div class="topbar-right">
       <div class="weather-chip" id="weatherChip">🌡 -- °C &nbsp;💧 -- %</div>
       <button class="alert-btn" onclick="toggleNotifDrawer()">🔔 Alerts<span class="badge" id="alertBadge">0</span></button>
+      <div class="account-chip" onclick="toggleAccountMenu(event)">
+        <div class="account-avatar" id="accountAvatar">?</div>
+        <span id="accountName">—</span>
+        <div class="account-menu" id="accountMenu">
+          <div class="am-header">
+            <div class="am-name" id="amName">—</div>
+            <div class="am-role" id="amRole">—</div>
+          </div>
+          <button onclick="showChangePasswordModal()">🔑 Change password</button>
+          <button onclick="showPage('audit')">📋 Audit log</button>
+          <button class="danger" onclick="handleLogout()">🚪 Sign out</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1020,10 +1101,10 @@
   <!-- ENERGY -->
   <div class="content page" id="page-energy">
     <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub">live draw</div></div>
-      <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
+      <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub" id="en-rate">-- units/hr at this rate</div></div>
+      <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
       <div class="sensor-card temp-card"><div class="sensor-label">Devices on</div><div class="sensor-value" id="en-count" style="color:var(--green)">--</div><div class="sensor-sub" id="en-total-sub">out of --</div></div>
-      <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">kWh</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
+      <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
     </div>
     <div class="two-col">
       <div class="card"><div class="card-header"><span class="card-title">⚡ Per room</span></div><div class="card-body" id="en-rooms"></div></div>
@@ -1034,6 +1115,13 @@
           <div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center">Each bar = one 5-second reading</div>
         </div>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🧾 DHBVN tariff breakdown — Gurugram</span>
+        <span style="font-size:10.5px;color:var(--text3)">Domestic Category II · effective 01 Apr 2025</span>
+      </div>
+      <div class="card-body" id="en-tariff-breakdown"></div>
     </div>
     <div class="card"><div class="card-header"><span class="card-title">💡 Device breakdown</span></div><div class="card-body" id="en-devices"></div></div>
   </div>
@@ -1227,6 +1315,111 @@
     </div>
   </div>
 
+  <!-- AUTOMATION -->
+  <div class="content page" id="page-automation">
+    <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(108,139,239,.07));border:1px solid rgba(34,197,94,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">⚡</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Automation rules</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">If a condition becomes true (AQI too high, nobody home, etc.), the matching action runs automatically. Checked every few seconds — each rule has its own cooldown so it won't spam-fire.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">📜 Active rules</span>
+        <button class="btn btn-sm btn-primary" onclick="showAddAutomationModal()">+ New rule</button>
+      </div>
+      <div class="card-body" id="automationRulesList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🕐 Recent automation activity</span></div>
+      <div class="card-body" id="automationRunsList" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No automated actions yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUEST ACCESS -->
+  <div class="content page" id="page-guestaccess">
+    <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(108,139,239,.07));border:1px solid rgba(34,197,94,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">🪪</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Scheduled guest access</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Add recurring visitors — maid, cook, delivery agent, etc. — with specific allowed days and time windows. Visits outside the schedule are flagged as restricted access even if the face is recognized.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">👥 Scheduled visitors</span>
+        <button class="btn btn-sm btn-primary" onclick="showAddGuestModal()">+ Add visitor</button>
+      </div>
+      <div class="card-body" id="guestScheduleList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 How it works</span></div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--text2)">
+          <div style="display:flex;gap:10px"><span style="color:var(--green);font-size:16px">✅</span><span><b>Within schedule:</b> face detected, name matches a scheduled visitor, current time and day are within their window → logged as "authorized guest"</span></div>
+          <div style="display:flex;gap:10px"><span style="color:var(--orange);font-size:16px">⚠️</span><span><b>Outside schedule:</b> face matches but wrong time or day → logged as "restricted access" with a warning — not a full intruder alert, but flagged for the owner</span></div>
+          <div style="display:flex;gap:10px"><span style="color:var(--red);font-size:16px">🚨</span><span><b>Not in schedule:</b> face not recognized and no schedule matches → full intruder alert (same as before)</span></div>
+          <div style="margin-top:6px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-size:11.5px;color:var(--text3)">To test: use the Simulations tab → Security events → "Unknown 🚨" button, then add that name here as a scheduled visitor and test again.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAYMENTS -->
+  <div class="content page" id="page-payments">
+    <div style="background:linear-gradient(135deg,rgba(251,191,36,.1),rgba(245,158,11,.07));border:1px solid rgba(251,191,36,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">💰</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Rent & payments</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Track monthly rent shares. Once someone pays (via GPay, cash, bank transfer), mark it here to keep the ledger accurate. No actual payment processing happens inside the app.</div>
+      </div>
+    </div>
+
+    <!-- Month navigation + summary -->
+    <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
+      <div class="sensor-card"><div class="sensor-label">Total rent</div><div class="sensor-value" id="pay-total" style="color:var(--accent)">₹--</div><div class="sensor-sub" id="pay-dueday">due --th</div></div>
+      <div class="sensor-card"><div class="sensor-label">Per person</div><div class="sensor-value" id="pay-share" style="color:var(--cyan)">₹--</div><div class="sensor-sub" id="pay-members">-- members</div></div>
+      <div class="sensor-card"><div class="sensor-label">Collected</div><div class="sensor-value" id="pay-collected" style="color:var(--green)">₹--</div><div class="sensor-sub" id="pay-paid-count">-- paid</div></div>
+      <div class="sensor-card"><div class="sensor-label">Outstanding</div><div class="sensor-value" id="pay-outstanding" style="color:var(--orange)">₹--</div><div class="sensor-sub" id="pay-pending-count">-- pending</div></div>
+    </div>
+
+    <!-- Month picker + settings -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <button class="btn" onclick="changePaymentMonth(-1)">‹ Prev</button>
+      <div style="font-size:14px;font-weight:600;min-width:110px;text-align:center" id="pay-month-label">--</div>
+      <button class="btn" onclick="changePaymentMonth(1)">Next ›</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm" onclick="showRentConfigModal()" id="rentConfigBtn" style="display:none">⚙ Configure rent</button>
+    </div>
+
+    <!-- Payment cards per member -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">🧾 Member payments</span></div>
+      <div class="card-body" id="paymentMemberList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Payment history -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Recent payment activity</span></div>
+      <div class="card-body" id="paymentHistory" style="max-height:300px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- SECURITY -->
   <div class="content page" id="page-security">
     <div class="intruder-banner" id="intruderBanner">
@@ -1371,6 +1564,84 @@
       </div>
     </div>
   </div>
+
+  <!-- ROUTINES -->
+  <div class="content page" id="page-routines">
+    <div style="background:linear-gradient(135deg,rgba(167,139,250,.1),rgba(108,139,239,.07));border:1px solid rgba(167,139,250,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">⏰</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Member routines</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Time-based device schedules scoped to each family member. Each person can add, edit, and remove their own routines — like lights off at 8am, AC on at 10pm.</div>
+      </div>
+    </div>
+
+    <!-- My routines (logged-in user's) shown prominently at top -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title" id="myRoutinesTitle">⭐ My routines</span>
+        <button class="btn btn-sm btn-primary" onclick="showAddRoutineModal()">+ Add routine</button>
+      </div>
+      <div class="card-body" id="myRoutinesList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Other members' routines (read-only for non-owners) -->
+    <div class="card" id="otherRoutinesCard">
+      <div class="card-header"><span class="card-title">👥 Other members' routines</span></div>
+      <div class="card-body" id="otherRoutinesList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDIT LOG -->
+  <div class="content page" id="page-audit">
+    <div style="background:rgba(108,139,239,.07);border:1px solid rgba(108,139,239,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:24px">📋</span>
+      <div>
+        <div style="font-weight:700;font-size:13.5px">System audit trail</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Every login, device change, and account action — who did what, and when. Visible to any signed-in family member for full household transparency.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🧾 Recent activity</span>
+        <button class="btn btn-sm" onclick="renderAuditLog()">↻ Refresh</button>
+      </div>
+      <div class="card-body" id="auditLogList" style="max-height:600px;overflow-y:auto">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM LOGS (owner only) -->
+  <div class="content page" id="page-systemlogs">
+    <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:24px">⚙️</span>
+      <div>
+        <div style="font-weight:700;font-size:13.5px">Server / application logs</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Crashes, unhandled errors, and server startup events — for diagnosing the live deployment. Owner-only, since it can include internal stack traces.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🖥️ Recent log lines</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="sysLogLevel" onchange="renderSystemLogs()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:4px 8px;border-radius:6px;outline:none">
+            <option value="">All levels</option>
+            <option value="ERROR">Errors only</option>
+            <option value="WARNING">Warnings only</option>
+            <option value="INFO">Info only</option>
+          </select>
+          <button class="btn btn-sm" onclick="renderSystemLogs()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="card-body" id="systemLogList" style="max-height:600px;overflow-y:auto;font-family:'Consolas','Monaco',monospace;font-size:11.5px;line-height:1.7">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Loading…</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- NOTIFICATION DRAWER -->
@@ -1405,6 +1676,197 @@
     <div class="modal-actions"><button class="btn" onclick="closeModal('addLogModal')">Cancel</button><button class="btn btn-primary" onclick="submitLog()">Save</button></div>
   </div>
 </div>
+<div class="modal-backdrop" id="addAutomationModal">
+  <div class="modal">
+    <div class="modal-title">New automation rule</div>    <div class="form-group">
+      <label>Template</label>
+      <select id="autoTemplate" onchange="applyAutomationTemplate()">
+        <option value="custom">Custom (advanced)</option>
+        <option value="sensor_above">When a sensor goes above a value</option>
+        <option value="sensor_below">When a sensor goes below a value</option>
+        <option value="nobody_home">When nobody's been home for a while</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Rule name</label><input type="text" id="autoName" placeholder="e.g. High AQI -> air purifier on"/></div>
+    <div class="form-group"><label>Description (optional)</label><input type="text" id="autoDescription" placeholder="What this rule does, in plain words"/></div>
+
+    <div id="autoConditionFields">
+      <div class="form-group">
+        <label>Sensor</label>
+        <select id="autoConditionKey">
+          <option value="aqi">AQI</option>
+          <option value="temperature">Temperature (°C)</option>
+          <option value="humidity">Humidity (%)</option>
+          <option value="smoke">Smoke (%)</option>
+          <option value="gas">Gas (%)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Threshold</label><input type="number" id="autoConditionThreshold" placeholder="e.g. 200"/></div>
+    </div>
+    <div class="form-group" id="autoMinutesField" style="display:none">
+      <label>Minutes nobody's been home</label><input type="number" id="autoConditionMinutes" placeholder="30" value="30"/>
+    </div>
+
+    <div class="form-group"><label>Then — room</label>
+      <select id="autoActionRoom" onchange="updateAutomationDeviceOptions()"></select>
+    </div>
+    <div class="form-group"><label>Device</label>
+      <select id="autoActionDevice"></select>
+    </div>
+    <div class="form-group"><label>Set to</label>
+      <select id="autoActionOn"><option value="true">On</option><option value="false">Off</option></select>
+    </div>
+    <div class="form-group"><label>Cooldown (seconds before it can fire again)</label><input type="number" id="autoCooldown" value="300"/></div>
+
+    <div class="modal-actions"><button class="btn" onclick="closeModal('addAutomationModal')">Cancel</button><button class="btn btn-primary" onclick="submitAutomationRule()">Create rule</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="addRoutineModal">
+  <div class="modal">
+    <div class="modal-title">Add routine</div>
+    <div class="form-group"><label>Routine name</label><input type="text" id="routineName" placeholder="e.g. Morning lights off"/></div>
+    <div class="form-group">
+      <label>Time</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="routineHour" min="0" max="23" placeholder="HH" style="width:70px"/>
+        <span style="color:var(--text2)">:</span>
+        <input type="number" id="routineMinute" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Days</label>
+      <select id="routineDays">
+        <option value="everyday">Every day</option>
+        <option value="monday,tuesday,wednesday,thursday,friday">Weekdays (Mon–Fri)</option>
+        <option value="saturday,sunday">Weekends only</option>
+        <option value="monday">Monday</option>
+        <option value="tuesday">Tuesday</option>
+        <option value="wednesday">Wednesday</option>
+        <option value="thursday">Thursday</option>
+        <option value="friday">Friday</option>
+        <option value="saturday">Saturday</option>
+        <option value="sunday">Sunday</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Room</label>
+      <select id="routineRoom" onchange="updateRoutineDeviceOptions()"></select>
+    </div>
+    <div class="form-group">
+      <label>Device</label>
+      <select id="routineDevice" onchange="updateRoutineActionOptions()"></select>
+    </div>
+    <div class="form-group">
+      <label>Action</label>
+      <select id="routineAction">
+        <option value="off">Turn off</option>
+        <option value="on">Turn on</option>
+        <option value="dim">Dim to 30%</option>
+        <option value="bright">Full brightness</option>
+        <option value="speed1">Fan speed 1 (low)</option>
+        <option value="speed3">Fan speed 3 (medium)</option>
+        <option value="speed5">Fan speed 5 (max)</option>
+        <option value="fan_off">Fan off</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('addRoutineModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRoutine()">Save routine</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="addGuestModal">
+  <div class="modal">
+    <div class="modal-title">Add scheduled visitor</div>
+    <div class="form-group"><label>Name</label><input type="text" id="guestName" placeholder="e.g. Sunita (maid)"/></div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="guestRole">
+        <option value="maid">Maid / housekeeping</option>
+        <option value="cook">Cook</option>
+        <option value="driver">Driver</option>
+        <option value="guard">Security guard</option>
+        <option value="delivery">Regular delivery agent</option>
+        <option value="guest">Guest</option>
+        <option value="worker">Worker / repair</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Allowed days</label>
+      <select id="guestDays">
+        <option value="everyday">Every day</option>
+        <option value="monday,tuesday,wednesday,thursday,friday,saturday">Monday – Saturday</option>
+        <option value="monday,tuesday,wednesday,thursday,friday">Weekdays only (Mon–Fri)</option>
+        <option value="saturday,sunday">Weekends only</option>
+        <option value="monday,wednesday,friday">Mon, Wed, Fri</option>
+        <option value="tuesday,thursday,saturday">Tue, Thu, Sat</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Allowed from</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="guestStartHour" min="0" max="23" placeholder="HH" style="width:70px" value="7"/>
+        <span style="color:var(--text2)">:</span>
+        <input type="number" id="guestStartMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Allowed until</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="guestEndHour" min="0" max="23" placeholder="HH" style="width:70px" value="9"/>
+        <span style="color:var(--text2)">:</span>
+        <input type="number" id="guestEndMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+      </div>
+    </div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="guestNotes" placeholder="e.g. comes every morning to clean"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('addGuestModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitGuestSchedule()">Save</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="rentConfigModal">
+  <div class="modal">
+    <div class="modal-title">Configure rent</div>
+    <div class="form-group"><label>Total monthly rent (₹)</label><input type="number" id="rentTotal" placeholder="e.g. 25000" min="0"/></div>
+    <div class="form-group"><label>Due day (1–28)</label><input type="number" id="rentDueDay" placeholder="1" min="1" max="28" value="1"/></div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="rentNotes" placeholder="e.g. includes electricity, split 5 ways"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('rentConfigModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitRentConfig()">Save</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="markPaymentModal">
+  <div class="modal">
+    <div class="modal-title">Mark payment</div>
+    <input type="hidden" id="markPaymentId"/>
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px" id="markPaymentName"></div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="markPaymentStatus">
+        <option value="paid">✅ Paid</option>
+        <option value="pending">⏳ Pending</option>
+        <option value="waived">🤝 Waived</option>
+      </select>
+    </div>
+    <div class="form-group" id="markPaymentMethodGroup">
+      <label>Payment method</label>
+      <select id="markPaymentMethod">
+        <option value="upi">UPI / GPay / PhonePe</option>
+        <option value="cash">Cash</option>
+        <option value="bank_transfer">Bank transfer</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Notes (optional)</label><input type="text" id="markPaymentNotes" placeholder="e.g. paid via GPay ref #1234"/></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('markPaymentModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitMarkPayment()">Save</button>
+    </div>
+  </div>
+</div>
 <div id="alertToast"></div>
 <script>
 // Use the current page's host so this works both on localhost and when
@@ -1433,7 +1895,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',security:'Security',family:'Family'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1443,10 +1905,16 @@ function showPage(page){
   if(page==='devices')renderDeviceGrid(currentRoom);
   if(page==='family')renderFamily();
   if(page==='security'){renderLogs();updateIntruderBanner();}
+  if(page==='guestaccess')renderGuestAccessPage();
+  if(page==='payments')renderPaymentsPage();
   if(page==='energy')renderEnergy();
   if(page==='safety')renderSafety();
   if(page==='simulations')renderSimulations();
+  if(page==='automation')renderAutomationPage();
+  if(page==='routines')renderRoutinesPage();
   if(page==='floorplan')updateFloorPlan();
+  if(page==='audit')renderAuditLog();
+  if(page==='systemlogs')renderSystemLogs();
 }
 
 // CONNECTION STATUS
@@ -1513,7 +1981,13 @@ let wsRetryCount=0;
 
 // API
 async function apiFetch(path,options){
-  try{const r=await fetch(API+path,options);if(!r.ok)return null;setConnected(wsConnected?'connected':'degraded');return await r.json();}
+  try{
+    const opts={credentials:'include',...options};
+    const r=await fetch(API+path,opts);
+    if(!r.ok)return null;
+    setConnected(wsConnected?'connected':'degraded');
+    return await r.json();
+  }
   catch(e){setConnected('offline');return null;}
 }
 
@@ -1582,7 +2056,8 @@ function updateSensorUI(s,watts){
   setText('ov-hvac',`HVAC: ${s.hvac_status||'--'}`);
   setText('ov-aqi-cat',s.aqi_category||'--');
   setText('ov-energy',`${watts}<span class="sensor-unit">W</span>`);
-  setText('ov-energy-sub',`today: ${(watts*8/1000).toFixed(2)} kWh · ₹${(watts*8/1000*8.5).toFixed(0)}`);
+  const unitsToday=watts*8/1000;
+  setText('ov-energy-sub',`today: ${unitsToday.toFixed(2)} units · ₹${estimateDhbvnCost(unitsToday*30).toFixed(0)}/mo est.`);
   setText('ov-smoke',`${smoke}%`);setText('ov-gas',`${gas}%`);
   setText('ov-hum-note',hum<40?'a bit dry in here':hum>70?'feeling muggy':'40–60% is comfortable');
   setBar('ov-hum-bar',Math.min(100,hum),'#06b6d4');
@@ -1897,6 +2372,23 @@ function renderDevicesHTML(roomId){
 
 function effWatts(dk,dv){let w=dv.watts||0;if(dk==='fan')w=Math.round(w*((dv.speed||0)/5));if(dk==='light')w=Math.round(w*((dv.brightness||100)/100));return w;}
 
+// Quick client-side mirror of the backend's DHBVN domestic Category-II slab
+// calculation — used only for the small Overview snippet so it doesn't need
+// to await a fetch. The authoritative figure (with full slab breakdown)
+// always comes from /api/energy on the Energy tab.
+function estimateDhbvnCost(units){
+  const slabs=[[150,2.95],[300,5.25],[500,6.45],[Infinity,7.10]];
+  let remaining=units,prevCap=0,cost=0;
+  for(const[cap,rate]of slabs){
+    if(remaining<=0)break;
+    const slabUnits=Math.min(remaining,cap-prevCap);
+    cost+=slabUnits*rate;
+    remaining-=slabUnits;prevCap=cap;
+  }
+  if(units>300)cost+=5*50; // fixed charge: 5kW sanctioned load × ₹50/kW, above 300 units
+  return cost;
+}
+
 async function toggleDev(room,dk){
   const dev=devices[room]?.[dk];if(!dev)return;const newOn=!dev.on;
   const result=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:dk,value:{on:newOn}})});
@@ -1955,31 +2447,66 @@ async function renderEnergy(){
   // Always recompute watts from current local device state first (fixes 0W bug)
   let localWatts=Object.entries(devices).reduce((t,[,devs])=>t+Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0),0);
   const data=await apiFetch('/api/energy');
-  const totalWatts=data?.total_watts||localWatts;
-  const kwhToday=data?.kwh_today||(totalWatts*8/1000).toFixed(2);
-  const costToday=data?.cost_today||(totalWatts*8/1000*8.5).toFixed(2);
+  const totalWatts=data?.total_watts??localWatts;
+  const unitsToday=data?.units_today??(totalWatts*8/1000);
+  const unitsMonth=data?.units_month_projected??(unitsToday*30);
+  const costToday=data?.cost_today??0;
+  const costMonth=data?.cost_month_projected??0;
+  const ratePerHour=data?.units_now_rate_per_hour??(totalWatts/1000);
+
   setText('en-watts',`${totalWatts}<span class="sensor-unit">W</span>`);
-  setText('en-kwh',`${kwhToday}<span class="sensor-unit">kWh</span>`);
-  setText('en-cost',`₹${parseFloat(costToday).toFixed(2)} at ₹8.5/unit`);
-  const monthly=(parseFloat(kwhToday)*30).toFixed(1);
-  setText('en-monthly',`${monthly}<span class="sensor-unit">kWh</span>`);
-  setText('en-monthly-cost',`₹${(parseFloat(monthly)*8.5).toFixed(0)} est.`);
+  setText('en-rate',`${ratePerHour.toFixed(2)} units/hr at this rate`);
+  setText('en-kwh',`${unitsToday.toFixed(2)}<span class="sensor-unit">units</span>`);
+  setText('en-cost',`₹${costToday.toFixed(2)} · DHBVN Gurugram tariff`);
+  setText('en-monthly',`${unitsMonth.toFixed(1)}<span class="sensor-unit">units</span>`);
+  setText('en-monthly-cost',`₹${costMonth.toFixed(0)} est.`);
+
   let count=0,total=0;
   for(const devs of Object.values(devices))for(const d of Object.values(devs)){total++;if(d.on)count++;}
   setText('en-count',count);setText('en-total-sub',`out of ${total} total`);
+
   const roomsEl=document.getElementById('en-rooms');
   if(roomsEl){
-    // Compute room breakdown from local state (always accurate)
-    const breakdown={};
+    // Compute room breakdown from local state (always accurate), shown in units/day
+    const breakdownWatts={};
     for(const[room,devs]of Object.entries(devices)){
-      breakdown[room]=Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0);
+      breakdownWatts[room]=Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0);
     }
-    const maxW=Math.max(1,...Object.values(breakdown));
+    const breakdownUnits={};
+    for(const[room,w]of Object.entries(breakdownWatts))breakdownUnits[room]=w*8/1000;
+    const maxU=Math.max(0.001,...Object.values(breakdownUnits));
     const colors=['#6c8bef','#a78bfa','#06b6d4','#22c55e','#f59e0b','#ef4444','#ec4899','#84cc16'];
-    roomsEl.innerHTML=Object.entries(breakdown).map(([room,w],i)=>`<div style="margin-bottom:11px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--text2)">${ROOM_NAMES[room]||room}</span><span style="font-weight:600">${w}W</span></div>
-      <div class="bar-track" style="height:7px;border-radius:3px"><div class="bar-fill" style="width:${w/maxW*100}%;background:${colors[i%colors.length]}"></div></div></div>`).join('');
+    roomsEl.innerHTML=Object.entries(breakdownUnits).map(([room,u],i)=>`<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px"><span style="color:var(--text2)">${ROOM_NAMES[room]||room}</span><span style="font-weight:600">${u.toFixed(2)} units</span></div>
+      <div class="bar-track" style="height:7px;border-radius:3px"><div class="bar-fill" style="width:${u/maxU*100}%;background:${colors[i%colors.length]}"></div></div></div>`).join('');
   }
+
+  // DHBVN slab breakdown — uses the real tariff calc returned by the backend
+  const tariffEl=document.getElementById('en-tariff-breakdown');
+  if(tariffEl){
+    const monthBreakdown=data?.cost_month_breakdown?.breakdown||[];
+    const fixedCharge=data?.cost_month_breakdown?.fixed_charge||0;
+    if(!monthBreakdown.length){
+      tariffEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:16px">Waiting for energy data…</div>';
+    } else {
+      const hdr='font-size:10px;color:var(--text3);padding:6px 0;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.4px';
+      const cell='font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--border)';
+      tariffEl.innerHTML=`
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Based on this month's projected usage of <b style="color:var(--text2)">${unitsMonth.toFixed(0)} units</b> — DHBVN domestic Category II slabs:</div>
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0">
+          <div style="${hdr}">Slab</div><div style="${hdr};text-align:right">Units</div><div style="${hdr};text-align:right">Rate</div><div style="${hdr};text-align:right">Cost</div>
+          ${monthBreakdown.map(b=>`<div style="${cell}">${b.range} units</div>
+            <div style="${cell};text-align:right">${b.units}</div>
+            <div style="${cell};text-align:right;color:var(--text2)">₹${b.rate}/unit</div>
+            <div style="${cell};text-align:right;font-weight:600">₹${b.cost.toFixed(2)}</div>`).join('')}
+          ${fixedCharge>0?`<div style="${cell}">Fixed charge (above 300 units)</div><div style="${cell}"></div><div style="${cell}"></div><div style="${cell};text-align:right;font-weight:600">₹${fixedCharge.toFixed(2)}</div>`:''}
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:14px;font-weight:700">
+          <span>Estimated monthly bill</span><span style="color:var(--accent)">₹${costMonth.toFixed(2)}</span>
+        </div>`;
+    }
+  }
+
   const devEl=document.getElementById('en-devices');
   if(devEl){
     let rows=[];
@@ -2710,11 +3237,32 @@ function drawLineChartAnnotated(canvasId,data,color,unit){
   for(let i=0;i<=4;i++){const y=pad.t+(i/4)*cH;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+cW,y);ctx.stroke();ctx.fillStyle='#64748b';ctx.font='10px Segoe UI';ctx.textAlign='right';ctx.fillText((mx-(i/4)*(mx-mn)).toFixed(1),pad.l-4,y+3);}
   // Points
   const pts=data.map((d,i)=>({x:pad.l+(i/(data.length-1))*cW,y:pad.t+cH-((Math.max(mn,d.value)-mn)/(mx-mn))*cH,sim:d.sim,value:d.value}));
-  // Area fill
+  // Area fill (always solid, behind the line)
   const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+cH);grad.addColorStop(0,color+'44');grad.addColorStop(1,color+'06');
   ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.lineTo(pts[pts.length-1].x,pad.t+cH);ctx.lineTo(pts[0].x,pad.t+cH);ctx.fillStyle=grad;ctx.fill();
-  // Line
-  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();
+  // Line — drawn segment by segment:
+  //   real→real   : solid line, full color
+  //   any segment touching a SIM point: dotted amber line
+  // This makes simulated spikes visually distinct from the real trend
+  // without hiding either — you see exactly where the simulation injected
+  // a value and how steep the spike was.
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    const isSim=a.sim||b.sim;
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+    if(isSim){
+      ctx.setLineDash([4,3]);
+      ctx.strokeStyle='#f59e0b';
+      ctx.lineWidth=1.8;
+    } else {
+      ctx.setLineDash([]);
+      ctx.strokeStyle=color;
+      ctx.lineWidth=2;
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
   // Threshold line at 40%
   if(mx>0){const threshY=pad.t+cH-((40-mn)/(mx-mn))*cH;if(threshY>=pad.t&&threshY<=pad.t+cH){ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(239,68,68,.4)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,threshY);ctx.lineTo(pad.l+cW,threshY);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(239,68,68,.6)';ctx.font='9px Segoe UI';ctx.textAlign='left';ctx.fillText('⚠ 40%',pad.l+3,threshY-3);}}
   // SIM marker: dashed vertical line + SIM badge + point dot
@@ -2777,13 +3325,642 @@ document.querySelectorAll('.modal-backdrop').forEach(m=>{m.addEventListener('cli
 // HELPERS
 function setText(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
 function setBar(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct||0))+'%';if(color)el.style.background=color;}
-function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
-function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️'}[n]||'⚙️';}
-function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;return'on';}
+function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust',air_purifier:'Air Purifier'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
+function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️',air_purifier:'🌬️'}[n]||'⚙️';}
+function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;if(n==='air_purifier')return`speed ${dev.speed}/3`;return'on';}
 
 // WEBSOCKET
 // INIT
-async function init(){
+// ─────────────────────────────────────────────────
+// AUTHENTICATION
+// ─────────────────────────────────────────────────
+let currentUser=null;
+
+async function checkSession(){
+  try{
+    const r=await fetch(API+'/api/auth/me',{credentials:'include'});
+    if(!r.ok)return null;
+    return await r.json();
+  }catch(e){return null;}
+}
+
+function showLoginScreen(){
+  document.getElementById('loginOverlay').style.display='flex';
+}
+function hideLoginScreen(){
+  document.getElementById('loginOverlay').style.display='none';
+}
+
+async function handleLogin(e){
+  e.preventDefault();
+  const username=document.getElementById('loginUsername').value.trim();
+  const password=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginError');
+  const btn=document.getElementById('loginSubmitBtn');
+  errEl.classList.remove('show');
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await fetch(API+'/api/auth/login',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username,password})
+    });
+    const data=await r.json();
+    if(!r.ok){
+      errEl.textContent=data.detail||'Login failed';
+      errEl.classList.add('show');
+      btn.disabled=false;btn.textContent='Sign in';
+      return false;
+    }
+    currentUser=data.user;
+    applyCurrentUserToUI();
+    hideLoginScreen();
+    await startDashboard();
+  }catch(e){
+    errEl.textContent='Could not reach the server. Please try again.';
+    errEl.classList.add('show');
+  }
+  btn.disabled=false;btn.textContent='Sign in';
+  return false;
+}
+
+async function handleLogout(){
+  try{await fetch(API+'/api/auth/logout',{method:'POST',credentials:'include'});}catch(e){}
+  currentUser=null;
+  document.getElementById('loginUsername').value='';
+  document.getElementById('loginPassword').value='';
+  document.getElementById('loginError').classList.remove('show');
+  showLoginScreen();
+}
+
+function applyCurrentUserToUI(){
+  if(!currentUser)return;
+  const initials=currentUser.display_name.slice(0,2).toUpperCase();
+  setText('accountAvatar',initials);
+  setText('accountName',currentUser.display_name);
+  setText('amName',currentUser.display_name);
+  setText('amRole',currentUser.role);
+  const sysLogNav=document.getElementById('nav-systemlogs');
+  if(sysLogNav)sysLogNav.style.display=currentUser.role==='owner'?'':'none';
+}
+
+function toggleAccountMenu(e){
+  e.stopPropagation();
+  document.getElementById('accountMenu').classList.toggle('open');
+}
+document.addEventListener('click',()=>{document.getElementById('accountMenu')?.classList.remove('open');});
+
+function showChangePasswordModal(){
+  const current=prompt('Current password:');
+  if(current===null)return;
+  const next=prompt('New password (min 8 characters):');
+  if(next===null)return;
+  if(next.length<8){showToast('New password must be at least 8 characters','danger');return;}
+  fetch(API+'/api/auth/change-password',{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({current_password:current,new_password:next})
+  }).then(async r=>{
+    const data=await r.json();
+    if(r.ok){showToast('Password updated','success');}
+    else{showToast(data.detail||'Could not change password','danger');}
+  }).catch(()=>showToast('Could not reach the server','danger'));
+}
+
+async function renderAuditLog(){
+  const listEl=document.getElementById('auditLogList');
+  if(!listEl)return;
+  try{
+    const r=await fetch(API+'/api/audit-log',{credentials:'include'});
+    if(!r.ok){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load audit log</div>';return;}
+    const entries=await r.json();
+    if(!entries.length){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No activity recorded yet</div>';return;}
+    const actionIcons={login:'🔓',login_failed:'⚠️',logout:'🚪',password_changed:'🔑',device_toggle:'💡',family_member_added:'👤',family_member_removed:'👤'};
+    const actionColors={login:'var(--green)',login_failed:'var(--red)',logout:'var(--text3)',password_changed:'var(--accent)',device_toggle:'var(--cyan)',family_member_added:'var(--accent)',family_member_removed:'var(--orange)'};
+    listEl.innerHTML=entries.map(en=>`
+      <div style="display:flex;align-items:flex-start;gap:11px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${actionIcons[en.action]||'📌'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px"><b>${en.username}</b> <span style="color:${actionColors[en.action]||'var(--text2)'}">${(en.action||'').replace(/_/g,' ')}</span></div>
+          ${en.detail?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${en.detail}</div>`:''}
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);flex-shrink:0;text-align:right">${en.created_at}${en.ip_address?`<br>${en.ip_address}`:''}</div>
+      </div>`).join('');
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load audit log</div>';
+  }
+}
+
+async function renderSystemLogs(){
+  const listEl=document.getElementById('systemLogList');
+  if(!listEl)return;
+  const level=document.getElementById('sysLogLevel')?.value||'';
+  try{
+    const url='/api/system-logs?lines=300'+(level?`&level=${encodeURIComponent(level)}`:'');
+    const r=await fetch(API+url,{credentials:'include'});
+    if(r.status===403){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Only the owner account can view system logs.</div>';
+      return;
+    }
+    if(!r.ok){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Could not load system logs.</div>';
+      return;
+    }
+    const data=await r.json();
+    const lines=data.lines||[];
+    if(!lines.length){
+      listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">No log entries yet.</div>';
+      return;
+    }
+    listEl.innerHTML=lines.map(ln=>{
+      let color='var(--text3)';
+      if(ln.includes('| ERROR'))color='var(--red)';
+      else if(ln.includes('| WARNING'))color='var(--orange)';
+      else if(ln.includes('| INFO'))color='var(--text2)';
+      const escaped=ln.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div style="color:${color};white-space:pre-wrap;word-break:break-word;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)">${escaped}</div>`;
+    }).reverse().join(''); // newest first
+  }catch(e){
+    listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px;font-family:inherit">Could not reach the server.</div>';
+  }
+}
+
+// ─────────────────────────────────────────────────
+// AUTOMATION
+// ─────────────────────────────────────────────────
+async function renderAutomationPage(){
+  await renderAutomationRules();
+  await renderAutomationRuns();
+}
+
+async function renderAutomationRules(){
+  const el=document.getElementById('automationRulesList');
+  if(!el)return;
+  const rules=await apiFetch('/api/automation/rules');
+  if(!rules){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load rules</div>';return;}
+  if(!rules.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No rules yet — click "+ New rule" to create one</div>';return;}
+  const condLabel=c=>{
+    if(c.type==='sensor_above')return`${c.key} > ${c.threshold}`;
+    if(c.type==='sensor_below')return`${c.key} < ${c.threshold}`;
+    if(c.type==='nobody_home_minutes')return`nobody home for ${c.minutes} min`;
+    if(c.type==='time_of_day')return`every day at ${String(c.hour).padStart(2,'0')}:${String(c.minute||0).padStart(2,'0')}`;
+    return c.type;
+  };
+  const actLabel=a=>`${a.room}.${a.device} → ${JSON.stringify(a.set)}`;
+  el.innerHTML=rules.map(r=>`
+    <div style="padding:14px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:700;${r.enabled?'':'opacity:.4;text-decoration:line-through'}">${r.name}</span>
+          <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${r.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${r.enabled?'var(--green)':'var(--text3)'}">${r.enabled?'ON':'OFF'}</span>
+        </div>
+        ${r.description?`<div style="font-size:11.5px;color:var(--text3);margin-bottom:6px">${r.description}</div>`:''}
+        <div style="font-size:11px;color:var(--text2)">
+          <span style="color:var(--accent)">IF</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${condLabel(r.condition)}</code>
+          &nbsp;<span style="color:var(--accent)">THEN</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${actLabel(r.action)}</code>
+          &nbsp;<span style="color:var(--text3)">· cooldown ${r.cooldown_seconds}s</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-sm" onclick="toggleAutomationRule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAutomationRule(${r.id},this)">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+async function renderAutomationRuns(){
+  const el=document.getElementById('automationRunsList');
+  if(!el)return;
+  const runs=await apiFetch('/api/automation/runs');
+  if(!runs||!runs.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No automated actions yet</div>';return;}
+  el.innerHTML=runs.map(r=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="font-size:16px">⚡</span>
+      <div style="flex:1"><b>${r.rule_name}</b><span style="color:var(--text3);margin-left:6px">${r.detail||''}</span></div>
+      <div style="color:var(--text3);font-size:10.5px;flex-shrink:0">${r.created_at}</div>
+    </div>`).join('');
+}
+
+async function toggleAutomationRule(id){
+  await apiFetch(`/api/automation/rules/${id}/toggle`,{method:'POST'});
+  renderAutomationRules();
+}
+
+async function deleteAutomationRule(id){
+  if(!confirm('Delete this rule?'))return;
+  await apiFetch(`/api/automation/rules/${id}`,{method:'DELETE'});
+  renderAutomationRules();
+}
+
+function showAddAutomationModal(){
+  const roomSel=document.getElementById('autoActionRoom');
+  if(roomSel){
+    roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
+    updateAutomationDeviceOptions();
+  }
+  applyAutomationTemplate();
+  document.getElementById('addAutomationModal').classList.add('open');
+}
+
+function applyAutomationTemplate(){
+  const tpl=document.getElementById('autoTemplate')?.value;
+  const condFields=document.getElementById('autoConditionFields');
+  const minField=document.getElementById('autoMinutesField');
+  if(tpl==='nobody_home'){
+    if(condFields)condFields.style.display='none';
+    if(minField)minField.style.display='';
+  } else {
+    if(condFields)condFields.style.display='';
+    if(minField)minField.style.display='none';
+    if(tpl==='sensor_above'||tpl==='sensor_below'){
+      const keyEl=document.getElementById('autoConditionKey');
+      if(keyEl)keyEl.value=tpl==='sensor_above'?'aqi':'temperature';
+      const thEl=document.getElementById('autoConditionThreshold');
+      if(thEl)thEl.value=tpl==='sensor_above'?'200':'18';
+    }
+  }
+}
+
+function updateAutomationDeviceOptions(){
+  const room=document.getElementById('autoActionRoom')?.value;
+  const devSel=document.getElementById('autoActionDevice');
+  if(!devSel||!room||!devices[room])return;
+  devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
+}
+
+async function submitAutomationRule(){
+  const name=document.getElementById('autoName').value.trim();
+  if(!name){showToast('Please enter a rule name','danger');return;}
+  const tpl=document.getElementById('autoTemplate').value;
+  let condition;
+  if(tpl==='nobody_home'){
+    condition={type:'nobody_home_minutes',minutes:parseInt(document.getElementById('autoConditionMinutes').value)||30};
+  } else {
+    const key=document.getElementById('autoConditionKey').value;
+    const threshold=parseFloat(document.getElementById('autoConditionThreshold').value);
+    if(isNaN(threshold)){showToast('Please enter a valid threshold number','danger');return;}
+    condition={type:tpl==='sensor_below'?'sensor_below':'sensor_above',key,threshold};
+  }
+  const room=document.getElementById('autoActionRoom').value;
+  const device=document.getElementById('autoActionDevice').value;
+  const on=document.getElementById('autoActionOn').value==='true';
+  const cooldown=parseInt(document.getElementById('autoCooldown').value)||300;
+  const body={
+    name,
+    description:document.getElementById('autoDescription').value.trim()||undefined,
+    condition,
+    action:{room,device,set:{on}},
+    cooldown_seconds:cooldown
+  };
+  const r=await fetch(API+'/api/automation/rules',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    closeModal('addAutomationModal');
+    showToast(`Rule "${name}" created`,'success');
+    renderAutomationRules();
+  } else {
+    const err=await r.json();
+    showToast(err.detail||'Could not create rule','danger');
+  }
+}
+
+
+// ─────────────────────────────────────────────────
+// ROUTINES
+// ─────────────────────────────────────────────────
+
+async function renderRoutinesPage(){
+  if(!currentUser)return;
+  const myId=currentUser.member_id;
+  setText('myRoutinesTitle',`⭐ My routines (${currentUser.display_name})`);
+  const mine=await apiFetch(`/api/routines?member_id=${myId}`);
+  renderRoutineList(mine||[],document.getElementById('myRoutinesList'),true);
+  if(currentUser.role==='owner'){
+    const all=await apiFetch('/api/routines');
+    const others=(all||[]).filter(r=>r.member_id!==myId);
+    renderRoutineList(others,document.getElementById('otherRoutinesList'),false);
+    document.getElementById('otherRoutinesCard').style.display='';
+  } else {
+    document.getElementById('otherRoutinesCard').style.display='none';
+  }
+}
+
+function routineActionLabel(r){
+  const a=r.action||{};
+  if(a.on===false)return'turn off';
+  if(a.on===true&&a.brightness!==undefined)return`dim to ${a.brightness}%`;
+  if(a.on===true&&a.speed!==undefined)return`fan speed ${a.speed}`;
+  if(a.on===true)return'turn on';
+  return JSON.stringify(a);
+}
+
+function renderRoutineList(routines,el,canEdit){
+  if(!el)return;
+  if(!routines.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No routines yet'+(canEdit?' — click &quot;+ Add routine&quot; to create one':'')+' </div>';
+    return;
+  }
+  const dayLabel=d=>d==='everyday'?'every day':d.replace(/,/g,', ');
+  el.innerHTML=routines.map(r=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:22px;width:36px;text-align:center">⏰</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;${r.enabled?'':'opacity:.4;text-decoration:line-through'}">${r.name}</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+          ${String(r.hour).padStart(2,'0')}:${String(r.minute).padStart(2,'0')} · ${dayLabel(r.days)} · ${formatDevName(r.device)} → ${routineActionLabel(r)}
+        </div>
+        ${!canEdit?`<div style="font-size:10.5px;color:var(--text3);margin-top:1px">👤 ${r.member_name}</div>`:''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+        <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${r.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${r.enabled?'var(--green)':'var(--text3)'}">${r.enabled?'ON':'OFF'}</span>
+        ${canEdit?`<button class="btn btn-sm" onclick="toggleRoutine(${r.id})">${r.enabled?'Pause':'Resume'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteRoutine(${r.id})">Delete</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function toggleRoutine(id){
+  await apiFetch(`/api/routines/${id}/toggle`,{method:'POST'});
+  renderRoutinesPage();
+}
+
+async function deleteRoutine(id){
+  if(!confirm('Delete this routine?'))return;
+  await apiFetch(`/api/routines/${id}`,{method:'DELETE'});
+  renderRoutinesPage();
+}
+
+function showAddRoutineModal(){
+  const roomSel=document.getElementById('routineRoom');
+  if(roomSel){
+    const myRoom=currentUser?MEMBER_ROOM[currentUser.display_name]||'living_room':'living_room';
+    roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}" ${r===myRoom?'selected':''}>${ROOM_NAMES[r]||r}</option>`).join('');
+    updateRoutineDeviceOptions();
+  }
+  document.getElementById('routineName').value='';
+  document.getElementById('routineHour').value='';
+  document.getElementById('routineMinute').value='0';
+  document.getElementById('addRoutineModal').classList.add('open');
+}
+
+function updateRoutineDeviceOptions(){
+  const room=document.getElementById('routineRoom')?.value;
+  const devSel=document.getElementById('routineDevice');
+  if(!devSel||!room||!devices[room])return;
+  devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
+}
+
+function updateRoutineActionOptions(){/* action list is generic across all device types */}
+
+function buildRoutineAction(actionKey){
+  const map={
+    'off':{on:false},'on':{on:true},
+    'dim':{on:true,brightness:30},'bright':{on:true,brightness:100},
+    'speed1':{on:true,speed:1},'speed3':{on:true,speed:3},
+    'speed5':{on:true,speed:5},'fan_off':{on:false,speed:0}
+  };
+  return map[actionKey]||{on:false};
+}
+
+async function submitRoutine(){
+  const name=document.getElementById('routineName').value.trim();
+  if(!name){showToast('Please enter a routine name','danger');return;}
+  const hour=parseInt(document.getElementById('routineHour').value);
+  const minute=parseInt(document.getElementById('routineMinute').value||'0');
+  if(isNaN(hour)||hour<0||hour>23){showToast('Please enter a valid hour (0-23)','danger');return;}
+  const days=document.getElementById('routineDays').value;
+  const room=document.getElementById('routineRoom').value;
+  const device=document.getElementById('routineDevice').value;
+  const action=buildRoutineAction(document.getElementById('routineAction').value);
+  const body={name,hour,minute,days,room,device,action,member_id:currentUser?.member_id};
+  const r=await fetch(API+'/api/routines',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    closeModal('addRoutineModal');
+    showToast(`Routine "${name}" saved`,'success');
+    renderRoutinesPage();
+  } else {
+    const err=await r.json().catch(()=>({}));
+    showToast(err.detail||'Could not create routine','danger');
+  }
+}
+
+
+// ─────────────────────────────────────────────────
+// GUEST ACCESS
+// ─────────────────────────────────────────────────
+async function renderGuestAccessPage(){
+  const el=document.getElementById('guestScheduleList');
+  if(!el)return;
+  const guests=await apiFetch('/api/guests');
+  if(!guests||!guests.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No scheduled visitors yet — click "+ Add visitor" to add one</div>';
+    return;
+  }
+  const dayLabel=d=>{
+    if(d==='everyday')return'Every day';
+    if(d==='monday,tuesday,wednesday,thursday,friday,saturday')return'Mon–Sat';
+    if(d==='monday,tuesday,wednesday,thursday,friday')return'Weekdays';
+    if(d==='saturday,sunday')return'Weekends';
+    return d.replace(/,/g,', ');
+  };
+  const roleIcon={maid:'🧹',cook:'👨‍🍳',driver:'🚗',guard:'💂',delivery:'📦',guest:'👤',worker:'🔧'};
+  el.innerHTML=guests.map(g=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:22px;width:36px;text-align:center">${roleIcon[g.role]||'👤'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;${g.enabled?'':'opacity:.4;text-decoration:line-through'}">${g.name}</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+          ${g.role} · ${dayLabel(g.days)} · ${String(g.start_hour).padStart(2,'0')}:${String(g.start_min).padStart(2,'0')} – ${String(g.end_hour).padStart(2,'0')}:${String(g.end_min).padStart(2,'0')}
+        </div>
+        ${g.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic">${g.notes}</div>`:''}
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+        <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${g.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${g.enabled?'var(--green)':'var(--text3)'}">${g.enabled?'Active':'Paused'}</span>
+        <button class="btn btn-sm" onclick="toggleGuestSchedule(${g.id})">${g.enabled?'Pause':'Resume'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteGuestSchedule(${g.id})">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function showAddGuestModal(){
+  ['guestName','guestNotes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('guestStartHour').value='7';
+  document.getElementById('guestStartMin').value='0';
+  document.getElementById('guestEndHour').value='9';
+  document.getElementById('guestEndMin').value='0';
+  document.getElementById('addGuestModal').classList.add('open');
+}
+
+async function submitGuestSchedule(){
+  const name=document.getElementById('guestName').value.trim();
+  if(!name){showToast('Please enter a name','danger');return;}
+  const startHour=parseInt(document.getElementById('guestStartHour').value);
+  const startMin=parseInt(document.getElementById('guestStartMin').value||'0');
+  const endHour=parseInt(document.getElementById('guestEndHour').value);
+  const endMin=parseInt(document.getElementById('guestEndMin').value||'0');
+  if(isNaN(startHour)||isNaN(endHour)){showToast('Please enter valid times','danger');return;}
+  if(startHour*60+startMin>=endHour*60+endMin){showToast('Start time must be before end time','danger');return;}
+  const body={
+    name,
+    role:document.getElementById('guestRole').value,
+    days:document.getElementById('guestDays').value,
+    start_hour:startHour,start_min:startMin,
+    end_hour:endHour,end_min:endMin,
+    notes:document.getElementById('guestNotes').value.trim()||undefined
+  };
+  const r=await fetch(API+'/api/guests',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){
+    closeModal('addGuestModal');
+    showToast(`${name} added to guest schedule`,'success');
+    renderGuestAccessPage();
+  } else {
+    const err=await r.json().catch(()=>({}));
+    showToast(err.detail||'Could not save guest','danger');
+  }
+}
+
+async function toggleGuestSchedule(id){
+  await apiFetch(`/api/guests/${id}/toggle`,{method:'POST'});
+  renderGuestAccessPage();
+}
+
+async function deleteGuestSchedule(id){
+  if(!confirm('Remove this visitor from the schedule?'))return;
+  await apiFetch(`/api/guests/${id}`,{method:'DELETE'});
+  renderGuestAccessPage();
+}
+
+// ─────────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────────
+let currentPaymentMonth = new Date().toISOString().slice(0,7); // YYYY-MM
+let currentPaymentData = null;
+
+function changePaymentMonth(delta){
+  const [y,m] = currentPaymentMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  currentPaymentMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  renderPaymentsPage();
+}
+
+async function renderPaymentsPage(){
+  // Show config button only for owner
+  const cfgBtn = document.getElementById('rentConfigBtn');
+  if(cfgBtn) cfgBtn.style.display = currentUser?.role==='owner' ? '' : 'none';
+
+  // Month label
+  const [y,m] = currentPaymentMonth.split('-').map(Number);
+  const label = new Date(y, m-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  setText('pay-month-label', label);
+
+  const data = await apiFetch(`/api/payments?month=${currentPaymentMonth}`);
+  if(!data){ document.getElementById('paymentMemberList').innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load payments</div>'; return; }
+  currentPaymentData = data;
+
+  // Summary cards
+  setText('pay-total', `₹${data.total_rent.toLocaleString('en-IN')}`);
+  setText('pay-dueday', `due ${data.due_day}${['th','st','nd','rd'][data.due_day<=3?data.due_day:0]} of month`);
+  setText('pay-share', `₹${data.per_share.toLocaleString('en-IN')}`);
+  setText('pay-members', `${data.payments.length} members`);
+  setText('pay-collected', `₹${data.total_collected.toLocaleString('en-IN')}`);
+  setText('pay-paid-count', `${data.paid_count} paid`);
+  setText('pay-outstanding', `₹${data.total_outstanding.toLocaleString('en-IN')}`);
+  setText('pay-pending-count', `${data.pending_count} pending`);
+
+  // Member payment cards
+  const listEl = document.getElementById('paymentMemberList');
+  if(!listEl) return;
+
+  if(data.total_rent === 0){
+    listEl.innerHTML = `<div style="text-align:center;padding:24px">
+      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">Rent not configured yet.</div>
+      ${currentUser?.role==='owner'?'<button class="btn btn-primary" onclick="showRentConfigModal()">Set up rent now</button>':'<div style="font-size:12px;color:var(--text3)">Ask the owner (Aditya) to configure the monthly rent amount.</div>'}
+    </div>`;
+    return;
+  }
+
+  const statusIcon={paid:'✅',pending:'⏳',waived:'🤝'};
+  const statusColor={paid:'var(--green)',pending:'var(--orange)',waived:'var(--text3)'};
+  const methodLabel={upi:'UPI',cash:'Cash',bank_transfer:'Bank transfer',other:'Other'};
+
+  // Can this logged-in user mark a payment?
+  const canMark = p => currentUser?.role==='owner' || p.member_id===currentUser?.member_id;
+
+  listEl.innerHTML = data.payments.map(p => `
+    <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)">
+      <div style="width:38px;height:38px;border-radius:50%;background:${familyMembers.find(m=>m.id===p.member_id)?.color||'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">
+        ${familyMembers.find(m=>m.id===p.member_id)?.avatar||p.member_name[0]}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700">${p.member_name}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">
+          ₹${p.amount.toLocaleString('en-IN')}
+          ${p.paid_at?` · paid ${new Date(p.paid_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})} via ${methodLabel[p.payment_method]||p.payment_method||'—'}`:''}
+          ${p.notes?` · ${p.notes}`:''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span style="font-size:12px;font-weight:600;color:${statusColor[p.status]}">${statusIcon[p.status]} ${p.status}</span>
+        ${canMark(p)?`<button class="btn btn-sm btn-primary" onclick="openMarkPaymentModal(${p.id},'${p.member_name}','${p.status}')">Update</button>`:''}
+      </div>
+    </div>`).join('');
+
+  // Payment history — load all for this month across members
+  const histEl = document.getElementById('paymentHistory');
+  if(histEl){
+    const paid = data.payments.filter(p=>p.status!=='pending');
+    if(!paid.length){
+      histEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No payments recorded yet for this month</div>';
+    } else {
+      histEl.innerHTML = paid.map(p=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="font-size:16px">${statusIcon[p.status]}</span>
+          <div style="flex:1"><b>${p.member_name}</b> <span style="color:${statusColor[p.status]}">${p.status}</span> ₹${p.amount.toLocaleString('en-IN')}
+          ${p.paid_at?`<span style="color:var(--text3)"> · ${new Date(p.paid_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>`:''}
+          ${p.recorded_by?`<span style="color:var(--text3)"> · by ${p.recorded_by}</span>`:''}
+          </div>
+        </div>`).join('');
+    }
+  }
+}
+
+function showRentConfigModal(){
+  const cfg = currentPaymentData;
+  if(cfg){ document.getElementById('rentTotal').value=cfg.total_rent||''; document.getElementById('rentDueDay').value=cfg.due_day||1; document.getElementById('rentNotes').value=''; }
+  document.getElementById('rentConfigModal').classList.add('open');
+}
+
+async function submitRentConfig(){
+  const total = parseFloat(document.getElementById('rentTotal').value);
+  const dueDay = parseInt(document.getElementById('rentDueDay').value)||1;
+  if(isNaN(total)||total<0){showToast('Please enter a valid rent amount','danger');return;}
+  if(dueDay<1||dueDay>28){showToast('Due day must be between 1 and 28','danger');return;}
+  const r = await apiFetch('/api/payments/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({total_rent:total,due_day:dueDay,notes:document.getElementById('rentNotes').value.trim()||undefined})});
+  if(r){ closeModal('rentConfigModal'); showToast('Rent configured','success'); renderPaymentsPage(); }
+  else showToast('Could not save configuration','danger');
+}
+
+function openMarkPaymentModal(id, name, currentStatus){
+  document.getElementById('markPaymentId').value = id;
+  setText('markPaymentName', `${name}'s payment`);
+  document.getElementById('markPaymentStatus').value = currentStatus;
+  document.getElementById('markPaymentNotes').value = '';
+  document.getElementById('markPaymentModal').classList.add('open');
+}
+
+async function submitMarkPayment(){
+  const id = document.getElementById('markPaymentId').value;
+  const status = document.getElementById('markPaymentStatus').value;
+  const method = document.getElementById('markPaymentMethod').value;
+  const notes = document.getElementById('markPaymentNotes').value.trim();
+  const r = await apiFetch(`/api/payments/${id}/mark`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status,payment_method:method,notes:notes||undefined})});
+  if(r){ closeModal('markPaymentModal'); showToast('Payment updated','success'); renderPaymentsPage(); }
+  else showToast('Could not update payment','danger');
+}
+
+
+async function startDashboard(){
   await loadAll();
   connectWebSocket();
   setInterval(refreshSensors,5000);
@@ -2800,6 +3977,18 @@ function updateNotifBanner(){
     banner.style.display='none';
   } else {
     banner.style.display='flex';
+  }
+}
+
+async function init(){
+  const session=await checkSession();
+  if(session){
+    currentUser=session;
+    applyCurrentUserToUI();
+    hideLoginScreen();
+    await startDashboard();
+  } else {
+    showLoginScreen();
   }
 }
 

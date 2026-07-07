@@ -13,11 +13,16 @@ from typing import Optional, List, Any
 from dataclasses import dataclass
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+
+import db
+import auth
+import automation
+from applog import logger, get_recent_logs
 
 # ── SMOKE / GAS / FIRE DETECTION ──
 from collections import deque
@@ -140,7 +145,8 @@ devices = {
         "light": {"on": True,  "brightness": 80, "watts": 12},
         "fan":   {"on": False, "speed": 0,  "watts": 45},
         "tv":    {"on": False, "watts": 120},
-        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500}
+        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
+        "air_purifier": {"on": False, "speed": 2, "watts": 50}
     },
     "aditya_room": {
         "light": {"on": False, "brightness": 70, "watts": 10},
@@ -173,8 +179,28 @@ devices = {
     "bathroom": {
         "light":   {"on": False, "brightness": 100, "watts": 8},
         "exhaust": {"on": False, "watts": 25}
+    },
+    "security": {
+        # Door lock as a real backend-tracked device (was previously
+        # frontend-only state) so automation rules can actually act on it
+        # — e.g. auto-unlock on a fire/smoke alert.
+        "door_lock": {"on": True, "watts": 0}  # on = locked, off = unlocked
     }
 }
+
+# Initialize the database (creates tables if they don't exist) before
+# anything below tries to read or write from it.
+db.init_db()
+
+# Overlay any persisted device state on top of the defaults above, so devices
+# remember their last on/off/brightness/speed across redeploys instead of
+# always resetting to the hardcoded defaults every time the container restarts.
+_persisted_devices = db.load_all_device_state()
+for _room, _devs in _persisted_devices.items():
+    if _room in devices:
+        for _dev_name, _dev_state in _devs.items():
+            if _dev_name in devices[_room]:
+                devices[_room][_dev_name].update(_dev_state)
 
 # Sensor data
 sensors = {
@@ -192,28 +218,73 @@ sensors = {
     "condition": "partly cloudy"
 }
 
-# Family members
-family_members = [
-    {"id": 1, "name": "Aditya", "role": "Owner", "status": "home", "avatar": "A", "color": "#4f46e5"},
+# Family members — persisted in SQLite (data/smarthome.db), survives redeploys.
+# Defaults below are only inserted once, the very first time the database is created.
+_DEFAULT_FAMILY = [
+    {"id": 1, "name": "Aditya", "role": "Owner", "status": "away", "avatar": "A", "color": "#4f46e5"},
     {"id": 2, "name": "Diksha", "role": "Member", "status": "away", "avatar": "D", "color": "#7c3aed"},
-    {"id": 3, "name": "Agrim",  "role": "Member", "status": "home", "avatar": "Ag", "color": "#0891b2"},
+    {"id": 3, "name": "Agrim",  "role": "Member", "status": "away", "avatar": "Ag", "color": "#0891b2"},
     {"id": 4, "name": "Naman",  "role": "Member", "status": "away", "avatar": "N", "color": "#059669"},
-    {"id": 5, "name": "Kamakshi","role":"Member", "status": "home", "avatar": "K", "color": "#dc2626"}
+    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"}
 ]
+db.seed_family_if_empty(_DEFAULT_FAMILY)
+family_members = db.get_family_members()
 
-# Security logs - pre-seeded with realistic entries
-security_logs = [
-    {"id": 1, "person": "Aditya", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=2)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 2, "person": "Kamakshi", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=3, minutes=15)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 3, "person": "Agrim", "type": "member", "event": "arrived home", "time": (datetime.now() - timedelta(hours=5)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 4, "person": "Zomato Delivery", "type": "delivery", "event": "delivered order", "time": (datetime.now() - timedelta(hours=1, minutes=30)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "visitor", "estimated": (datetime.now() - timedelta(hours=1, minutes=45)).strftime("%H:%M")},
-    {"id": 5, "person": "Rahul (Guest)", "type": "guest", "event": "visited", "time": (datetime.now() - timedelta(hours=4)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 6, "person": "Diksha", "type": "member", "event": "left home", "time": (datetime.now() - timedelta(hours=6)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 7, "person": "Naman",  "type": "member", "event": "left home", "time": (datetime.now() - timedelta(hours=7)).strftime("%H:%M"), "date": datetime.now().strftime("%d %b"), "status": "authorized"},
-    {"id": 8, "person": "Unknown Person", "type": "intruder", "event": "unrecognized face detected", "time": (datetime.now() - timedelta(days=1, hours=2)).strftime("%H:%M"), "date": (datetime.now() - timedelta(days=1)).strftime("%d %b"), "status": "unauthorized"},
-    {"id": 9, "person": "Amazon Delivery", "type": "delivery", "event": "package delivered", "time": (datetime.now() - timedelta(days=1, hours=5)).strftime("%H:%M"), "date": (datetime.now() - timedelta(days=1)).strftime("%d %b"), "status": "visitor", "estimated": (datetime.now() - timedelta(days=1, hours=5, minutes=20)).strftime("%H:%M")},
+# Security logs — persisted in SQLite, starts empty on a fresh database.
+# Real entries are added going forward by actual face recognition / manual
+# logging; nothing here is pre-seeded demo data.
+security_logs = db.get_security_logs()
+
+# ── User accounts (authentication) ──────────────────────────────────────
+# One login per family member, not a single shared admin password. On the
+# very first run (empty users table) a random password is generated for
+# each member and printed ONCE to the server console/logs — never stored
+# in source code or committed to git. Whoever has access to the AWS
+# console / docker logs retrieves these once and distributes them, then
+# each person should change their password via /api/auth/change-password.
+_GENERATED_PASSWORDS_THIS_RUN = []
+if db.count_users() == 0:
+    import secrets as _secrets
+    for m in family_members:
+        temp_password = _secrets.token_urlsafe(9)  # ~12 random chars
+        role = "owner" if m["role"].lower() == "owner" else "member"
+        auth.create_user_account(
+            username=m["name"].lower(),
+            password=temp_password,
+            display_name=m["name"],
+            role=role,
+            member_id=m["id"],
+        )
+        _GENERATED_PASSWORDS_THIS_RUN.append((m["name"].lower(), temp_password))
+
+# ── Automation rules ─────────────────────────────────────────────────────
+# A few real starter rules, inserted only on the very first run (empty
+# table). Anyone can add/edit/disable more from the Automation page —
+# these are just sensible defaults, not hardcoded behavior.
+_DEFAULT_AUTOMATION_RULES = [
+    {
+        "name": "High AQI -> air purifier on",
+        "description": "Turns on the living room air purifier at speed 3 whenever AQI rises above 200 (HERC 'Poor' threshold).",
+        "condition": {"type": "sensor_above", "key": "aqi", "threshold": 200},
+        "action": {"room": "living_room", "device": "air_purifier", "set": {"on": True, "speed": 3}},
+        "cooldown_seconds": 600,
+    },
+    {
+        "name": "Nobody home 30 min -> all lights off",
+        "description": "If every family member has been away for 30+ minutes, turns off lights in every room to save energy.",
+        "condition": {"type": "nobody_home_minutes", "minutes": 30},
+        "action": {"room": "living_room", "device": "light", "set": {"on": False}},
+        "cooldown_seconds": 1800,
+    },
+    {
+        "name": "High smoke -> unlock door",
+        "description": "If smoke level exceeds the 40% safety threshold, automatically unlocks the front door so it's not blocking an evacuation.",
+        "condition": {"type": "sensor_above", "key": "smoke", "threshold": 40},
+        "action": {"room": "security", "device": "door_lock", "set": {"on": False}},
+        "cooldown_seconds": 300,
+    },
 ]
-log_id_counter = 10
+db.seed_automation_rules_if_empty(_DEFAULT_AUTOMATION_RULES)
 
 # Smoke/fire detector instance
 detector = SmokeGasFireDetector(smoke_threshold=40.0, gas_threshold=40.0,
@@ -226,6 +297,7 @@ alert_history = []
 
 # ── ENERGY CALCULATION ──
 def calculate_energy():
+    """Returns instantaneous power draw in watts (used internally for the live wattage figure)."""
     total_watts = 0
     for room, devs in devices.items():
         for dev_name, dev in devs.items():
@@ -240,6 +312,65 @@ def calculate_energy():
                 total_watts += w
     return total_watts
 
+
+# ── DHBVN Gurugram domestic electricity tariff ──
+# Dakshin Haryana Bijli Vitran Nigam (DHBVN) serves Gurugram. Slabs below are
+# Category II domestic (load up to 5kW — typical for a house), per the HERC
+# tariff order effective 01-04-2025 (FY 2025-26), as published in DHBVN's
+# sales circular. No fixed/minimum monthly charge applies below 300 units.
+# Source: DHBVN sales circular 04_D_2025, cross-checked against HERC tariff
+# order coverage (Tribune India, India TV News, April 2025).
+DHBVN_DOMESTIC_SLABS = [
+    # (units_up_to, rate_per_unit)  — units_up_to=None means "and above"
+    (150, 2.95),
+    (300, 5.25),
+    (500, 6.45),
+    (None, 7.10),
+]
+# Fixed charge applies only once monthly consumption exceeds 300 units
+DHBVN_FIXED_CHARGE_PER_KW_ABOVE_300 = 50.0
+SANCTIONED_LOAD_KW = 5.0  # assumed household sanctioned load for fixed-charge calc
+
+
+def calculate_dhbvn_bill(units: float):
+    """
+    Slab-wise DHBVN Category-II domestic bill calculation.
+    Returns dict with per-slab breakdown, energy charge, fixed charge, and total.
+    """
+    remaining = units
+    prev_cap = 0
+    breakdown = []
+    energy_charge = 0.0
+
+    for cap, rate in DHBVN_DOMESTIC_SLABS:
+        if remaining <= 0:
+            break
+        slab_size = (cap - prev_cap) if cap is not None else remaining
+        units_in_slab = min(remaining, slab_size)
+        if units_in_slab <= 0:
+            prev_cap = cap if cap is not None else prev_cap
+            continue
+        slab_cost = round(units_in_slab * rate, 2)
+        breakdown.append({
+            "range": f"{prev_cap + 1}-{cap}" if cap is not None else f"Above {prev_cap}",
+            "units": round(units_in_slab, 2),
+            "rate": rate,
+            "cost": slab_cost
+        })
+        energy_charge += slab_cost
+        remaining -= units_in_slab
+        prev_cap = cap if cap is not None else prev_cap
+
+    fixed_charge = (SANCTIONED_LOAD_KW * DHBVN_FIXED_CHARGE_PER_KW_ABOVE_300) if units > 300 else 0.0
+
+    return {
+        "units": round(units, 2),
+        "breakdown": breakdown,
+        "energy_charge": round(energy_charge, 2),
+        "fixed_charge": round(fixed_charge, 2),
+        "total": round(energy_charge + fixed_charge, 2)
+    }
+
 # ──────────────────────────────────────────────
 # SENSOR SIMULATION LOOP
 # ──────────────────────────────────────────────
@@ -253,50 +384,63 @@ def simulate_sensors():
     last_aqi_update = 0.0   # track when we last updated AQI
 
     while True:
-        now = time.time()
-        with state_lock:
-            # Temperature and humidity drift every 3s (fast sensors)
-            sensors["temperature"] = round(base_temp + random.uniform(-1.5, 2.0), 1)
-            sensors["humidity"]    = round(base_humidity + random.uniform(-5, 5), 1)
-            sensors["smoke"]       = round(random.uniform(1.5, 8.0), 1)
-            sensors["gas"]         = round(random.uniform(1.0, 6.0), 1)
+        try:
+            now = time.time()
+            with state_lock:
+                # Temperature and humidity drift every 3s (fast sensors)
+                sensors["temperature"] = round(base_temp + random.uniform(-1.5, 2.0), 1)
+                sensors["humidity"]    = round(base_humidity + random.uniform(-5, 5), 1)
+                sensors["smoke"]       = round(random.uniform(1.5, 8.0), 1)
+                sensors["gas"]         = round(random.uniform(1.0, 6.0), 1)
 
-            # AQI updates every 60 seconds — air quality doesn't spike every 3 seconds
-            if now - last_aqi_update >= 60:
-                # Slow drift: ±10 from base, clamp to realistic Gurugram range
-                aqi_base_pm25 = round(max(40, min(220, aqi_base_pm25 + random.uniform(-10, 10))), 1)
-                aqi_base_pm10 = round(max(60, min(300, aqi_base_pm10 + random.uniform(-12, 12))), 1)
-                aqi_val, aqi_cat = calculate_aqi(aqi_base_pm25, aqi_base_pm10)
-                sensors["pm25"]         = aqi_base_pm25
-                sensors["pm10"]         = aqi_base_pm10
-                sensors["aqi"]          = aqi_val
-                sensors["aqi_category"] = aqi_cat
-                sensors["co2_ppm"]      = round(random.uniform(700, 1100), 0)
-                last_aqi_update = now
+                # AQI updates every 60 seconds — air quality doesn't spike every 3 seconds
+                if now - last_aqi_update >= 60:
+                    # Slow drift: ±10 from base, clamp to realistic Gurugram range
+                    aqi_base_pm25 = round(max(40, min(220, aqi_base_pm25 + random.uniform(-10, 10))), 1)
+                    aqi_base_pm10 = round(max(60, min(300, aqi_base_pm10 + random.uniform(-12, 12))), 1)
+                    aqi_val, aqi_cat = calculate_aqi(aqi_base_pm25, aqi_base_pm10)
+                    sensors["pm25"]         = aqi_base_pm25
+                    sensors["pm10"]         = aqi_base_pm10
+                    sensors["aqi"]          = aqi_val
+                    sensors["aqi_category"] = aqi_cat
+                    sensors["co2_ppm"]      = round(random.uniform(700, 1100), 0)
+                    last_aqi_update = now
 
-            # HVAC logic
-            hvac_status, target = determine_hvac(sensors["temperature"], sensors["humidity"])
-            sensors["hvac_status"] = hvac_status
-            sensors["hvac_target"] = target
+                # HVAC logic
+                hvac_status, target = determine_hvac(sensors["temperature"], sensors["humidity"])
+                sensors["hvac_status"] = hvac_status
+                sensors["hvac_target"] = target
 
-            # Smoke/fire detection
-            reading = SensorReading(
-                timestamp=now,
-                smoke=sensors["smoke"],
-                gas=sensors["gas"],
-                temperature=sensors["temperature"]
-            )
-            alerts = detector.evaluate(reading)
-            for alert in alerts:
-                alert_entry = {
-                    "type":    alert["type"],
-                    "level":   alert["level"],
-                    "message": alert["message"],
-                    "time":    datetime.now().strftime("%H:%M:%S")
-                }
-                alert_history.append(alert_entry)
-                if len(alert_history) > 50:
-                    alert_history.pop(0)
+                # Smoke/fire detection
+                reading = SensorReading(
+                    timestamp=now,
+                    smoke=sensors["smoke"],
+                    gas=sensors["gas"],
+                    temperature=sensors["temperature"]
+                )
+                alerts = detector.evaluate(reading)
+                for alert in alerts:
+                    alert_entry = {
+                        "type":    alert["type"],
+                        "level":   alert["level"],
+                        "message": alert["message"],
+                        "time":    datetime.now().strftime("%H:%M:%S")
+                    }
+                    alert_history.append(alert_entry)
+                    if len(alert_history) > 50:
+                        alert_history.pop(0)
+
+                # Automation rules — checked every tick, each rule has its
+                # own cooldown so this doesn't spam-toggle devices.
+                automation.evaluate_rules(devices, sensors, family_members, state_lock)
+                # Per-member routines — time-based, fires once per day per routine.
+                automation.evaluate_routines(devices, state_lock)
+        except Exception as e:
+            # Without this, any unexpected error here would silently kill the
+            # daemon thread forever — sensor data would just freeze at its
+            # last values with absolutely no record of why. Log it and keep
+            # the loop alive instead.
+            logger.error("Sensor simulation loop error: %s", e, exc_info=True)
 
         time.sleep(3)
 
@@ -310,6 +454,17 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"]
 )
+
+# Catch anything that isn't an explicit HTTPException — log the full
+# traceback so a live crash actually leaves a record instead of just
+# becoming a generic 500 with nothing written down anywhere.
+@app.exception_handler(Exception)
+async def log_unhandled_exceptions(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled exception on %s %s: %s",
+        request.method, request.url.path, exc, exc_info=True
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -340,9 +495,508 @@ class LogAdd(BaseModel):
     status: str
     estimated: Optional[str] = None
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 # ──────────────────────────────────────────────
 # ENDPOINTS
 # ──────────────────────────────────────────────
+
+# ── Authentication ──────────────────────────────
+SESSION_COOKIE_NAME = "smarthome_session"
+
+
+async def get_current_user(smarthome_session: Optional[str] = Cookie(default=None)):
+    """FastAPI dependency — raises 401 if there's no valid session cookie.
+    Use as: async def some_endpoint(user: dict = Depends(get_current_user))"""
+    user = auth.get_session_user(smarthome_session)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return user
+
+
+async def get_current_user_optional(smarthome_session: Optional[str] = Cookie(default=None)):
+    """Same as above but returns None instead of raising — for endpoints that
+    behave differently when logged in vs not, without hard-blocking access."""
+    return auth.get_session_user(smarthome_session)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.post("/api/auth/login")
+async def login(body: LoginRequest, request: Request, response: Response):
+    user = auth.authenticate(body.username, body.password)
+    if not user:
+        db.add_audit_entry(body.username, "login_failed", ip_address=_client_ip(request))
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = auth.start_session(user["id"])
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=auth.SESSION_DURATION_HOURS * 3600,
+    )
+    db.add_audit_entry(user["username"], "login", ip_address=_client_ip(request))
+    return {
+        "ok": True,
+        "user": {
+            "username": user["username"],
+            "display_name": user["display_name"],
+            "role": user["role"],
+            "member_id": user["member_id"],
+        }
+    }
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response, smarthome_session: Optional[str] = Cookie(default=None)):
+    user = auth.get_session_user(smarthome_session)
+    if user:
+        db.add_audit_entry(user["username"], "logout", ip_address=_client_ip(request))
+    auth.end_session(smarthome_session)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def get_me(user: dict = Depends(get_current_user)):
+    return {
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "member_id": user["member_id"],
+    }
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/api/auth/change-password")
+async def change_password(body: ChangePasswordRequest, request: Request, user: dict = Depends(get_current_user)):
+    full_user = db.get_user_by_username(user["username"])
+    if not auth.verify_password(body.current_password, full_user["password_hash"], full_user["password_salt"]):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    new_hash, new_salt = auth.hash_password(body.new_password)
+    db.update_user_password(full_user["id"], new_hash, new_salt)
+    db.add_audit_entry(user["username"], "password_changed", ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.get("/api/audit-log")
+async def get_audit_log(user: dict = Depends(get_current_user)):
+    # Any logged-in member can view the audit log — transparency for the whole household
+    return db.get_audit_log()
+
+
+@app.get("/api/system-logs")
+async def get_system_logs(lines: int = 200, level: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """
+    Server-side error/debug log — distinct from security_logs (who arrived
+    at the house) and audit_log (who changed what in the dashboard). This is
+    for diagnosing the live deployment: crashes, unhandled exceptions, sensor
+    thread errors, startup events. Gated behind login since it can contain
+    internal detail (stack traces, file paths) not meant for public viewing.
+    """
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner account can view system logs")
+    lines = max(1, min(lines, 1000))
+    return {"lines": get_recent_logs(lines=lines, level=level)}
+
+
+# ── Automation rules ────────────────────────────────────────────────────
+
+class AutomationConditionIn(BaseModel):
+    type: str  # sensor_above / sensor_below / nobody_home_minutes / time_of_day
+    key: Optional[str] = None
+    threshold: Optional[float] = None
+    minutes: Optional[int] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    window_minutes: Optional[int] = None
+
+class AutomationActionIn(BaseModel):
+    room: str
+    device: str
+    set: dict
+
+class AutomationRuleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    condition: AutomationConditionIn
+    action: AutomationActionIn
+    enabled: bool = True
+    cooldown_seconds: int = 300
+
+
+@app.get("/api/automation/rules")
+async def list_automation_rules(user: dict = Depends(get_current_user)):
+    return db.get_automation_rules()
+
+
+@app.post("/api/automation/rules")
+async def create_automation_rule(body: AutomationRuleCreate, request: Request, user: dict = Depends(get_current_user)):
+    # Validate the action targets a real device before saving — a rule
+    # pointing at a room/device that doesn't exist would silently no-op
+    # forever, which is worse than rejecting it up front.
+    if body.action.room not in devices or body.action.device not in devices[body.action.room]:
+        raise HTTPException(status_code=400, detail=f"{body.action.room}.{body.action.device} is not a real device")
+    rule = db.create_automation_rule(
+        name=body.name, description=body.description,
+        condition=body.condition.dict(exclude_none=True),
+        action=body.action.dict(),
+        enabled=body.enabled, cooldown_seconds=body.cooldown_seconds,
+    )
+    db.add_audit_entry(user["username"], "automation_rule_created", detail=body.name, ip_address=_client_ip(request))
+    return rule
+
+
+@app.post("/api/automation/rules/{rule_id}/toggle")
+async def toggle_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
+    rule = db.get_automation_rule(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    db.update_automation_rule_enabled(rule_id, not rule["enabled"])
+    db.add_audit_entry(user["username"], "automation_rule_toggled", detail=f"{rule['name']} -> {'enabled' if not rule['enabled'] else 'disabled'}", ip_address=_client_ip(request))
+    return db.get_automation_rule(rule_id)
+
+
+@app.delete("/api/automation/rules/{rule_id}")
+async def delete_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
+    rule = db.get_automation_rule(rule_id)
+    db.delete_automation_rule(rule_id)
+    db.add_audit_entry(user["username"], "automation_rule_deleted", detail=rule["name"] if rule else str(rule_id), ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.get("/api/automation/runs")
+async def list_automation_runs(user: dict = Depends(get_current_user)):
+    return db.get_automation_runs()
+
+
+# ── Routines ───────────────────────────────────────────────────────────────
+
+class RoutineCreate(BaseModel):
+    name: str
+    hour: int                        # 0-23
+    minute: int = 0                  # 0-59
+    days: str = "everyday"           # "everyday" or "monday,wednesday,friday" etc.
+    room: Optional[str] = None       # if None, defaults to the member's own room
+    device: str = "light"
+    action: dict                     # e.g. {"on": False} or {"on": True, "brightness": 50}
+    member_id: Optional[int] = None  # owner can create for any member; others only for themselves
+
+
+class ScheduledGuestCreate(BaseModel):
+    name: str
+    role: str = "guest"      # "guest" | "maid" | "worker" | "delivery" etc.
+    days: str = "everyday"   # "everyday" or comma-separated day names
+    start_hour: int = 0
+    start_min: int = 0
+    end_hour: int = 23
+    end_min: int = 59
+    notes: Optional[str] = None
+
+
+def _check_guest_access(guest: dict) -> tuple[bool, str]:
+    """
+    Checks whether a scheduled guest's current visit is within their
+    allowed time window and day. Returns (is_authorized, reason_string).
+    """
+    from datetime import datetime as _dt
+    now = _dt.now()
+    day_names = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+    today = day_names[now.weekday()]
+
+    allowed_days = guest.get("days", "everyday")
+    if allowed_days != "everyday":
+        allowed = [d.strip().lower() for d in allowed_days.split(",")]
+        if today not in allowed:
+            return False, f"not allowed on {today.capitalize()}s"
+
+    now_mins = now.hour * 60 + now.minute
+    start_mins = guest["start_hour"] * 60 + guest["start_min"]
+    end_mins   = guest["end_hour"]   * 60 + guest["end_min"]
+
+    if not (start_mins <= now_mins <= end_mins):
+        return False, (
+            f"outside allowed hours "
+            f"({guest['start_hour']:02d}:{guest['start_min']:02d}–"
+            f"{guest['end_hour']:02d}:{guest['end_min']:02d})"
+        )
+
+    return True, "within allowed schedule"
+
+
+@app.get("/api/routines")
+async def list_routines(member_id: Optional[int] = None, user: dict = Depends(get_current_user)):
+    # Non-owners can only see their own routines
+    if user["role"] != "owner" and member_id != user["member_id"]:
+        member_id = user["member_id"]
+    return db.get_routines(member_id=member_id)
+
+
+@app.post("/api/routines")
+async def create_routine_endpoint(body: RoutineCreate, request: Request, user: dict = Depends(get_current_user)):
+    # Determine which member this routine belongs to
+    target_member_id = body.member_id or user["member_id"]
+    if user["role"] != "owner" and target_member_id != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only create routines for yourself")
+
+    # Find the member's name and default room
+    member = next((m for m in family_members if m["id"] == target_member_id), None)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # Resolve room: use provided room or fall back to member's own room
+    MEMBER_ROOM_MAP = {
+        "Aditya": "aditya_room", "Diksha": "diksha_room",
+        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room"
+    }
+    room = body.room or MEMBER_ROOM_MAP.get(member["name"], "living_room")
+
+    # Validate device exists in target room
+    if room not in devices or body.device not in devices[room]:
+        raise HTTPException(status_code=400, detail=f"{room}.{body.device} is not a real device")
+
+    # Validate time
+    if not (0 <= body.hour <= 23 and 0 <= body.minute <= 59):
+        raise HTTPException(status_code=400, detail="Invalid time — hour must be 0-23, minute 0-59")
+
+    routine = db.create_routine(
+        member_id=target_member_id,
+        member_name=member["name"],
+        name=body.name,
+        hour=body.hour,
+        minute=body.minute,
+        days=body.days,
+        room=room,
+        device=body.device,
+        action=body.action,
+    )
+    db.add_audit_entry(user["username"], "routine_created",
+                       detail=f"{member['name']}: {body.name} at {body.hour:02d}:{body.minute:02d}",
+                       ip_address=_client_ip(request))
+    return routine
+
+
+@app.post("/api/routines/{routine_id}/toggle")
+async def toggle_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
+    routine = db.get_routine(routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    if user["role"] != "owner" and routine["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only edit your own routines")
+    db.update_routine_enabled(routine_id, not routine["enabled"])
+    db.add_audit_entry(user["username"], "routine_toggled", detail=routine["name"], ip_address=_client_ip(request))
+    return db.get_routine(routine_id)
+
+
+@app.delete("/api/routines/{routine_id}")
+async def delete_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
+    routine = db.get_routine(routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    if user["role"] != "owner" and routine["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only delete your own routines")
+    db.delete_routine(routine_id)
+    db.add_audit_entry(user["username"], "routine_deleted", detail=routine["name"], ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+# ── Scheduled guests ──────────────────────────────────────────────────────
+
+@app.get("/api/guests")
+async def list_scheduled_guests(user: dict = Depends(get_current_user)):
+    return db.get_scheduled_guests()
+
+
+@app.post("/api/guests")
+async def create_scheduled_guest(body: ScheduledGuestCreate, request: Request, user: dict = Depends(get_current_user)):
+    if not (0 <= body.start_hour <= 23 and 0 <= body.start_min <= 59 and
+            0 <= body.end_hour <= 23 and 0 <= body.end_min <= 59):
+        raise HTTPException(status_code=400, detail="Invalid time values")
+    if body.start_hour * 60 + body.start_min >= body.end_hour * 60 + body.end_min:
+        raise HTTPException(status_code=400, detail="Start time must be before end time")
+    guest = db.create_scheduled_guest(
+        name=body.name, role=body.role, days=body.days,
+        start_hour=body.start_hour, start_min=body.start_min,
+        end_hour=body.end_hour, end_min=body.end_min, notes=body.notes
+    )
+    db.add_audit_entry(user["username"], "guest_schedule_added",
+                       detail=f"{body.name} ({body.role})", ip_address=_client_ip(request))
+    return guest
+
+
+@app.post("/api/guests/{guest_id}/toggle")
+async def toggle_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
+    guest = db.get_scheduled_guest(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    db.update_scheduled_guest_enabled(guest_id, not guest["enabled"])
+    db.add_audit_entry(user["username"], "guest_schedule_toggled",
+                       detail=guest["name"], ip_address=_client_ip(request))
+    return db.get_scheduled_guest(guest_id)
+
+
+@app.delete("/api/guests/{guest_id}")
+async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
+    guest = db.get_scheduled_guest(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    db.delete_scheduled_guest(guest_id)
+    db.add_audit_entry(user["username"], "guest_schedule_removed",
+                       detail=guest["name"], ip_address=_client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/security/guest-detected")
+async def log_guest_detected(body: dict):
+    """
+    Called when a face is recognized but doesn't match any family member.
+    Checks if the person has a scheduled access entry and whether the
+    current time/day falls within their allowed window.
+    Returns the access decision so the frontend can react appropriately.
+    """
+    name = body.get("name", "Unknown")
+    guest = db.get_scheduled_guest_by_name(name)
+
+    if not guest:
+        # No schedule found — treat as a regular unrecognized intruder
+        entry = db.add_security_log(
+            person=name, type_="intruder",
+            event="unrecognized face — not in guest schedule",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="unauthorized"
+        )
+        security_logs.insert(0, entry)
+        return {"access": "denied", "reason": "not in guest schedule", "log": entry}
+
+    authorized, reason = _check_guest_access(guest)
+
+    if authorized:
+        entry = db.add_security_log(
+            person=name, type_="guest",
+            event=f"{guest['role']} — scheduled access ({reason})",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="authorized"
+        )
+        security_logs.insert(0, entry)
+        return {"access": "granted", "reason": reason, "log": entry}
+    else:
+        # Person is in the schedule but visiting at the wrong time/day
+        entry = db.add_security_log(
+            person=name, type_="intruder",
+            event=f"{guest['role']} — access OUTSIDE allowed schedule ({reason})",
+            time_str=datetime.now().strftime("%H:%M"),
+            date_str=datetime.now().strftime("%d %b"),
+            status="restricted"
+        )
+        security_logs.insert(0, entry)
+        logger.warning("Scheduled guest %s attempted access outside schedule: %s", name, reason)
+        return {"access": "denied", "reason": reason, "log": entry}
+
+
+# ── Payments ──────────────────────────────────────────────────────────────
+
+class RentConfigUpdate(BaseModel):
+    total_rent: float
+    due_day: int = 1       # day of month rent is due (1-28)
+    auto_pay: bool = False
+    notes: Optional[str] = None
+
+class MarkPaymentRequest(BaseModel):
+    status: str            # "paid" | "pending" | "waived"
+    payment_method: Optional[str] = None   # "cash" | "upi" | "bank_transfer" | "other"
+    notes: Optional[str] = None
+
+
+@app.get("/api/payments/config")
+async def get_payment_config(user: dict = Depends(get_current_user)):
+    return db.get_rent_config()
+
+
+@app.post("/api/payments/config")
+async def update_payment_config(body: RentConfigUpdate, request: Request, user: dict = Depends(get_current_user)):
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can update rent configuration")
+    if body.total_rent < 0:
+        raise HTTPException(status_code=400, detail="Rent cannot be negative")
+    if not (1 <= body.due_day <= 28):
+        raise HTTPException(status_code=400, detail="Due day must be between 1 and 28")
+    config = db.upsert_rent_config(body.total_rent, body.due_day, body.auto_pay, body.notes)
+    db.add_audit_entry(user["username"], "rent_config_updated",
+                       detail=f"total=₹{body.total_rent} due_day={body.due_day}",
+                       ip_address=_client_ip(request))
+    return config
+
+
+@app.get("/api/payments")
+async def get_payments(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+    """
+    Returns payments for a given month (YYYY-MM format).
+    If no month given, defaults to the current month.
+    Auto-creates payment records for all members if none exist yet.
+    """
+    if not month:
+        month = datetime.now().strftime("%Y-%m")
+
+    config = db.get_rent_config()
+    total = config["total_rent"]
+    members = [m for m in family_members]  # all members pay rent
+    n = len(members)
+    per_share = round(total / n, 2) if n > 0 and total > 0 else 0
+
+    payments = db.get_or_create_monthly_payments(month, members, per_share)
+    paid_count = sum(1 for p in payments if p["status"] == "paid")
+    total_collected = sum(p["amount"] for p in payments if p["status"] == "paid")
+
+    return {
+        "month": month,
+        "total_rent": total,
+        "per_share": per_share,
+        "due_day": config["due_day"],
+        "auto_pay": bool(config["auto_pay"]),
+        "payments": payments,
+        "paid_count": paid_count,
+        "pending_count": len(payments) - paid_count,
+        "total_collected": round(total_collected, 2),
+        "total_outstanding": round(total - total_collected, 2),
+    }
+
+
+@app.post("/api/payments/{payment_id}/mark")
+async def mark_payment(payment_id: int, body: MarkPaymentRequest,
+                       request: Request, user: dict = Depends(get_current_user)):
+    payment = db.get_payment(payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+    # Members can only mark their own payment; owner can mark anyone's
+    if user["role"] != "owner" and payment["member_id"] != user["member_id"]:
+        raise HTTPException(status_code=403, detail="You can only update your own payment")
+    if body.status not in ("paid", "pending", "waived"):
+        raise HTTPException(status_code=400, detail="Status must be paid, pending, or waived")
+    updated = db.mark_payment(
+        payment_id, body.status, body.payment_method, body.notes,
+        recorded_by=user["username"]
+    )
+    db.add_audit_entry(user["username"], "payment_marked",
+                       detail=f"{payment['member_name']} {payment['month']} → {body.status}",
+                       ip_address=_client_ip(request))
+    return updated
+
+
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
@@ -369,7 +1023,7 @@ async def get_devices():
         return devices.copy()
 
 @app.post("/api/device/toggle")
-async def toggle_device(body: DeviceToggle):
+async def toggle_device(body: DeviceToggle, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     with state_lock:
         if body.room not in devices:
             raise HTTPException(status_code=404, detail="Room not found")
@@ -380,6 +1034,9 @@ async def toggle_device(body: DeviceToggle):
             dev.update(body.value)
         else:
             dev["on"] = body.value
+        db.save_device_state(body.room, body.device, dev)
+        actor = user["username"] if user else "anonymous"
+        db.add_audit_entry(actor, "device_toggle", detail=f"{body.room}.{body.device} -> {body.value}", ip_address=_client_ip(request))
         return {"ok": True, "device": dev, "energy_watts": calculate_energy()}
 
 @app.get("/api/family")
@@ -387,81 +1044,69 @@ async def get_family():
     return family_members
 
 @app.post("/api/family/add")
-async def add_family(body: MemberAdd):
-    global family_members
+async def add_family(body: MemberAdd, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     colors = ["#4f46e5","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#be185d"]
-    new_id = max(m["id"] for m in family_members) + 1
-    member = {
-        "id": new_id,
-        "name": body.name,
-        "role": body.role,
-        "status": "away",
-        "avatar": body.name[:2].upper(),
-        "color": colors[new_id % len(colors)]
-    }
+    avatar = body.name[:2].upper()
+    color = colors[len(family_members) % len(colors)]
+    member = db.add_family_member(name=body.name, role=body.role, status="away", avatar=avatar, color=color)
     family_members.append(member)
+    db.add_audit_entry(user["username"] if user else "anonymous", "family_member_added", detail=body.name, ip_address=_client_ip(request))
     return member
 
 @app.delete("/api/family/{member_id}")
-async def delete_member(member_id: int):
+async def delete_member(member_id: int, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     global family_members
+    removed = next((m for m in family_members if m["id"] == member_id), None)
+    db.delete_family_member(member_id)
     family_members = [m for m in family_members if m["id"] != member_id]
+    db.add_audit_entry(user["username"] if user else "anonymous", "family_member_removed", detail=removed["name"] if removed else str(member_id), ip_address=_client_ip(request))
     return {"ok": True}
 
 @app.get("/api/security/logs")
 async def get_security_logs():
-    return list(reversed(security_logs))
+    return db.get_security_logs()
 
 @app.post("/api/security/logs")
 async def add_security_log(body: LogAdd):
-    global log_id_counter
-    entry = {
-        "id": log_id_counter,
-        "person": body.person,
-        "type": body.type,
-        "event": body.event,
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": body.status,
-    }
-    if body.estimated:
-        entry["estimated"] = body.estimated
-    log_id_counter += 1
-    security_logs.append(entry)
+    entry = db.add_security_log(
+        person=body.person,
+        type_=body.type,
+        event=body.event,
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status=body.status,
+        estimated=body.estimated,
+    )
+    security_logs.insert(0, entry)
     return entry
 
 @app.post("/api/security/intruder")
 async def log_intruder():
-    global log_id_counter
-    entry = {
-        "id": log_id_counter,
-        "person": "Unknown Person",
-        "type": "intruder",
-        "event": "unrecognized face detected at front door",
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": "unauthorized"
-    }
-    log_id_counter += 1
-    security_logs.append(entry)
+    entry = db.add_security_log(
+        person="Unknown Person",
+        type_="intruder",
+        event="unrecognized face detected at front door",
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status="unauthorized",
+    )
+    security_logs.insert(0, entry)
     return entry
 
 @app.post("/api/security/member-detected")
 async def log_member_detected(body: dict):
-    global log_id_counter
     name = body.get("name", "Unknown")
-    entry = {
-        "id": log_id_counter,
-        "person": name,
-        "type": "member",
-        "event": "face recognized — arrived home",
-        "time": datetime.now().strftime("%H:%M"),
-        "date": datetime.now().strftime("%d %b"),
-        "status": "authorized"
-    }
-    log_id_counter += 1
-    security_logs.append(entry)
-    # Update member status
+    entry = db.add_security_log(
+        person=name,
+        type_="member",
+        event="face recognized — arrived home",
+        time_str=datetime.now().strftime("%H:%M"),
+        date_str=datetime.now().strftime("%d %b"),
+        status="authorized",
+    )
+    security_logs.insert(0, entry)
+    # Update member status (in-memory + persisted)
+    db.update_member_status(name, "home")
     for m in family_members:
         if m["name"].lower() == name.lower():
             m["status"] = "home"
@@ -475,7 +1120,7 @@ async def get_alerts():
 async def get_energy():
     with state_lock:
         watts = calculate_energy()
-        room_breakdown = {}
+        room_breakdown_watts = {}
         for room, devs in devices.items():
             room_watts = 0
             for dev_name, dev in devs.items():
@@ -487,12 +1132,43 @@ async def get_energy():
                     elif dev_name == "light":
                         w = int(w * (dev.get("brightness", 100) / 100))
                     room_watts += w
-            room_breakdown[room] = room_watts
+            room_breakdown_watts[room] = room_watts
+
+        # Units (kWh) consumed today, assuming current draw held for 8 hrs —
+        # same assumption as before, just expressed in units instead of watts.
+        units_today = round(watts * 8 / 1000, 2)
+        # Project a full month at today's daily usage rate
+        units_month_projected = round(units_today * 30, 1)
+
+        today_bill = calculate_dhbvn_bill(units_today)
+        month_bill = calculate_dhbvn_bill(units_month_projected)
+
+        room_breakdown_units = {
+            room: round(w * 8 / 1000, 3) for room, w in room_breakdown_watts.items()
+        }
+
         return {
-            "total_watts": watts,
-            "kwh_today": round(watts * 8 / 1000, 2),
-            "cost_today": round(watts * 8 / 1000 * 8.5, 2),
-            "room_breakdown": room_breakdown
+            "total_watts": watts,                       # kept for live "now" readouts
+            "units_now_rate_per_hour": round(watts / 1000, 3),  # units/hour at current draw
+            "units_today": units_today,
+            "units_month_projected": units_month_projected,
+            "cost_today": today_bill["total"],
+            "cost_today_breakdown": today_bill,
+            "cost_month_projected": month_bill["total"],
+            "cost_month_breakdown": month_bill,
+            "tariff": {
+                "provider": "DHBVN (Dakshin Haryana Bijli Vitran Nigam)",
+                "category": "Domestic — Category II (load up to 5kW)",
+                "effective_from": "2025-04-01",
+                "slabs": [
+                    {"range": "0-150 units", "rate": 2.95},
+                    {"range": "151-300 units", "rate": 5.25},
+                    {"range": "301-500 units", "rate": 6.45},
+                    {"range": "Above 500 units", "rate": 7.10},
+                ]
+            },
+            "room_breakdown": room_breakdown_units,       # units (kWh) per room, today
+            "room_breakdown_watts": room_breakdown_watts  # raw watts, for live device list
         }
 
 # ──────────────────────────────────────────────
@@ -514,8 +1190,10 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json(data)
             await __import__('asyncio').sleep(3)
     except WebSocketDisconnect:
-        ws_clients.remove(websocket)
-    except Exception:
+        if websocket in ws_clients:
+            ws_clients.remove(websocket)
+    except Exception as e:
+        logger.error("WebSocket connection error: %s", e, exc_info=True)
         if websocket in ws_clients:
             ws_clients.remove(websocket)
 
@@ -526,9 +1204,19 @@ async def websocket_endpoint(websocket: WebSocket):
 async def startup_event():
     t = threading.Thread(target=simulate_sensors, daemon=True)
     t.start()
+    db.delete_expired_sessions()
+    logger.info("Server started — sensor simulation thread running")
     print("\n" + "="*55)
     print("  Smart Home Dashboard — Server Started")
     print("  Open: http://localhost:8000")
+    if _GENERATED_PASSWORDS_THIS_RUN:
+        print("\n  First run — generated login credentials (SAVE THESE NOW,")
+        print("  shown only once, never stored anywhere in plain text):")
+        for uname, pwd in _GENERATED_PASSWORDS_THIS_RUN:
+            print(f"    {uname:12s}  {pwd}")
+        print("\n  Each person should log in and change their password via")
+        print("  the Account menu — see /api/auth/change-password.")
+        logger.info("First run — generated %d default user accounts", len(_GENERATED_PASSWORDS_THIS_RUN))
     print("="*55 + "\n")
 
 if __name__ == "__main__":
