@@ -13,7 +13,7 @@ from typing import Optional, List, Any
 from dataclasses import dataclass
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -130,11 +130,214 @@ def calculate_aqi(pm25, pm10):
     return final, get_aqi_category(final)
 
 # ── CLIMATE / HVAC LOGIC ──
-def determine_hvac(temperature, humidity):
-    if temperature >= 35.0: return "MAX COOLING", 20.0
-    elif temperature >= 28.0 and humidity > 60: return "DEHUMIDIFY & COOL", 22.0
-    elif temperature >= 20.0: return "ECO MODE", 24.0
+def determine_hvac(indoor_temp, humidity):
+    """Decide HVAC mode based on *indoor* temperature and humidity."""
+    if indoor_temp >= 32.0:  return "MAX COOLING", 20.0
+    elif indoor_temp >= 28.0 and humidity > 60: return "DEHUMIDIFY & COOL", 22.0
+    elif indoor_temp >= 26.0: return "COOLING", 24.0
+    elif indoor_temp >= 20.0: return "ECO MODE", 24.0
     else: return "HEATING", 24.0
+
+
+def calculate_indoor_climate(outdoor_temp, outdoor_hum, all_devices):
+    """
+    Estimate room-by-room indoor temperature and humidity from the outdoor reading
+    and the current state of ACs / fans in each room.
+
+    Model (simplified but realistic for a Gurugram flat):
+    ─────────────────────────────────────────────────────
+    • Building insulation naturally shaves ~2°C off the outdoor temp.
+    • AC on → the room temperature approaches the AC's set-point, and it
+      acts as a dehumidifier, pulling humidity down towards ~50%.
+    • Fan on → provides ~2–3°C of effective cooling from air circulation.
+    • Nothing on → room sits at outdoor − insulation offset, and outdoor humidity.
+
+    Returns (avg_indoor_temp, avg_indoor_hum, room_temps_dict, room_hums_dict)
+    """
+    INSULATION_OFFSET = 2.0
+    FAN_MAX_COOLING   = 3.0
+    AC_LEAK_FACTOR    = 0.20
+    AC_DEHUMIDIFY_TARGET = 50.0
+    AC_HUM_LEAK_FACTOR = 0.30
+
+    base_indoor_temp = outdoor_temp - INSULATION_OFFSET
+    base_indoor_hum  = outdoor_hum
+    room_temps = {}
+    room_hums = {}
+
+    climate_rooms = [
+        r for r in all_devices
+        if any(d in all_devices[r] for d in ("ac", "fan"))
+    ]
+    if not climate_rooms:
+        return round(base_indoor_temp, 1), round(base_indoor_hum, 1), {}, {}
+
+    for room in climate_rooms:
+        devs = all_devices[room]
+        ac  = devs.get("ac", {})
+        fan = devs.get("fan", {})
+
+        room_temp = base_indoor_temp
+        room_hum = base_indoor_hum
+
+        if ac.get("on"):
+            set_temp = ac.get("temp", 24)
+            room_temp = set_temp + AC_LEAK_FACTOR * max(0, outdoor_temp - set_temp)
+            # AC dehumidifies the room
+            if outdoor_hum > AC_DEHUMIDIFY_TARGET:
+                room_hum = AC_DEHUMIDIFY_TARGET + AC_HUM_LEAK_FACTOR * (outdoor_hum - AC_DEHUMIDIFY_TARGET)
+            else:
+                room_hum = outdoor_hum # AC doesn't add humidity
+        elif fan.get("on"):
+            speed = fan.get("speed", 0)
+            fan_cooling = FAN_MAX_COOLING * (speed / 5) if speed > 0 else 0
+            room_temp = base_indoor_temp - fan_cooling
+            # fan doesn't change absolute humidity noticeably
+
+        room_temps[room] = round(room_temp, 1)
+        room_hums[room] = round(room_hum, 1)
+
+    avg_temp = round(sum(room_temps.values()) / len(room_temps), 1)
+    avg_hum = round(sum(room_hums.values()) / len(room_hums), 1)
+    return avg_temp, avg_hum, room_temps, room_hums
+
+# ──────────────────────────────────────────────
+# THERMAL SIMULATION — first-order RC single-node room model
+# ──────────────────────────────────────────────
+# Each climate room integrates:  C·dT/dt = UA·(T_out − T) + Q_internal − Q_hvac
+# so the AC/fan actually move the room temperature over time, instead of the
+# target temperature just being stored with no physical effect.
+THERMAL_C   = 600_000.0     # J/°C  thermal capacitance of a ~48 m³ room
+THERMAL_UA  = 120.0         # W/°C  envelope heat-loss coefficient
+Q_INTERNAL  = 200.0         # W     baseline internal gains (occupants + electronics)
+AC_CAPACITY     = 5275.0    # W     heat removed by a 1.5-ton AC (mode == cooling)
+HEATER_CAPACITY = 1500.0    # W     heat added in heating mode
+INSULATION_OFFSET_INIT = 2.0  # °C  starting indoor offset below outdoor on first run
+
+# Demo time acceleration: real seconds between ticks are multiplied by this
+# factor before integrating, so a physically-accurate ~25-30 min cooldown
+# compresses to ~3-4 min of real time. Set to 1 for true real-time physics.
+SIM_SPEED_MULTIPLIER = 8
+
+# Thermostat hysteresis: stop actively conditioning once within HYST_STOP_BAND
+# of target; re-engage only after drift exceeds HYST_REENGAGE_BAND. This stops
+# the compressor from oscillating on/off every single tick.
+HYST_STOP_BAND     = 0.3    # °C
+HYST_REENGAGE_BAND = 1.0    # °C
+
+# Fan-speed multiplier applied to AC_CAPACITY (cooling only).
+def _fan_cooling_multiplier(fan):
+    if not fan or not fan.get("on"):
+        return 0.85                     # "Auto" — AC's own internal blower
+    spd = fan.get("speed", 0) or 0
+    if spd <= 2:  return 0.6            # Low
+    if spd == 3:  return 0.8            # Med
+    return 1.0                          # High (speed 4-5)
+
+# Fan evaporative "feels-like" offset — a fan cools skin, NOT the air itself,
+# so this only affects feels_like, never the real room temperature.
+def _fan_feels_offset(fan):
+    if not fan or not fan.get("on"):
+        return 0.0
+    spd = fan.get("speed", 0) or 0
+    if spd <= 2:  return 0.6
+    if spd == 3:  return 1.0
+    return 1.5
+
+# Per-room thermal state: {room: {"T": float, "engaged": bool}}
+room_thermal = {}
+
+def _room_hvac_mode(ac, fan):
+    if ac and ac.get("on"):
+        return "heating" if ac.get("mode") == "heat" else "cooling"
+    if fan and fan.get("on"):
+        return "fan"
+    return "off"
+
+def thermal_tick(dt_real, t_out, all_devices):
+    """Advance every climate room's temperature by one tick.
+    Effective Δt = dt_real · SIM_SPEED_MULTIPLIER.
+    Returns (avg_temp, room_temps, avg_feels_like, room_feels_like)."""
+    dt = dt_real * SIM_SPEED_MULTIPLIER
+    climate_rooms = [r for r in all_devices
+                     if any(d in all_devices[r] for d in ("ac", "fan"))]
+    room_temps, room_feels = {}, {}
+    for room in climate_rooms:
+        devs = all_devices[room]
+        ac, fan = devs.get("ac"), devs.get("fan")
+        st = room_thermal.get(room)
+        if st is None or st.get("T") is None:
+            st = {"T": max(18.0, min(34.0, t_out - INSULATION_OFFSET_INIT)), "engaged": False}
+            room_thermal[room] = st
+        T = st["T"]
+        mode = _room_hvac_mode(ac, fan)
+        target = (ac or {}).get("temp", 24)
+
+        Q_hvac = 0.0
+        if mode == "cooling":
+            if st["engaged"]:
+                if T <= target - HYST_STOP_BAND:
+                    st["engaged"] = False          # reached target — cycle off
+            else:
+                if T >= target + HYST_REENGAGE_BAND:
+                    st["engaged"] = True            # drifted too warm — cycle on
+            if st["engaged"]:
+                Q_hvac = AC_CAPACITY * _fan_cooling_multiplier(fan)   # positive = heat removed
+        elif mode == "heating":
+            if st["engaged"]:
+                if T >= target + HYST_STOP_BAND:
+                    st["engaged"] = False
+            else:
+                if T <= target - HYST_REENGAGE_BAND:
+                    st["engaged"] = True
+            if st["engaged"]:
+                Q_hvac = -HEATER_CAPACITY                             # negative = heat added
+        else:
+            st["engaged"] = False                                    # fan / off: no heat transfer
+
+        dTdt = (THERMAL_UA * (t_out - T) + Q_INTERNAL - Q_hvac) / THERMAL_C
+        T = max(5.0, min(50.0, T + dt * dTdt))    # clamp against runaway
+        st["T"] = T
+        room_temps[room] = round(T, 1)
+        room_feels[room] = round(T - _fan_feels_offset(fan), 1)
+
+    if room_temps:
+        avg_t = round(sum(room_temps.values()) / len(room_temps), 1)
+        avg_f = round(sum(room_feels.values()) / len(room_feels), 1)
+    else:
+        avg_t = round(t_out - INSULATION_OFFSET_INIT, 1)
+        avg_f = avg_t
+    return avg_t, room_temps, avg_f, room_feels
+
+# ──────────────────────────────────────────────
+# CLIMATE HISTORY — feeds the dashboard range-filter charts
+# ──────────────────────────────────────────────
+# Indoor temp + humidity are sampled into this ring buffer every
+# HISTORY_SAMPLE_SECONDS; /api/climate/history slices it by range and
+# downsamples per-range so each zoom level returns a genuinely different
+# window and point density.
+HISTORY_SAMPLE_SECONDS = 120   # was 60 — sample the indoor climate every 2 minutes
+_HISTORY_MAX = 24000           # ~33 days at a 120 s cadence
+climate_history = deque(maxlen=_HISTORY_MAX)   # tuples: (epoch_seconds, temp, humidity)
+
+def _seed_climate_history():
+    """Back-fill plausible history so the 1H/6H/24H/7D/30D filters visibly
+    differ immediately on a fresh start (demo). Live samples from the sensor
+    loop take over going forward."""
+    import math
+    now = time.time()
+    t = now - 30 * 86400
+    base_t, base_h = 26.0, 55.0
+    while t < now:
+        diurnal = math.sin(2 * math.pi * ((t % 86400) / 86400.0 - 0.20))
+        climate_history.append((
+            t,
+            round(base_t + 4.0 * diurnal + random.uniform(-0.4, 0.4), 1),
+            round(base_h - 12.0 * diurnal + random.uniform(-1.5, 1.5), 1),
+        ))
+        t += HISTORY_SAMPLE_SECONDS
+
+_seed_climate_history()
 
 # ── SHARED STATE ──
 state_lock = threading.Lock()
@@ -204,8 +407,13 @@ for _room, _devs in _persisted_devices.items():
 
 # Sensor data
 sensors = {
-    "temperature": 28.5,
-    "humidity": 62.0,
+    "temperature": 28.5,          # indoor temperature (what the house feels like)
+    "outdoor_temperature": None,  # raw outdoor temp from climate API
+    "indoor_temperature": None,   # computed indoor temp (same as "temperature" when API is live)
+    "feels_like": None,           # perceived temp (includes fan evaporative effect)
+    "humidity": 62.0,             # indoor humidity
+    "outdoor_humidity": None,     # raw outdoor humidity from climate API
+    "indoor_humidity": None,      # computed indoor humidity
     "smoke": 3.2,
     "gas": 4.1,
     "aqi": 142,
@@ -215,7 +423,9 @@ sensors = {
     "co2_ppm": 850.0,
     "hvac_status": "ECO MODE",
     "hvac_target": 24.0,
-    "condition": "partly cloudy"
+    "condition": "partly cloudy",
+    "room_temperatures": {},      # per-room estimated temps
+    "room_humidities": {}         # per-room estimated humidities
 }
 
 # Family members — persisted in SQLite (data/smarthome.db), survives redeploys.
@@ -374,72 +584,161 @@ def calculate_dhbvn_bill(units: float):
 # ──────────────────────────────────────────────
 # SENSOR SIMULATION LOOP
 # ──────────────────────────────────────────────
+# URL of the climate-control micro-service (api_server.py) which fetches
+# real weather data from OpenWeather every 60s. server.py polls this
+# endpoint for temperature, humidity, and weather condition instead of
+# generating random numbers.
+# Host of the climate-control micro-service. Defaults to "localhost" so running
+# both scripts directly (no Docker) works unchanged. Under docker-compose this is
+# set to the api-server service name, which Docker's internal DNS resolves to the
+# sibling container. CLIMATE_API_URL can still override the full URL if needed.
+API_SERVER_HOST = os.getenv("API_SERVER_HOST", "localhost")
+CLIMATE_API_URL = os.getenv("CLIMATE_API_URL", f"http://{API_SERVER_HOST}:3000/api/all")
+
+# Number of consecutive readings to average before updating the dashboard.
+# Each reading is fetched once per minute, so 3 → the displayed value is
+# the 3-minute rolling average, smoothing out any momentary API jitter.
+CLIMATE_AVG_COUNT = 3
+
+def _fetch_climate_data():
+    """Fetch real weather data from the climate-control service.
+    Returns (temperature, humidity, condition, hvac_status, hvac_target) on
+    success, or None if the service is unreachable / returned bad data."""
+    try:
+        import requests as _req
+        r = _req.get(CLIMATE_API_URL, timeout=5)
+        if r.status_code != 200:
+            logger.warning("Climate API returned HTTP %s from %s", r.status_code, CLIMATE_API_URL)
+            return None
+        data = r.json()
+        temp = data.get("weather", {}).get("temperature")
+        hum  = data.get("weather", {}).get("humidity")
+        cond = data.get("weather", {}).get("condition")
+        hvac_st  = data.get("hvac", {}).get("status")
+        hvac_tgt = data.get("hvac", {}).get("target_temp")
+        if temp is None or hum is None:
+            return None
+        return (float(temp), float(hum), cond or "unknown", hvac_st, hvac_tgt)
+    except Exception as e:
+        logger.warning("Climate API unreachable (%s)", e)
+        return None
+
+# Tracks whether the climate API has ever returned data since server start.
+# When False, temperature/humidity display as None ("--" on the dashboard)
+# rather than fake random numbers — the user explicitly asked for this.
+_climate_api_available = False
+
 def simulate_sensors():
-    global sensors
-    base_temp = 28.5
-    base_humidity = 62.0
-    # AQI drifts slowly — Gurugram baseline ~160 AQI
+    global sensors, _climate_api_available
     aqi_base_pm25 = 95.0
     aqi_base_pm10 = 145.0
-    last_aqi_update = 0.0   # track when we last updated AQI
+    last_aqi_update = 0.0
+    last_climate_fetch = 0.0
+    last_history_sample = 0.0
+    last_thermal_ts = time.time()
+
+    climate_readings = []       # rolling (temp, hum) OUTDOOR readings for smoothing
+    consecutive_failures = 0
+    outdoor_temp = None         # current smoothed outdoor temperature (None = API down)
+    outdoor_hum = None
 
     while True:
         try:
             now = time.time()
             with state_lock:
-                # Temperature and humidity drift every 3s (fast sensors)
-                sensors["temperature"] = round(base_temp + random.uniform(-1.5, 2.0), 1)
-                sensors["humidity"]    = round(base_humidity + random.uniform(-5, 5), 1)
-                sensors["smoke"]       = round(random.uniform(1.5, 8.0), 1)
-                sensors["gas"]         = round(random.uniform(1.0, 6.0), 1)
+                # ── Outdoor weather from the climate API, refreshed every 60 s ──
+                if now - last_climate_fetch >= 60:
+                    climate = _fetch_climate_data()
+                    if climate:
+                        real_temp, real_hum, condition, _hst, _htgt = climate
+                        if consecutive_failures >= 3:
+                            logger.info("Climate API recovered after %d failed checks — live weather restored", consecutive_failures)
+                        _climate_api_available = True
+                        consecutive_failures = 0
+                        climate_readings.append((real_temp, real_hum))
+                        if len(climate_readings) > CLIMATE_AVG_COUNT:
+                            climate_readings.pop(0)
+                        outdoor_temp = round(sum(t for t, _ in climate_readings) / len(climate_readings), 1)
+                        outdoor_hum  = round(sum(h for _, h in climate_readings) / len(climate_readings), 1)
+                        sensors["condition"] = condition
+                        logger.info("Climate API → outdoor %.1f°C / %.0f%%, %s (avg of %d/%d)",
+                                    outdoor_temp, outdoor_hum, condition, len(climate_readings), CLIMATE_AVG_COUNT)
+                    else:
+                        consecutive_failures += 1
+                        if consecutive_failures >= 3:
+                            _climate_api_available = False
+                            climate_readings.clear()
+                            outdoor_temp = None
+                            outdoor_hum = None
+                            sensors["condition"] = None
+                            logger.warning("Climate API down for %d checks — showing 'no data'", consecutive_failures)
+                    last_climate_fetch = now
 
-                # AQI updates every 60 seconds — air quality doesn't spike every 3 seconds
+                # ── Indoor climate: RC thermal model, integrated every tick ──
+                dt_real = now - last_thermal_ts
+                last_thermal_ts = now
+                if outdoor_temp is not None:
+                    indoor_temp, room_temps, feels_like, room_feels = thermal_tick(dt_real, outdoor_temp, devices)
+                    # Humidity keeps the instantaneous mixing model (thermal model is temp-only)
+                    _at, indoor_hum, _rt, room_hums = calculate_indoor_climate(outdoor_temp, outdoor_hum, devices)
+                    sensors["outdoor_temperature"] = round(outdoor_temp + random.uniform(-0.2, 0.2), 1)
+                    sensors["outdoor_humidity"]    = round(outdoor_hum + random.uniform(-0.8, 0.8), 1)
+                    sensors["temperature"]         = indoor_temp
+                    sensors["indoor_temperature"]  = indoor_temp
+                    sensors["feels_like"]          = feels_like
+                    sensors["room_temperatures"]   = room_temps
+                    sensors["room_feels_like"]     = room_feels
+                    sensors["humidity"]            = indoor_hum
+                    sensors["indoor_humidity"]     = indoor_hum
+                    sensors["room_humidities"]     = room_hums
+                    hvac_status, hvac_target = determine_hvac(indoor_temp, indoor_hum)
+                    sensors["hvac_status"] = hvac_status
+                    sensors["hvac_target"] = hvac_target
+                else:
+                    for k in ("temperature", "indoor_temperature", "outdoor_temperature",
+                              "feels_like", "humidity", "indoor_humidity", "outdoor_humidity"):
+                        sensors[k] = None
+                    sensors["hvac_status"] = "OFFLINE"
+                    sensors["hvac_target"] = None
+                    sensors["room_temperatures"] = {}
+                    sensors["room_humidities"] = {}
+
+                # ── Sample indoor climate into history for the range charts ──
+                if sensors["temperature"] is not None and now - last_history_sample >= HISTORY_SAMPLE_SECONDS:
+                    climate_history.append((now, sensors["temperature"], sensors["humidity"]))
+                    last_history_sample = now
+
+                # ── Smoke / gas (still simulated) ──
+                sensors["smoke"] = round(random.uniform(1.5, 8.0), 1)
+                sensors["gas"]   = round(random.uniform(1.0, 6.0), 1)
+
+                # ── AQI every 60 s ──
                 if now - last_aqi_update >= 60:
-                    # Slow drift: ±10 from base, clamp to realistic Gurugram range
                     aqi_base_pm25 = round(max(40, min(220, aqi_base_pm25 + random.uniform(-10, 10))), 1)
                     aqi_base_pm10 = round(max(60, min(300, aqi_base_pm10 + random.uniform(-12, 12))), 1)
                     aqi_val, aqi_cat = calculate_aqi(aqi_base_pm25, aqi_base_pm10)
-                    sensors["pm25"]         = aqi_base_pm25
-                    sensors["pm10"]         = aqi_base_pm10
-                    sensors["aqi"]          = aqi_val
+                    sensors["pm25"] = aqi_base_pm25
+                    sensors["pm10"] = aqi_base_pm10
+                    sensors["aqi"] = aqi_val
                     sensors["aqi_category"] = aqi_cat
-                    sensors["co2_ppm"]      = round(random.uniform(700, 1100), 0)
+                    sensors["co2_ppm"] = round(random.uniform(700, 1100), 0)
                     last_aqi_update = now
 
-                # HVAC logic
-                hvac_status, target = determine_hvac(sensors["temperature"], sensors["humidity"])
-                sensors["hvac_status"] = hvac_status
-                sensors["hvac_target"] = target
-
-                # Smoke/fire detection
-                reading = SensorReading(
-                    timestamp=now,
-                    smoke=sensors["smoke"],
-                    gas=sensors["gas"],
-                    temperature=sensors["temperature"]
-                )
-                alerts = detector.evaluate(reading)
-                for alert in alerts:
-                    alert_entry = {
-                        "type":    alert["type"],
-                        "level":   alert["level"],
-                        "message": alert["message"],
-                        "time":    datetime.now().strftime("%H:%M:%S")
-                    }
+                # ── Smoke/fire detection ──
+                temp_for_detector = sensors["temperature"] if sensors["temperature"] is not None else 25.0
+                reading = SensorReading(timestamp=now, smoke=sensors["smoke"],
+                                        gas=sensors["gas"], temperature=temp_for_detector)
+                for alert in detector.evaluate(reading):
+                    alert_entry = {"type": alert["type"], "level": alert["level"],
+                                   "message": alert["message"], "time": datetime.now().strftime("%H:%M:%S")}
                     alert_history.append(alert_entry)
                     if len(alert_history) > 50:
                         alert_history.pop(0)
 
-                # Automation rules — checked every tick, each rule has its
-                # own cooldown so this doesn't spam-toggle devices.
+                # ── Automation rules + per-member routines ──
                 automation.evaluate_rules(devices, sensors, family_members, state_lock)
-                # Per-member routines — time-based, fires once per day per routine.
                 automation.evaluate_routines(devices, state_lock)
         except Exception as e:
-            # Without this, any unexpected error here would silently kill the
-            # daemon thread forever — sensor data would just freeze at its
-            # last values with absolutely no record of why. Log it and keep
-            # the loop alive instead.
             logger.error("Sensor simulation loop error: %s", e, exc_info=True)
 
         time.sleep(3)
@@ -475,6 +774,11 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 images_dir = os.path.join(os.path.dirname(__file__), "images")
 os.makedirs(images_dir, exist_ok=True)
 app.mount("/images", StaticFiles(directory=images_dir), name="images")
+
+# Mount face-data directory (pre-computed face embeddings for recognition)
+FACE_DATA_DIR = os.getenv("FACE_DATA_DIR", os.path.join(os.path.dirname(__file__), "face-data"))
+os.makedirs(FACE_DATA_DIR, exist_ok=True)
+app.mount("/face-data", StaticFiles(directory=FACE_DATA_DIR), name="face-data")
 
 # ──────────────────────────────────────────────
 # PYDANTIC MODELS
@@ -1016,6 +1320,32 @@ async def get_status():
 async def get_sensors():
     with state_lock:
         return sensors.copy()
+
+@app.get("/api/climate/history")
+async def get_climate_history(metric: str = "temperature", range_: str = Query("1h", alias="range")):
+    """History for the dashboard range-filter charts. Each range returns a
+    different time window AND point density, so 6H visibly spans more real
+    time / more points than 1H."""
+    windows   = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600, "7d": 7 * 86400, "30d": 30 * 86400}
+    densities = {"1h": 60,   "6h": 72,       "24h": 96,        "7d": 168,       "30d": 180}
+    window = windows.get(range_, 3600)
+    target_pts = densities.get(range_, 60)
+    idx = 2 if str(metric).lower().startswith("hum") else 1
+    now = time.time()
+    cutoff = now - window
+    with state_lock:
+        rows = [r for r in climate_history if r[0] >= cutoff]
+    if len(rows) > target_pts:
+        step = len(rows) / target_pts
+        rows = [rows[int(i * step)] for i in range(target_pts)] + [rows[-1]]
+    return {
+        "metric": metric,
+        "range": range_,
+        "points": len(rows),
+        "window_seconds": window,
+        "data": [round(r[idx], 1) for r in rows],
+        "timestamps": [datetime.fromtimestamp(r[0]).isoformat() for r in rows],
+    }
 
 @app.get("/api/devices")
 async def get_devices():

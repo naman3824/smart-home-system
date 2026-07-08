@@ -8,6 +8,11 @@ pydantic>=2.7.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 
+# Climate control micro-service (climate-control/api_server.py)
+# Fetches real weather from OpenWeather and serves it to server.py on port 3000.
+# python-dotenv (above) is also required by this service.
+httpx>=0.27.0
+
 # Face recognition (FaceRecognition.py)
 # Note: face-recognition requires cmake and dlib — see README troubleshooting
 opencv-python>=4.9.0

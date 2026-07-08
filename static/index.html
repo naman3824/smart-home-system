@@ -144,7 +144,7 @@
   /* 8px side padding above keeps the thumb's edges from poking past the card border
      at min/max values (native range thumbs center on the track edge, so half the
      thumb width would otherwise overflow the card padding). */
-  input[type=range]{width:100%;display:block;height:5px;-webkit-appearance:none;background:var(--surface3);border-radius:3px;outline:none;cursor:pointer}
+  input[type=range]{width:100%;display:block;height:5px;-webkit-appearance:none;appearance:none;background:var(--surface3);border-radius:3px;outline:none;cursor:pointer}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;margin-top:-6.5px;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid var(--surface2)}
   input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface2);box-shadow:0 1px 4px rgba(0,0,0,.4)}
 
@@ -443,15 +443,17 @@
 
     <div class="sensor-grid">
       <div class="sensor-card temp-card">
-        <div class="sensor-label">Temperature</div>
+        <div class="sensor-label">Indoor Temperature</div>
         <div class="sensor-value" id="ov-temp" style="color:#f59e0b">--<span class="sensor-unit">°C</span></div>
-        <div class="sensor-sub" id="ov-hvac">checking HVAC…</div>
+        <div class="sensor-sub" id="ov-outdoor-temp" style="margin-top: 4px; font-weight: 500;">Outdoor: --°C</div>
+        <div class="sensor-sub" id="ov-hvac" style="margin-top: 4px;">checking HVAC…</div>
         <div class="sparkline" id="spark-temp"></div>
       </div>
       <div class="sensor-card hum-card">
-        <div class="sensor-label">Humidity</div>
+        <div class="sensor-label">Indoor Humidity</div>
         <div class="sensor-value" id="ov-hum" style="color:#06b6d4">--<span class="sensor-unit">%</span></div>
-        <div class="sensor-sub" id="ov-hum-note">sweet spot 40–60%</div>
+        <div class="sensor-sub" id="ov-outdoor-hum" style="margin-top: 4px; font-weight: 500;">Outdoor: --%</div>
+        <div class="sensor-sub" id="ov-hum-note" style="margin-top: 4px;">sweet spot 40–60%</div>
         <div class="sensor-bar" style="margin-top:12px"><div class="sensor-bar-fill" id="ov-hum-bar" style="background:#06b6d4;width:60%"></div></div>
       </div>
       <div class="sensor-card aqi-card">
@@ -1051,27 +1053,208 @@
   </div>
 
   <!-- CLIMATE -->
+  <style>
+  #page-climate .c2-metric-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  #page-climate .c2-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px}
+  #page-climate .c2-label{font-size:10px;letter-spacing:.08em;color:var(--text2);text-transform:uppercase;margin-bottom:6px}
+  #page-climate .c2-value{font-size:36px;font-weight:700;line-height:1}
+  #page-climate .c2-sub{font-size:12px;color:var(--text2);margin-top:4px}
+  #page-climate .c2-hvac-mode{font-size:20px;font-weight:700;color:var(--cyan);margin:2px 0}
+  #page-climate .c2-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;margin-top:16px}
+  #page-climate .c2-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  #page-climate .c2-panel-title{font-size:14px;font-weight:600}
+  #page-climate .c2-panel-sub{font-size:11px;color:var(--text2);margin-top:2px}
+  #page-climate .c2-tabs{display:flex;gap:6px;flex-wrap:wrap}
+  #page-climate .c2-tab{padding:4px 12px;border-radius:20px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2);transition:all .15s}
+  #page-climate .c2-tab:hover{background:var(--surface3);color:var(--text)}
+  #page-climate .c2-tab.active{background:rgba(108,139,239,.18);border-color:var(--accent);color:var(--accent)}
+  #page-climate .c2-controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+  #page-climate .c2-ctrl-label{font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;justify-content:space-between}
+  #page-climate .c2-ctrl-val{font-size:13px;font-weight:600;color:var(--text)}
+  #page-climate input[type=range].c2-slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;outline:none;cursor:pointer;margin:4px 0 8px}
+  #page-climate input[type=range].c2-temp{background:linear-gradient(90deg,var(--accent) 0%,var(--orange) 100%)}
+  #page-climate input[type=range].c2-fan{background:linear-gradient(90deg,var(--cyan) 0%,var(--accent) 100%)}
+  #page-climate input[type=range].c2-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--text);border:2px solid var(--bg);box-shadow:0 0 6px rgba(0,0,0,.5)}
+  #page-climate input[type=range].c2-slider:disabled{opacity:.35;cursor:not-allowed}
+  #page-climate .c2-pills{display:flex;gap:5px;flex-wrap:wrap}
+  #page-climate .c2-pill{padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2);transition:all .15s}
+  #page-climate .c2-pill:hover{color:var(--text);background:var(--surface3)}
+  #page-climate .c2-pill.active{background:rgba(6,182,212,.14);border-color:var(--cyan);color:var(--cyan)}
+  #page-climate .c2-hint{font-size:10px;color:var(--text3);margin-top:4px}
+  #page-climate .c2-charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+  #page-climate .c2-chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px}
+  #page-climate .c2-chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  #page-climate .c2-chart-title-row{display:flex;align-items:center;gap:8px}
+  #page-climate .c2-chart-title{font-size:13px;font-weight:600}
+  #page-climate .c2-dot{width:8px;height:8px;border-radius:50%}
+  #page-climate .c2-chart-actions{display:flex;gap:6px;align-items:center}
+  #page-climate .c2-filters{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  #page-climate .c2-filter{padding:3px 8px;font-size:10px;cursor:pointer;color:var(--text2);border:none;background:none;transition:all .15s}
+  #page-climate .c2-filter:hover{color:var(--text);background:var(--surface3)}
+  #page-climate .c2-filter.active{background:var(--surface3);color:var(--text)}
+  #page-climate .c2-expand{width:26px;height:26px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:12px;cursor:pointer}
+  #page-climate .c2-expand:hover{background:var(--surface3);color:var(--text)}
+  #page-climate .c2-chart-area{position:relative;height:150px}
+  #page-climate .c2-chart-inner{position:absolute;left:30px;right:0;top:0;bottom:16px}
+  #page-climate .c2-chart-inner svg{width:100%;height:100%}
+  #page-climate .c2-ylabels{position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--text3);pointer-events:none}
+  #page-climate .c2-xlabels{display:flex;justify-content:space-between;padding-left:30px;font-size:9px;color:var(--text3);margin-top:4px}
+  #page-climate .c2-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
+  #page-climate .c2-modal-overlay.open{display:flex}
+  #page-climate .c2-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:820px;max-width:95vw;padding:24px;position:relative}
+  #page-climate .c2-modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+  #page-climate .c2-modal-title{font-size:16px;font-weight:600}
+  #page-climate .c2-modal-sub{font-size:12px;color:var(--text2);margin-top:3px}
+  #page-climate .c2-modal-close{width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:16px;cursor:pointer}
+  #page-climate .c2-modal-filters{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  #page-climate .c2-modal-filter{padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2)}
+  #page-climate .c2-modal-filter.active{background:rgba(108,139,239,.18);border-color:var(--accent);color:var(--accent)}
+  #page-climate .c2-modal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+  #page-climate .c2-modal-stat{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  #page-climate .c2-modal-stat-label{font-size:10px;color:var(--text2);margin-bottom:3px}
+  #page-climate .c2-modal-stat-val{font-size:18px;font-weight:700}
+  #page-climate .c2-modal-chart{height:230px;position:relative}
+  @media(max-width:900px){#page-climate .c2-metric-row,#page-climate .c2-controls,#page-climate .c2-charts{grid-template-columns:1fr}}
+  </style>
   <div class="content page" id="page-climate">
-    <div class="three-col">
-      <div class="sensor-card temp-card">
-        <div class="sensor-label">Indoor Temperature</div>
-        <div class="sensor-value" id="cl-temp" style="color:#f59e0b">--<span class="sensor-unit">°C</span></div>
-        <div class="sensor-sub" id="cl-feels-like">feels like --°C</div>
+
+    <!-- Metric cards (live from WebSocket sensors) -->
+    <div class="c2-metric-row">
+      <div class="c2-card">
+        <div class="c2-label" id="cl-temp-label">Indoor Temperature</div>
+        <div class="c2-value" style="color:var(--orange)" id="cl-temp">--<span class="sensor-unit">°C</span></div>
+        <div class="c2-sub" id="cl-feels-like">feels like --°C</div>
       </div>
-      <div class="sensor-card hum-card">
-        <div class="sensor-label">Humidity</div>
-        <div class="sensor-value" id="cl-hum" style="color:#06b6d4">--<span class="sensor-unit">%</span></div>
-        <div class="sensor-sub" id="cl-hum-status">checking…</div>
+      <div class="c2-card">
+        <div class="c2-label">Humidity</div>
+        <div class="c2-value" style="color:var(--cyan)" id="cl-hum">--<span class="sensor-unit">%</span></div>
+        <div class="c2-sub" id="cl-hum-status">checking…</div>
       </div>
-      <div class="sensor-card pwr-card">
-        <div class="sensor-label">HVAC Mode</div>
-        <div style="font-size:17px;font-weight:700;color:var(--accent);margin:8px 0 4px" id="cl-hvac">--</div>
-        <div class="sensor-sub" id="cl-target">Target: --</div>
+      <div class="c2-card">
+        <div class="c2-label">HVAC Mode</div>
+        <div class="c2-hvac-mode" id="cl-hvac">--</div>
+        <div class="c2-sub" id="cl-target">Target: --</div>
       </div>
     </div>
-    <div class="two-col">
-      <div class="card"><div class="card-header"><span class="card-title">🌡 Temperature history</span></div><div class="card-body"><canvas id="tempChart" style="width:100%;height:180px"></canvas></div></div>
-      <div class="card"><div class="card-header"><span class="card-title">💧 Humidity history</span></div><div class="card-body"><canvas id="humChart" style="width:100%;height:180px"></canvas></div></div>
+
+    <!-- Member climate control (wired to real per-room AC/fan devices) -->
+    <div class="c2-panel">
+      <div class="c2-panel-head">
+        <div>
+          <div class="c2-panel-title">🎛 Member Climate Control</div>
+          <div class="c2-panel-sub">Each member controls the AC &amp; fan in their own room</div>
+        </div>
+        <div class="c2-tabs" id="clim-member-tabs"></div>
+      </div>
+      <div class="c2-controls">
+        <div>
+          <div class="c2-ctrl-label"><span>🌡 Target Temperature</span><span class="c2-ctrl-val" id="clim-temp-display">--°C</span></div>
+          <input type="range" class="c2-slider c2-temp" id="clim-temp-slider" min="16" max="30" value="24" oninput="climTempInput(this.value)" onchange="climTempCommit(this.value)">
+          <div class="c2-hint">Range: 16°C (cold) → 30°C (warm)</div>
+        </div>
+        <div>
+          <div class="c2-ctrl-label"><span>💨 Fan Speed</span><span class="c2-ctrl-val" id="clim-fan-display">--</span></div>
+          <input type="range" class="c2-slider c2-fan" id="clim-fan-slider" min="1" max="4" value="2" oninput="climFanInput(this.value)" onchange="climFanCommit(this.value)">
+          <div class="c2-hint">Auto · Low · Med · High</div>
+        </div>
+        <div>
+          <div class="c2-ctrl-label"><span>❄ Mode</span></div>
+          <div class="c2-pills" id="clim-mode-pills">
+            <div class="c2-pill active" data-mode="cool" onclick="climSetMode('cool',this)">❄ Cool</div>
+            <div class="c2-pill" data-mode="heat" onclick="climSetMode('heat',this)">🔥 Heat</div>
+            <div class="c2-pill" data-mode="fan" onclick="climSetMode('fan',this)">💨 Fan</div>
+            <div class="c2-pill" data-mode="auto" onclick="climSetMode('auto',this)">🔄 Auto</div>
+            <div class="c2-pill" data-mode="off" onclick="climSetMode('off',this)">⏸ Off</div>
+          </div>
+          <div class="c2-hint" id="clim-ctrl-hint" style="margin-top:8px">Applied to the selected member's room</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History charts (built live from this session's sensor stream) -->
+    <div class="c2-charts">
+      <div class="c2-chart-card">
+        <div class="c2-chart-head">
+          <div class="c2-chart-title-row"><div class="c2-dot" style="background:var(--orange)"></div><div class="c2-chart-title">Temperature history</div></div>
+          <div class="c2-chart-actions">
+            <div class="c2-filters">
+              <button class="c2-filter active" onclick="climSetFilter('temp','1h',this)">1H</button>
+              <button class="c2-filter" onclick="climSetFilter('temp','6h',this)">6H</button>
+              <button class="c2-filter" onclick="climSetFilter('temp','24h',this)">24H</button>
+            </div>
+            <button class="c2-expand" onclick="climOpenModal('temp')">⤢</button>
+          </div>
+        </div>
+        <div class="c2-chart-area">
+          <div class="c2-ylabels" id="clim-temp-ylabels"></div>
+          <div class="c2-chart-inner">
+            <svg id="clim-temp-svg" viewBox="0 0 400 110" preserveAspectRatio="none">
+              <defs><linearGradient id="clim-temp-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/></linearGradient></defs>
+              <path id="clim-temp-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
+              <path id="clim-temp-area" fill="url(#clim-temp-grad)"/>
+              <path id="clim-temp-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle id="clim-temp-endpoint" r="4" fill="#f59e0b" stroke="#0d0f18" stroke-width="2" cx="-10"/>
+            </svg>
+          </div>
+        </div>
+        <div class="c2-xlabels" id="clim-temp-xlabels"></div>
+      </div>
+      <div class="c2-chart-card">
+        <div class="c2-chart-head">
+          <div class="c2-chart-title-row"><div class="c2-dot" style="background:var(--cyan)"></div><div class="c2-chart-title">Humidity history</div></div>
+          <div class="c2-chart-actions">
+            <div class="c2-filters">
+              <button class="c2-filter active" onclick="climSetFilter('hum','1h',this)">1H</button>
+              <button class="c2-filter" onclick="climSetFilter('hum','6h',this)">6H</button>
+              <button class="c2-filter" onclick="climSetFilter('hum','24h',this)">24H</button>
+            </div>
+            <button class="c2-expand" onclick="climOpenModal('hum')">⤢</button>
+          </div>
+        </div>
+        <div class="c2-chart-area">
+          <div class="c2-ylabels" id="clim-hum-ylabels"></div>
+          <div class="c2-chart-inner">
+            <svg id="clim-hum-svg" viewBox="0 0 400 110" preserveAspectRatio="none">
+              <defs><linearGradient id="clim-hum-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#06b6d4" stop-opacity="0.25"/><stop offset="100%" stop-color="#06b6d4" stop-opacity="0"/></linearGradient></defs>
+              <path id="clim-hum-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
+              <path id="clim-hum-area" fill="url(#clim-hum-grad)"/>
+              <path id="clim-hum-line" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle id="clim-hum-endpoint" r="4" fill="#06b6d4" stroke="#0d0f18" stroke-width="2" cx="-10"/>
+            </svg>
+          </div>
+        </div>
+        <div class="c2-xlabels" id="clim-hum-xlabels"></div>
+      </div>
+    </div>
+
+    <!-- Full-history modal -->
+    <div class="c2-modal-overlay" id="clim-modal-overlay" onclick="climModalOutside(event)">
+      <div class="c2-modal">
+        <div class="c2-modal-head">
+          <div>
+            <div class="c2-modal-title" id="clim-modal-title">Temperature — Full History</div>
+            <div class="c2-modal-sub" id="clim-modal-sub">Indoor sensor · live session data</div>
+          </div>
+          <button class="c2-modal-close" onclick="climCloseModal()">✕</button>
+        </div>
+        <div class="c2-modal-filters" id="clim-modal-filters">
+          <div class="c2-modal-filter active" onclick="climSetModalFilter('1h',this)">Last Hour</div>
+          <div class="c2-modal-filter" onclick="climSetModalFilter('6h',this)">6 Hours</div>
+          <div class="c2-modal-filter" onclick="climSetModalFilter('24h',this)">24 Hours</div>
+          <div class="c2-modal-filter" onclick="climSetModalFilter('7d',this)">Past Week</div>
+          <div class="c2-modal-filter" onclick="climSetModalFilter('30d',this)">Past Month</div>
+        </div>
+        <div class="c2-modal-stats" id="clim-modal-stats"></div>
+        <div class="c2-modal-chart">
+          <svg id="clim-modal-svg" viewBox="0 0 700 200" style="width:100%;height:100%" preserveAspectRatio="none">
+            <defs><linearGradient id="clim-modal-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.25" id="clim-modal-g1"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0" id="clim-modal-g2"/></linearGradient></defs>
+            <path id="clim-modal-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
+            <path id="clim-modal-area" fill="url(#clim-modal-grad)"/>
+            <path id="clim-modal-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div id="clim-modal-empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--text3);font-size:12px"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1559,7 +1742,7 @@
         <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;text-align:center" id="faceMemberGrid"></div>
         <div style="font-size:11px;color:var(--text3);margin-top:14px;padding-top:12px;border-top:1px solid var(--border);line-height:1.7">
           Photos: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">images/Aditya.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Agrim.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Naman.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Kamakshi.jpeg</code> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">Diksha.jpeg</code><br>
-          Library: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">face-api.js</code> (runs entirely in your browser) · match threshold 0.55 · unrecognized faces → intruder alert + log
+          Library: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">face-api.js</code> (runs entirely in your browser) · match threshold 0.6 · unrecognized faces → intruder alert + log
         </div>
       </div>
     </div>
@@ -1913,6 +2096,7 @@ function showPage(page){
   if(page==='automation')renderAutomationPage();
   if(page==='routines')renderRoutinesPage();
   if(page==='floorplan')updateFloorPlan();
+  if(page==='climate')climOnShow();
   if(page==='audit')renderAuditLog();
   if(page==='systemlogs')renderSystemLogs();
 }
@@ -2040,6 +2224,20 @@ function aqiColor(v){if(!v)return'#22c55e';if(v<=50)return'#22c55e';if(v<=100)re
 function smokeColor(v){return v>40?'#ef4444':v>20?'#f59e0b':'#22c55e';}
 function safeVal(v){return(v!==null&&v!==undefined&&!isNaN(v))?v:0;}
 
+let latestSensors=null;
+// Climate hero card: show the selected member's room temperature (per-room RC
+// model output) rather than the whole-home average, which barely moves when a
+// single room is being cooled.
+function climUpdateHero(s){
+  const avg=safeVal(s.temperature);
+  const room=climActiveMember?climRoomOf(climActiveMember):null;
+  const rt=(room&&s.room_temperatures&&s.room_temperatures[room]!=null)?s.room_temperatures[room]:null;
+  setText('cl-temp',`${rt!=null?rt:avg}<span class="sensor-unit">°C</span>`);
+  const rf=(room&&s.room_feels_like&&s.room_feels_like[room]!=null)?s.room_feels_like[room]:s.feels_like;
+  setText('cl-feels-like',`feels like ${rf!=null?rf:'--'}°C${rt!=null?` · home avg ${avg}°C`:''}`);
+  setText('cl-temp-label',rt!=null?`${ROOM_NAMES[room]||room} Temperature`:'Indoor Temperature');
+}
+
 function updateSensorUI(s,watts){
   // If server reports 0 but devices are on locally, compute from local state
   if(watts===0&&Object.keys(devices).length>0){
@@ -2049,9 +2247,13 @@ function updateSensorUI(s,watts){
   // Apply any active test-alert override so overview safety card matches the Safety page
   s=applySafetyOverride(s);
   const temp=safeVal(s.temperature),hum=safeVal(s.humidity),aqi=safeVal(s.aqi),smoke=safeVal(s.smoke),gas=safeVal(s.gas);
+  const outTemp=safeVal(s.outdoor_temperature);
+  const outHum=safeVal(s.outdoor_humidity);
   document.getElementById('weatherChip').innerHTML=`🌡 ${temp}°C &nbsp;💧 ${hum}%`;
   setText('ov-temp',`${temp}<span class="sensor-unit">°C</span>`);
+  setText('ov-outdoor-temp', outTemp ? `Outdoor: ${outTemp}°C` : `Outdoor: --°C`);
   setText('ov-hum',`${hum}<span class="sensor-unit">%</span>`);
+  setText('ov-outdoor-hum', outHum ? `Outdoor: ${outHum}%` : `Outdoor: --%`);
   setText('ov-aqi',aqi||'--');
   setText('ov-hvac',`HVAC: ${s.hvac_status||'--'}`);
   setText('ov-aqi-cat',s.aqi_category||'--');
@@ -2067,11 +2269,10 @@ function updateSensorUI(s,watts){
   const danger=smoke>40||gas>40;
   setText('safety-status',danger?'⚠ ALERT':'● All clear');
   document.getElementById('safety-status').style.color=danger?'var(--red)':'var(--green)';
-  setText('cl-temp',`${temp}<span class="sensor-unit">°C</span>`);
+  latestSensors=s;
+  climUpdateHero(s);
   setText('cl-hum',`${hum}<span class="sensor-unit">%</span>`);
   setText('cl-hvac',s.hvac_status||'--');setText('cl-target',`Target: ${s.hvac_target||'--'} °C`);
-  const hi=temp>27?(temp+0.33*(hum/100*6.105*Math.exp(17.27*temp/(237.3+temp)))-4).toFixed(1):temp;
-  setText('cl-feels-like',`feels like ${hi}°C`);
   setText('cl-hum-status',hum<40?'too dry':hum>70?'too humid':'comfortable');
   const ac=aqiColor(aqi);
   setText('aqi-num',aqi||'--');setText('aqi-cat',s.aqi_category||'--');
@@ -2964,28 +3165,40 @@ async function loadFaceModels(){
     return false;
   }
 
-  if(statusEl)statusEl.textContent='Learning registered faces…';
-  const results=[];
-  for(const person of KNOWN_FACES){
-    try{
-      const img=await faceapi.fetchImage(person.file);
-      const det=await faceapi.detectSingleFace(img,DETECTOR_OPTIONS)
-        .withFaceLandmarks().withFaceDescriptor();
-      if(det)results.push(new faceapi.LabeledFaceDescriptors(person.name,[det.descriptor]));
-      else console.warn(`No face found in reference photo for ${person.name}`);
-    }catch(e){console.warn(`Could not load reference photo for ${person.name}:`,e);}
+  // ── Load pre-computed embeddings instead of computing from reference photos ──
+  // embeddings.json is generated offline by tools/enroll-faces.html and placed in
+  // face-data/. This avoids shipping real face photos and removes the need to run
+  // descriptor computation on every page load (though the three model bundles are
+  // still required for live camera detection — none can be skipped).
+  if(statusEl)statusEl.textContent='Loading face embeddings…';
+  try{
+    const resp=await fetch('/face-data/embeddings.json');
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const entries=await resp.json();
+    if(!Array.isArray(entries)||!entries.length)throw new Error('empty or invalid');
+    const results=[];
+    for(const entry of entries){
+      if(!entry.name||!Array.isArray(entry.descriptors)||!entry.descriptors.length)continue;
+      const descs=entry.descriptors.map(d=>new Float32Array(d));
+      results.push(new faceapi.LabeledFaceDescriptors(entry.name,descs));
+    }
+    faceLabeledDescriptors=results;
+    faceMatcher=results.length?new faceapi.FaceMatcher(results,0.6):null;
+    faceModelsReady=true;
+    if(statusEl){
+      statusEl.innerHTML=results.length
+        ?`✅ Recognizing ${results.length} registered faces (from embeddings)`
+        :'<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
+    }
+    return results.length>0;
+  }catch(e){
+    console.warn('Could not load embeddings.json:',e);
+    faceLabeledDescriptors=[];
+    faceMatcher=null;
+    faceModelsReady=true; // models are loaded, just no reference data
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
+    return false;
   }
-  faceLabeledDescriptors=results;
-  // Build the matcher once — rebuilding it on every detection cycle is wasteful
-  // and (with a malformed input shape) was the cause of the generic "person 1" labels.
-  faceMatcher=results.length?new faceapi.FaceMatcher(results,0.55):null;
-  faceModelsReady=true;
-  if(statusEl){
-    statusEl.innerHTML=results.length
-      ?`✅ Recognizing ${results.length}/${KNOWN_FACES.length} registered faces`
-      :'<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
-  }
-  return results.length>0;
 }
 
 // Runs every ~1.5s while camera is on: detect a face in the video frame and
@@ -3308,7 +3521,7 @@ function renderSimulations(){
 }
 
 function clearSimLog(){simRunLog=[];renderSimulations();}
-function updateCharts(){drawLineChart('tempChart',tempHistory,'#f59e0b','°C');drawLineChart('humChart',humHistory,'#06b6d4','%');drawLineChart('aqiChart',aqiHistory,'#6c8bef','');}
+function updateCharts(){drawLineChart('aqiChart',aqiHistory,'#6c8bef','');}
 
 // TOAST
 function showToast(msg,type='info'){
@@ -3991,6 +4204,216 @@ async function init(){
     showLoginScreen();
   }
 }
+
+// ─────────────────────────────────────────────────
+// CLIMATE TAB (enhanced) — live charts + member HVAC control
+// ─────────────────────────────────────────────────
+let climActiveMember=null;
+let climFilter={temp:'1h',hum:'1h'};
+let climModalMetric='temp', climModalFilter='1h';
+const CLIM_COLORS={temp:'#f59e0b',hum:'#06b6d4'};
+const CLIM_UNITS={temp:'°C',hum:'%'};
+const CLIM_LABELS={temp:'Temperature',hum:'Humidity'};
+// Chart data now comes from the backend history endpoint (per-range window + density)
+const climData={temp:{data:[],timestamps:[]},hum:{data:[],timestamps:[]}};
+let climModalData={data:[],timestamps:[]};
+const CLIM_CHART_REFRESH_MS=120000;   // re-fetch the visible chart range every 2 minutes
+let _climRefreshTimer=null;
+
+async function climFetch(metric,range){
+  const ep=metric==='temp'?'temperature':'humidity';
+  const j=await apiFetch('/api/climate/history?metric='+ep+'&range='+range);
+  return (j&&Array.isArray(j.data))?j:{data:[],timestamps:[]};
+}
+async function climFetchAndRender(metric){
+  climData[metric]=await climFetch(metric,climFilter[metric]);
+  climRenderChart(metric);
+}
+function climFmtTs(iso,range){
+  const d=new Date(iso);
+  if(range==='7d'||range==='30d')return (d.getMonth()+1)+'/'+d.getDate();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function climPickLabels(timestamps,range,n){
+  if(!timestamps.length)return [];
+  n=Math.min(n,timestamps.length);const out=[];
+  for(let i=0;i<n;i++)out.push(climFmtTs(timestamps[Math.floor(i*(timestamps.length-1)/(n-1||1))],range));
+  return out;
+}
+function climBuildPath(vals,W,H,pad){
+  pad=pad||4;
+  const mn=Math.min(...vals)-pad, mx=Math.max(...vals)+pad, span=(mx-mn)||1;
+  const sx=i=>vals.length<2?W:(i/(vals.length-1))*W;
+  const sy=v=>H-((v-mn)/span)*H;
+  let d=`M${sx(0)},${sy(vals[0])}`;
+  for(let i=1;i<vals.length;i++){const x0=sx(i-1),y0=sy(vals[i-1]),x1=sx(i),y1=sy(vals[i]),cx=(x0+x1)/2;d+=` C${cx},${y0} ${cx},${y1} ${x1},${y1}`;}
+  return {d,mn,mx,sx,sy};
+}
+function climRenderChart(metric){
+  const svgLine=document.getElementById('clim-'+metric+'-line');if(!svgLine)return;
+  const svgArea=document.getElementById('clim-'+metric+'-area');
+  const grid=document.getElementById('clim-'+metric+'-grid');
+  const ep=document.getElementById('clim-'+metric+'-endpoint');
+  const yl=document.getElementById('clim-'+metric+'-ylabels');
+  const xl=document.getElementById('clim-'+metric+'-xlabels');
+  const vals=(climData[metric].data||[]).map(Number).filter(v=>isFinite(v));
+  if(vals.length<2){
+    svgArea.setAttribute('d','');svgLine.setAttribute('d','');ep.setAttribute('cx',-10);
+    if(yl)yl.innerHTML='';if(xl)xl.innerHTML='<span>loading…</span>';
+    return;
+  }
+  const W=400,H=110;
+  const {d,mn,mx,sx,sy}=climBuildPath(vals,W,H,metric==='temp'?1.5:3);
+  svgArea.setAttribute('d',d+` L${W},${H} L0,${H} Z`);
+  svgLine.setAttribute('d',d);
+  const ex=sx(vals.length-1),ey=sy(vals[vals.length-1]);
+  ep.setAttribute('cx',ex);ep.setAttribute('cy',ey);
+  let gd='';for(let i=0;i<=3;i++){const y=(i/3)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
+  if(yl){yl.innerHTML='';for(let i=0;i<=3;i++){const v=mx-(i/3)*(mx-mn);const s=document.createElement('span');s.textContent=v.toFixed(0);yl.appendChild(s);}}
+  if(xl){xl.innerHTML='';climPickLabels(climData[metric].timestamps,climFilter[metric],5).forEach(l=>{const s=document.createElement('span');s.textContent=l;xl.appendChild(s);});}
+}
+function climRenderAll(){climFetchAndRender('temp');climFetchAndRender('hum');}
+function climSetFilter(metric,range,btn){
+  climFilter[metric]=range;
+  btn.parentElement.querySelectorAll('.c2-filter').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  climFetchAndRender(metric);
+}
+async function climOpenModal(metric){
+  climModalMetric=metric;climModalFilter='1h';
+  setText('clim-modal-title',CLIM_LABELS[metric]+' — Full History');
+  setText('clim-modal-sub',(metric==='temp'?'Indoor temperature':'Indoor humidity')+' · sampled every 2 min');
+  document.querySelectorAll('#clim-modal-filters .c2-modal-filter').forEach((f,i)=>f.classList.toggle('active',i===0));
+  document.getElementById('clim-modal-g1').setAttribute('stop-color',CLIM_COLORS[metric]);
+  document.getElementById('clim-modal-g2').setAttribute('stop-color',CLIM_COLORS[metric]);
+  document.getElementById('clim-modal-line').setAttribute('stroke',CLIM_COLORS[metric]);
+  document.getElementById('clim-modal-overlay').classList.add('open');
+  climModalData=await climFetch(metric,climModalFilter);
+  climRenderModal();
+}
+function climCloseModal(){document.getElementById('clim-modal-overlay').classList.remove('open');}
+function climModalOutside(e){if(e.target===document.getElementById('clim-modal-overlay'))climCloseModal();}
+async function climSetModalFilter(range,el){
+  climModalFilter=range;
+  el.parentElement.querySelectorAll('.c2-modal-filter').forEach(f=>f.classList.remove('active'));
+  el.classList.add('active');
+  climModalData=await climFetch(climModalMetric,range);
+  climRenderModal();
+}
+function climRenderModal(){
+  const metric=climModalMetric, u=CLIM_UNITS[metric], col=CLIM_COLORS[metric];
+  const line=document.getElementById('clim-modal-line'),area=document.getElementById('clim-modal-area'),grid=document.getElementById('clim-modal-grid');
+  const stats=document.getElementById('clim-modal-stats'),empty=document.getElementById('clim-modal-empty');
+  const vals=(climModalData.data||[]).map(Number).filter(v=>isFinite(v)), W=700,H=200;
+  if(vals.length<2){
+    line.setAttribute('d','');area.setAttribute('d','');grid.setAttribute('d','');
+    stats.innerHTML='';empty.style.display='flex';
+    empty.textContent='No data for this range yet.';
+    return;
+  }
+  empty.style.display='none';
+  const {d,mn,mx}=climBuildPath(vals,W,H,metric==='temp'?2:4);
+  area.setAttribute('d',d+` L${W},${H} L0,${H} Z`);line.setAttribute('d',d);
+  let gd='';for(let i=0;i<=4;i++){const y=(i/4)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
+  const avg=(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
+  stats.innerHTML=`
+    <div class="c2-modal-stat"><div class="c2-modal-stat-label">Current</div><div class="c2-modal-stat-val" style="color:${col}">${vals[vals.length-1].toFixed(1)}${u}</div></div>
+    <div class="c2-modal-stat"><div class="c2-modal-stat-label">Average</div><div class="c2-modal-stat-val">${avg}${u}</div></div>
+    <div class="c2-modal-stat"><div class="c2-modal-stat-label">Min</div><div class="c2-modal-stat-val" style="color:var(--accent)">${Math.min(...vals).toFixed(1)}${u}</div></div>
+    <div class="c2-modal-stat"><div class="c2-modal-stat-label">Max</div><div class="c2-modal-stat-val" style="color:var(--red)">${Math.max(...vals).toFixed(1)}${u}</div></div>`;
+}
+const CLIM_FAN_LABELS={1:'Auto',2:'Low',3:'Med',4:'High'};
+const CLIM_FAN_TO_SPEED={1:2,2:1,3:3,4:5};
+const CLIM_SPEED_TO_FAN={0:2,1:2,2:1,3:3,4:5,5:4};
+function climRoomOf(name){return MEMBER_ROOM[name]||'living_room';}
+function climRenderMemberTabs(){
+  const wrap=document.getElementById('clim-member-tabs');if(!wrap)return;
+  if(!familyMembers.length){wrap.innerHTML='<span style="font-size:11px;color:var(--text3)">No members loaded</span>';return;}
+  if(!climActiveMember||!familyMembers.find(m=>m.name===climActiveMember))climActiveMember=familyMembers[0].name;
+  wrap.innerHTML=familyMembers.map(m=>`<div class="c2-tab${m.name===climActiveMember?' active':''}" onclick="climSelectMember(this.dataset.name,this)" data-name="${m.name}">${m.name}</div>`).join('');
+  climLoadMemberPrefs();
+}
+function climSelectMember(name,el){
+  climActiveMember=name;
+  document.querySelectorAll('#clim-member-tabs .c2-tab').forEach(t=>t.classList.remove('active'));
+  if(el)el.classList.add('active');
+  climLoadMemberPrefs();
+}
+function climLoadMemberPrefs(){
+  const room=climRoomOf(climActiveMember), dev=devices[room]||{}, ac=dev.ac, fan=dev.fan;
+  const tempSlider=document.getElementById('clim-temp-slider');
+  const fanSlider=document.getElementById('clim-fan-slider');
+  const hint=document.getElementById('clim-ctrl-hint');
+  if(ac){
+    tempSlider.disabled=false;tempSlider.value=ac.temp||24;setText('clim-temp-display',(ac.temp||24)+'°C');
+    document.querySelectorAll('#clim-mode-pills .c2-pill').forEach(p=>p.classList.remove('active'));
+    const activeMode=!ac.on?'off':(ac.mode==='heat'?'heat':'cool');
+    const pill=document.querySelector(`#clim-mode-pills .c2-pill[data-mode="${activeMode}"]`);
+    if(pill)pill.classList.add('active');
+    if(hint)hint.textContent=`Controlling AC + fan in ${ROOM_NAMES[room]||room}`;
+  } else {
+    tempSlider.disabled=true;setText('clim-temp-display','no AC');
+    document.querySelectorAll('#clim-mode-pills .c2-pill').forEach(p=>p.classList.remove('active'));
+    if(hint)hint.textContent=`${ROOM_NAMES[room]||room} has no AC — fan control only`;
+  }
+  if(fan){
+    fanSlider.disabled=false;
+    const pos=CLIM_SPEED_TO_FAN[fan.speed!=null?fan.speed:0]||2;
+    fanSlider.value=fan.on?pos:2;
+    setText('clim-fan-display',fan.on?(CLIM_FAN_LABELS[fanSlider.value]||'--'):'Off');
+  } else {
+    fanSlider.disabled=true;setText('clim-fan-display','no fan');
+  }
+  if(latestSensors)climUpdateHero(latestSensors);
+}
+function climTempInput(v){setText('clim-temp-display',v+'°C');}
+async function climTempCommit(v){
+  const room=climRoomOf(climActiveMember);
+  if(!(devices[room]&&devices[room].ac)){showToast('No AC in this room','warn');climLoadMemberPrefs();return;}
+  const r=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:'ac',value:{temp:+v,on:true}})});
+  if(r&&r.device){devices[room].ac=r.device;setText('cl-target',`Target: ${v} °C`);showToast(`${climActiveMember}: AC set to ${v}°C`,'success');climLoadMemberPrefs();}
+  else showToast('Could not update AC','danger');
+}
+function climFanInput(v){setText('clim-fan-display',CLIM_FAN_LABELS[v]||'--');}
+async function climFanCommit(v){
+  const room=climRoomOf(climActiveMember);
+  if(!(devices[room]&&devices[room].fan)){showToast('No fan in this room','warn');climLoadMemberPrefs();return;}
+  const speed=CLIM_FAN_TO_SPEED[v]||2;
+  const r=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:'fan',value:{speed,on:true}})});
+  if(r&&r.device){devices[room].fan=r.device;showToast(`${climActiveMember}: fan ${CLIM_FAN_LABELS[v]}`,'success');}
+  else showToast('Could not update fan','danger');
+}
+async function climSetMode(mode,el){
+  const room=climRoomOf(climActiveMember), dev=devices[room]||{}, calls=[];
+  document.querySelectorAll('#clim-mode-pills .c2-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  if(mode==='off'){ if(dev.ac)calls.push(['ac',{on:false}]); if(dev.fan)calls.push(['fan',{on:false}]); }
+  else if(mode==='fan'){ if(dev.ac)calls.push(['ac',{on:false}]); if(dev.fan)calls.push(['fan',{on:true}]); }
+  else if(mode==='cool'){ if(dev.ac)calls.push(['ac',{on:true,mode:'cool'}]); }
+  else if(mode==='heat'){ if(dev.ac)calls.push(['ac',{on:true,mode:'heat'}]); }
+  else if(mode==='auto'){ if(dev.ac)calls.push(['ac',{on:true,mode:'cool'}]); }
+  if(!calls.length){showToast('No controllable device for this mode in the room','warn');climLoadMemberPrefs();return;}
+  for(const [device,value] of calls){
+    const r=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device,value})});
+    if(r&&r.device)devices[room][device]=r.device;
+  }
+  setText('cl-hvac',mode.toUpperCase());
+  showToast(`${climActiveMember}: mode ${mode}`,'success');
+  climLoadMemberPrefs();
+}
+function climOnShow(){
+  climRenderMemberTabs();
+  climFetchAndRender('temp');
+  climFetchAndRender('hum');
+  if(!_climRefreshTimer){
+    _climRefreshTimer=setInterval(()=>{
+      if(document.getElementById('page-climate').classList.contains('active')){
+        climFetchAndRender('temp');climFetchAndRender('hum');
+      }
+    },CLIM_CHART_REFRESH_MS);
+  }
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')climCloseModal();});
 
 init();
 </script>

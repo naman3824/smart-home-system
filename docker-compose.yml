@@ -1,0 +1,35 @@
+# Runs the two services as separate, independently-manageable containers on the
+# same host and default network. The dashboard (smart-home) reaches the weather
+# service (api-server) by its compose service name over Docker's internal DNS.
+services:
+  # Weather / HVAC micro-service. Internal only — no host port mapping, so it is
+  # NOT reachable from outside the compose network, only by the sibling service.
+  api-server:
+    build:
+      context: .
+      dockerfile: climate-control/Dockerfile
+    # OPENWEATHER_API_KEY etc. come from climate-control/.env at runtime (not
+    # baked into the image). Fails fast on startup if the key is missing.
+    env_file:
+      - ./climate-control/.env
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  # Public dashboard. The only service exposed to the host.
+  smart-home:
+    image: ${ECR_REGISTRY}/smart-home-system:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Resolves to the api-server container via compose's internal DNS.
+      - API_SERVER_HOST=api-server
+    depends_on:
+      - api-server
+    # Persist SQLite DB + logs across restarts/redeploys (matches Dockerfile VOLUME).
+    volumes:
+      - smarthome-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  smarthome-data:

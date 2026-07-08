@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Enroll Faces — Smart Home</title>
+<style>
+  :root {
+    --bg:#0d0f18;--surface:#161928;--surface2:#1e2236;--border:#2a2f46;
+    --accent:#6c8bef;--green:#22c55e;--red:#ef4444;--orange:#f59e0b;
+    --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding:24px}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px;background:linear-gradient(135deg,#a5b8ff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .subtitle{font-size:12px;color:var(--text3);margin-bottom:24px}
+  .warning-banner{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:var(--radius);padding:14px 18px;margin-bottom:24px;font-size:13px;color:var(--orange);line-height:1.6}
+  .warning-banner b{color:#fbbf24}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+  .card-title{font-size:14px;font-weight:700;margin-bottom:12px}
+  .member-section{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .member-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+  .member-name{font-size:14px;font-weight:600;margin-bottom:8px}
+  .member-name .badge{font-size:10px;color:var(--text3);font-weight:400;margin-left:8px}
+  input[type=file]{font-size:12px;color:var(--text2)}
+  input[type=file]::file-selector-button{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:7px;cursor:pointer;font-size:12px;margin-right:10px;transition:all .15s}
+  input[type=file]::file-selector-button:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn{padding:10px 22px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+  .btn:hover{background:var(--accent);border-color:var(--accent);color:#fff;transform:translateY(-1px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn-primary:hover{background:#5a7de6}
+  .btn-green{background:var(--green);border-color:var(--green);color:#fff}
+  .btn-green:hover{background:#16a34a}
+  .actions{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+  .progress{margin-top:16px;font-size:13px;color:var(--text2);line-height:1.8;white-space:pre-line}
+  .progress .done{color:var(--green)}
+  .progress .skip{color:var(--orange)}
+  .progress .active{color:var(--accent);font-weight:600}
+  #output{margin-top:16px;padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px;color:var(--text2);max-height:200px;overflow-y:auto;display:none;white-space:pre-wrap}
+  .file-count{font-size:11px;color:var(--text3);margin-top:4px}
+</style>
+</head>
+<body>
+
+<h1>🔐 Enroll Faces</h1>
+<div class="subtitle">Standalone offline tool — generates embeddings.json for the Smart Home dashboard</div>
+
+<div class="warning-banner">
+  <b>⚠ Privacy notice:</b> Photos <b>never leave your browser</b>. Face-api.js runs entirely client-side.
+  Only download and transfer <code>embeddings.json</code> — <b>never the photos themselves</b>.
+  Do not commit <code>embeddings.json</code> to git.
+</div>
+
+<div class="card">
+  <div class="card-title">📷 Select reference photos for each family member</div>
+  <!--
+    ─── KNOWN FAMILY MEMBERS ───────────────────────────────────────────
+    This list must match the KNOWN_FACES array in index.html (around line 3100).
+    To add or remove members, update BOTH this array below AND the KNOWN_FACES
+    array in static/index.html.
+  -->
+  <div id="memberInputs"></div>
+</div>
+
+<div class="actions">
+  <button class="btn btn-primary" id="generateBtn" onclick="generateEmbeddings()" disabled>🧠 Generate Embeddings</button>
+  <button class="btn btn-green" id="downloadBtn" onclick="downloadEmbeddings()" disabled>⬇ Download embeddings.json</button>
+</div>
+
+<div class="progress" id="progressEl"></div>
+<pre id="output"></pre>
+
+<script>
+// ─── FAMILY MEMBERS ──────────────────────────────────────────────────
+// UPDATE THIS LIST if family members change. Must match KNOWN_FACES in
+// static/index.html (search for "KNOWN_FACES" around line 3100).
+const FAMILY_MEMBERS = ['Aditya', 'Diksha', 'Agrim', 'Naman', 'Kamakshi'];
+
+// ─── CDN URLs — copied exactly from index.html (lines 3090-3099) ────
+const FACE_API_SCRIPT_URLS = [
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js'
+];
+const FACE_API_WEIGHTS_URLS = [
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights',
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights',
+  'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights'
+];
+
+let embeddingsResult = null;
+let modelsLoaded = false;
+
+// ─── Build the file input UI for each member ─────────────────────────
+function buildMemberInputs() {
+  const container = document.getElementById('memberInputs');
+  container.innerHTML = FAMILY_MEMBERS.map((name, i) => `
+    <div class="member-section">
+      <div class="member-name">${name} <span class="badge">1–5 photos (.jpg/.jpeg/.png)</span></div>
+      <input type="file" id="files-${i}" accept=".jpg,.jpeg,.png" multiple onchange="onFilesChanged(${i})"/>
+      <div class="file-count" id="count-${i}"></div>
+    </div>
+  `).join('');
+}
+
+function onFilesChanged(idx) {
+  const input = document.getElementById('files-' + idx);
+  const count = input.files.length;
+  const el = document.getElementById('count-' + idx);
+  if (count === 0) el.textContent = '';
+  else if (count > 5) el.textContent = `${count} file(s) selected — only first 5 will be used`;
+  else el.textContent = `${count} file(s) selected ✓`;
+  checkReady();
+}
+
+function checkReady() {
+  // Enable generate button if at least one member has photos
+  const hasAny = FAMILY_MEMBERS.some((_, i) => document.getElementById('files-' + i).files.length > 0);
+  document.getElementById('generateBtn').disabled = !hasAny;
+}
+
+// ─── Load face-api.js library ────────────────────────────────────────
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function loadFaceApiLibrary() {
+  if (typeof faceapi !== 'undefined') return true;
+  for (const url of FACE_API_SCRIPT_URLS) {
+    try { await loadScript(url); if (typeof faceapi !== 'undefined') return true; }
+    catch (e) { console.warn(e.message); }
+  }
+  return false;
+}
+
+async function loadModelsFrom(base) {
+  await Promise.all([
+    faceapi.nets.tinyFaceDetector.loadFromUri(base),
+    faceapi.nets.faceLandmark68Net.loadFromUri(base),
+    faceapi.nets.faceRecognitionNet.loadFromUri(base)
+  ]);
+}
+
+async function ensureModels() {
+  if (modelsLoaded) return true;
+  log('Loading face-api.js library…');
+  const libOk = await loadFaceApiLibrary();
+  if (!libOk) { log('ERROR: Could not load face-api.js from any CDN.'); return false; }
+  log('Library loaded ✓');
+
+  for (const base of FACE_API_WEIGHTS_URLS) {
+    try {
+      log('Loading model weights…');
+      await loadModelsFrom(base);
+      modelsLoaded = true;
+      log('Models loaded ✓ (tinyFaceDetector, faceLandmark68Net, faceRecognitionNet)');
+      return true;
+    } catch (e) { console.warn('Weights failed from ' + base, e.message); }
+  }
+  log('ERROR: Could not load model weights from any source.');
+  return false;
+}
+
+// ─── Read a File as an HTMLImageElement ───────────────────────────────
+function readFileAsImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to decode image: ' + file.name));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file: ' + file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── Logging ─────────────────────────────────────────────────────────
+function log(msg) {
+  const el = document.getElementById('output');
+  el.style.display = 'block';
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProgress(html) {
+  document.getElementById('progressEl').innerHTML = html;
+}
+
+// ─── Main: Generate Embeddings ───────────────────────────────────────
+async function generateEmbeddings() {
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  document.getElementById('output').textContent = '';
+
+  const ok = await ensureModels();
+  if (!ok) { btn.disabled = false; return; }
+
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+  const results = [];
+  let progressLines = [];
+
+  for (let i = 0; i < FAMILY_MEMBERS.length; i++) {
+    const name = FAMILY_MEMBERS[i];
+    const input = document.getElementById('files-' + i);
+    const files = Array.from(input.files).slice(0, 5);  // cap at 5
+
+    if (files.length === 0) {
+      progressLines.push(`<span class="skip">⏭ ${name} — no photos selected, skipped</span>`);
+      setProgress(progressLines.join('<br>'));
+      log(`Skipping ${name} (no photos)`);
+      continue;
+    }
+
+    progressLines.push(`<span class="active">⏳ Processing ${name} (${files.length} photos)…</span>`);
+    setProgress(progressLines.join('<br>'));
+    log(`\n── ${name} ──`);
+
+    const descriptors = [];
+    for (const file of files) {
+      try {
+        const img = await readFileAsImage(file);
+        const det = await faceapi.detectSingleFace(img, options)
+          .withFaceLandmarks().withFaceDescriptor();
+        if (det) {
+          descriptors.push(Array.from(det.descriptor));  // Float32Array → plain array
+          log(`  ✓ ${file.name} — face found`);
+        } else {
+          log(`  ⚠ ${file.name} — no face detected, skipped`);
+          console.warn(`No face detected in ${file.name} for ${name}`);
+        }
+      } catch (e) {
+        log(`  ✗ ${file.name} — error: ${e.message}`);
+        console.warn(`Error processing ${file.name} for ${name}:`, e);
+      }
+    }
+
+    // Replace the "processing" line with the result
+    progressLines[progressLines.length - 1] = descriptors.length > 0
+      ? `<span class="done">✅ ${name} — ${descriptors.length}/${files.length} descriptors</span>`
+      : `<span class="skip">⚠ ${name} — no faces detected in any photo</span>`;
+    setProgress(progressLines.join('<br>'));
+
+    if (descriptors.length > 0) {
+      results.push({ name, descriptors });
+    }
+  }
+
+  if (results.length > 0) {
+    embeddingsResult = results;
+    document.getElementById('downloadBtn').disabled = false;
+    log(`\nDone! ${results.length} member(s) enrolled with ${results.reduce((s, r) => s + r.descriptors.length, 0)} total descriptors.`);
+    log('Click "Download embeddings.json" to save the file.');
+  } else {
+    log('\nNo faces could be enrolled. Please check your photos and try again.');
+  }
+  btn.disabled = false;
+}
+
+// ─── Download embeddings.json ────────────────────────────────────────
+function downloadEmbeddings() {
+  if (!embeddingsResult) return;
+  const json = JSON.stringify(embeddingsResult, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'embeddings.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────
+buildMemberInputs();
+</script>
+</body>
+</html>

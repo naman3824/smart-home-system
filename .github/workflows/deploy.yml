@@ -38,8 +38,24 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 169424082626.dkr.ecr.ap-south-1.amazonaws.com
-            docker pull 169424082626.dkr.ecr.ap-south-1.amazonaws.com/smart-home-system:latest
-            docker stop smart-home || true
-            docker rm smart-home || true
-            docker run -d --name smart-home -p 8000:8000 169424082626.dkr.ecr.ap-south-1.amazonaws.com/smart-home-system:latest
+            cd ~/smart-home-system
+
+            # Login to ECR on the EC2 instance
+            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+            # Export ECR_REGISTRY so docker compose can interpolate ${ECR_REGISTRY} in the image field
+            export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
+
+            # Ensure docker compose plugin is available
+            if ! docker compose version > /dev/null 2>&1; then
+              sudo apt-get install -y docker-compose-plugin
+            fi
+
+            # Pull the pre-built smart-home image from ECR
+            docker pull ${ECR_REGISTRY}/smart-home-system:latest
+
+            # Stop and remove both old containers cleanly
+            docker compose down || true
+
+            # Rebuild api-server from source on EC2, start both services
+            docker compose up -d --build

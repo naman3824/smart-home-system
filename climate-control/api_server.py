@@ -34,7 +34,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("climate_api")
 
-load_dotenv()
+# Load .env from this script's own directory, not the current working
+# directory — so the OpenWeather key is found no matter where the service
+# is launched from (e.g. the repo root vs inside climate-control/).
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
@@ -51,7 +54,7 @@ except ValueError as e:
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 POLL_INTERVAL = 60
-API_PORT = 8000
+API_PORT = 3000
 
 
 # ──────────────────────────────────────────────

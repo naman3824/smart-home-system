@@ -1,7 +1,13 @@
 images/
 *.csv
 AQI-MONITOR/
-climate-control/
+# climate-control/ is NOT excluded wholesale — climate-control/api_server.py
+# must be includable so the api-server image can be built from it. Exclude only
+# the files in that folder that api_server.py does not need at runtime.
+climate-control/climate_sensor.py
+climate-control/readme.md
+climate-control/.env
+climate-control/__pycache__/
 FaceRecognition.py
 mqtt_publisher.py
 mqtt_detector.py

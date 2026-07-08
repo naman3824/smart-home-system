@@ -72,3 +72,15 @@ yarn.lock
 .mypy_cache/
 .coverage
 htmlcov/
+
+climate-control/.env
+
+# Face recognition data — never commit real embeddings or photos
+face-data/embeddings.json
+face-data/*.json
+
+# Claude and editor folders
+.claude/
+.cursor/
+.vscode/
+*.local

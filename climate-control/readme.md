@@ -45,7 +45,14 @@ Start the FastAPI server from your terminal:
 python api_server.py
 ```
 
-The server will start on `http://localhost:8000`. You will see terminal output showing the background sensor loop actively fetching data and updating the in-memory store.
+The server will start on `http://localhost:3000`. You will see terminal output showing the background sensor loop actively fetching data and updating the in-memory store.
+
+> **Note — this service must run alongside the main dashboard.** The main app (`server.py`, port 8000) polls this service at `http://localhost:3000/api/all` every 60 seconds for real temperature/humidity. Run **both** for live climate data:
+> ```bash
+> python climate-control/api_server.py   # port 3000 — start this first
+> python server.py                       # port 8000 — the dashboard
+> ```
+> If this service isn't running, the dashboard's Temperature/Humidity cards fall back to "--" after ~3 minutes.
 
 ---
 
@@ -89,7 +96,7 @@ If you want an external dashboard to access your API over the internet, you can 
 2. Open a **new** terminal tab (keep your FastAPI server running in the original tab).
 3. Run the following command:
    ```bash
-   ngrok http 8000
+   ngrok http 3000
    ```
 4. Look for the **Forwarding** URL in the ngrok terminal output (e.g., `https://xxxx-xxxx.ngrok-free.app`).
 5. Point your dashboard to this URL — e.g., `https://xxxx-xxxx.ngrok-free.app/api/all`.
