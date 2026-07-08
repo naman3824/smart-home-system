@@ -337,7 +337,11 @@ def _seed_climate_history():
         ))
         t += HISTORY_SAMPLE_SECONDS
 
-_seed_climate_history()
+# NOTE: climate_history intentionally starts EMPTY. It is filled only by real
+# samples taken in the sensor loop below — there is no demo pre-seeding. An empty
+# buffer correctly means "no data yet", and /api/climate/history returns [] so the
+# charts render a "No data available yet" message instead of a fake flat line.
+# (_seed_climate_history remains defined but is deliberately never called.)
 
 # ── SHARED STATE ──
 state_lock = threading.Lock()
@@ -407,11 +411,11 @@ for _room, _devs in _persisted_devices.items():
 
 # Sensor data
 sensors = {
-    "temperature": 28.5,          # indoor temperature (what the house feels like)
+    "temperature": None,          # indoor temp — None until the climate API returns real data
     "outdoor_temperature": None,  # raw outdoor temp from climate API
     "indoor_temperature": None,   # computed indoor temp (same as "temperature" when API is live)
     "feels_like": None,           # perceived temp (includes fan evaporative effect)
-    "humidity": 62.0,             # indoor humidity
+    "humidity": None,             # indoor humidity — None until the climate API returns real data
     "outdoor_humidity": None,     # raw outdoor humidity from climate API
     "indoor_humidity": None,      # computed indoor humidity
     "smoke": 3.2,
@@ -421,8 +425,8 @@ sensors = {
     "pm25": 85.0,
     "pm10": 120.0,
     "co2_ppm": 850.0,
-    "hvac_status": "ECO MODE",
-    "hvac_target": 24.0,
+    "hvac_status": None,          # None/OFFLINE until real data arrives (frontend shows "HVAC OFFLINE")
+    "hvac_target": None,
     "condition": "partly cloudy",
     "room_temperatures": {},      # per-room estimated temps
     "room_humidities": {}         # per-room estimated humidities

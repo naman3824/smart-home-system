@@ -9,7 +9,7 @@
     --bg:#0d0f18;--surface:#161928;--surface2:#1e2236;--surface3:#262c42;
     --border:#2a2f46;--accent:#6c8bef;--accent2:#a78bfa;
     --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--cyan:#06b6d4;--pink:#ec4899;
-    --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+    --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--muted:#64748b;
     --shadow:0 4px 32px rgba(0,0,0,.5);--radius:12px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -1097,6 +1097,7 @@
   #page-climate .c2-chart-area{position:relative;height:150px}
   #page-climate .c2-chart-inner{position:absolute;left:30px;right:0;top:0;bottom:16px}
   #page-climate .c2-chart-inner svg{width:100%;height:100%}
+  #page-climate .c2-chart-empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;padding:0 12px}
   #page-climate .c2-ylabels{position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--text3);pointer-events:none}
   #page-climate .c2-xlabels{display:flex;justify-content:space-between;padding-left:30px;font-size:9px;color:var(--text3);margin-top:4px}
   #page-climate .c2-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
@@ -1195,6 +1196,7 @@
               <path id="clim-temp-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <circle id="clim-temp-endpoint" r="4" fill="#f59e0b" stroke="#0d0f18" stroke-width="2" cx="-10"/>
             </svg>
+            <div class="c2-chart-empty" id="clim-temp-empty">No data available yet</div>
           </div>
         </div>
         <div class="c2-xlabels" id="clim-temp-xlabels"></div>
@@ -1221,6 +1223,7 @@
               <path id="clim-hum-line" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <circle id="clim-hum-endpoint" r="4" fill="#06b6d4" stroke="#0d0f18" stroke-width="2" cx="-10"/>
             </svg>
+            <div class="c2-chart-empty" id="clim-hum-empty">No data available yet</div>
           </div>
         </div>
         <div class="c2-xlabels" id="clim-hum-xlabels"></div>
@@ -2223,16 +2226,34 @@ function drawSparkline(id,data,color){
 function aqiColor(v){if(!v)return'#22c55e';if(v<=50)return'#22c55e';if(v<=100)return'#84cc16';if(v<=200)return'#f59e0b';if(v<=300)return'#ef4444';if(v<=400)return'#b91c1c';return'#7f1d1d';}
 function smokeColor(v){return v>40?'#ef4444':v>20?'#f59e0b':'#22c55e';}
 function safeVal(v){return(v!==null&&v!==undefined&&!isNaN(v))?v:0;}
+// True when a reading is genuinely absent (API down / not fetched yet). Distinct
+// from a real 0 — we must NOT render "0°C"/"0%" for missing data.
+function isNil(v){return v===null||v===undefined||(typeof v==='number'&&isNaN(v));}
+// Sets a metric value cell: muted em-dash when the reading is unavailable, else
+// the real value + unit in its accent colour.
+function setMetricValue(id,val,unit,accent){
+  const el=document.getElementById(id);if(!el)return;
+  if(isNil(val)){el.innerHTML='—';el.style.color='var(--muted)';}
+  else{el.innerHTML=`${val}<span class="sensor-unit">${unit}</span>`;el.style.color=accent;}
+}
 
 let latestSensors=null;
 // Climate hero card: show the selected member's room temperature (per-room RC
 // model output) rather than the whole-home average, which barely moves when a
 // single room is being cooled.
 function climUpdateHero(s){
-  const avg=safeVal(s.temperature);
   const room=climActiveMember?climRoomOf(climActiveMember):null;
   const rt=(room&&s.room_temperatures&&s.room_temperatures[room]!=null)?s.room_temperatures[room]:null;
-  setText('cl-temp',`${rt!=null?rt:avg}<span class="sensor-unit">°C</span>`);
+  const avg=s.temperature;                 // whole-home average; null when the API is down
+  const shown=(rt!=null)?rt:avg;           // null when there is no real reading at all
+  const tempEl=document.getElementById('cl-temp');
+  if(isNil(shown)){
+    tempEl.innerHTML='—';tempEl.style.color='var(--muted)';
+    setText('cl-feels-like','No data available');
+    setText('cl-temp-label','Indoor Temperature');
+    return;
+  }
+  tempEl.innerHTML=`${shown}<span class="sensor-unit">°C</span>`;tempEl.style.color='var(--orange)';
   const rf=(room&&s.room_feels_like&&s.room_feels_like[room]!=null)?s.room_feels_like[room]:s.feels_like;
   setText('cl-feels-like',`feels like ${rf!=null?rf:'--'}°C${rt!=null?` · home avg ${avg}°C`:''}`);
   setText('cl-temp-label',rt!=null?`${ROOM_NAMES[room]||room} Temperature`:'Indoor Temperature');
@@ -2249,10 +2270,10 @@ function updateSensorUI(s,watts){
   const temp=safeVal(s.temperature),hum=safeVal(s.humidity),aqi=safeVal(s.aqi),smoke=safeVal(s.smoke),gas=safeVal(s.gas);
   const outTemp=safeVal(s.outdoor_temperature);
   const outHum=safeVal(s.outdoor_humidity);
-  document.getElementById('weatherChip').innerHTML=`🌡 ${temp}°C &nbsp;💧 ${hum}%`;
-  setText('ov-temp',`${temp}<span class="sensor-unit">°C</span>`);
+  document.getElementById('weatherChip').innerHTML=`🌡 ${isNil(s.temperature)?'—':s.temperature+'°C'} &nbsp;💧 ${isNil(s.humidity)?'—':s.humidity+'%'}`;
+  setMetricValue('ov-temp',s.temperature,'°C','#f59e0b');
   setText('ov-outdoor-temp', outTemp ? `Outdoor: ${outTemp}°C` : `Outdoor: --°C`);
-  setText('ov-hum',`${hum}<span class="sensor-unit">%</span>`);
+  setMetricValue('ov-hum',s.humidity,'%','#06b6d4');
   setText('ov-outdoor-hum', outHum ? `Outdoor: ${outHum}%` : `Outdoor: --%`);
   setText('ov-aqi',aqi||'--');
   setText('ov-hvac',`HVAC: ${s.hvac_status||'--'}`);
@@ -2271,9 +2292,12 @@ function updateSensorUI(s,watts){
   document.getElementById('safety-status').style.color=danger?'var(--red)':'var(--green)';
   latestSensors=s;
   climUpdateHero(s);
-  setText('cl-hum',`${hum}<span class="sensor-unit">%</span>`);
-  setText('cl-hvac',s.hvac_status||'--');setText('cl-target',`Target: ${s.hvac_target||'--'} °C`);
-  setText('cl-hum-status',hum<40?'too dry':hum>70?'too humid':'comfortable');
+  setMetricValue('cl-hum',s.humidity,'%','#06b6d4');
+  const hvacOffline=isNil(s.hvac_status)||s.hvac_status==='OFFLINE';
+  const clHvac=document.getElementById('cl-hvac');
+  if(hvacOffline){clHvac.textContent='HVAC OFFLINE';clHvac.style.color='var(--muted)';setText('cl-target','No data available');}
+  else{clHvac.textContent=s.hvac_status;clHvac.style.color='';setText('cl-target',`Target: ${s.hvac_target||'--'} °C`);}
+  setText('cl-hum-status',isNil(s.humidity)?'No data available':(s.humidity<40?'too dry':s.humidity>70?'too humid':'comfortable'));
   const ac=aqiColor(aqi);
   setText('aqi-num',aqi||'--');setText('aqi-cat',s.aqi_category||'--');
   const an=document.getElementById('aqi-num'),ac2=document.getElementById('aqi-cat');
@@ -4256,12 +4280,17 @@ function climRenderChart(metric){
   const ep=document.getElementById('clim-'+metric+'-endpoint');
   const yl=document.getElementById('clim-'+metric+'-ylabels');
   const xl=document.getElementById('clim-'+metric+'-xlabels');
+  const emptyEl=document.getElementById('clim-'+metric+'-empty');
   const vals=(climData[metric].data||[]).map(Number).filter(v=>isFinite(v));
   if(vals.length<2){
+    // Empty buffer or a filter window with no real points → show "No data
+    // available yet" over an empty chart rather than a fake flat/zero line.
     svgArea.setAttribute('d','');svgLine.setAttribute('d','');ep.setAttribute('cx',-10);
-    if(yl)yl.innerHTML='';if(xl)xl.innerHTML='<span>loading…</span>';
+    if(yl)yl.innerHTML='';if(xl)xl.innerHTML='';
+    if(emptyEl)emptyEl.style.display='flex';
     return;
   }
+  if(emptyEl)emptyEl.style.display='none';
   const W=400,H=110;
   const {d,mn,mx,sx,sy}=climBuildPath(vals,W,H,metric==='temp'?1.5:3);
   svgArea.setAttribute('d',d+` L${W},${H} L0,${H} Z`);

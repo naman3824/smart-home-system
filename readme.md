@@ -121,13 +121,14 @@ smart-home-dashboard/
 ├── images/                      ← Reference face photos (gitignored)
 │   └── .gitkeep
 │
-├── FaceRecognition.py           ← Standalone Python face recognition (OpenCV/dlib)
-├── detector.py                  ← Smoke/gas/fire detection class
-├── logger.py                    ← CSV sensor data logger
-├── main.py                      ← Smoke + WhatsApp alert entry point
-├── mqtt_publisher.py            ← MQTT sensor data publisher
-├── mqtt_detector.py             ← MQTT sensor subscriber + alert evaluator
-├── alerts_twilio.py             ← Twilio WhatsApp/SMS alert sender
+├── hardware/                    ← Standalone IoT/demo scripts (not deployed)
+│   ├── FaceRecognition.py       ← Standalone Python face recognition (OpenCV/dlib)
+│   ├── detector.py              ← Smoke/gas/fire detection class
+│   ├── logger.py                ← CSV sensor data logger
+│   ├── main.py                  ← Smoke + WhatsApp alert entry point
+│   ├── mqtt_publisher.py        ← MQTT sensor data publisher
+│   ├── mqtt_detector.py         ← MQTT sensor subscriber + alert evaluator
+│   └── alerts_twilio.py         ← Twilio WhatsApp/SMS alert sender
 │
 ├── climate-control/
 │   ├── api_server.py            ← Flask climate server (OpenWeather + Blynk)
@@ -166,22 +167,22 @@ python api_server.py
 ### Smoke/Gas/Fire via MQTT Hardware
 ```bash
 pip install paho-mqtt
-python mqtt_publisher.py      # Terminal 1 — publishes sensor readings
-python mqtt_detector.py       # Terminal 2 — evaluates and triggers alerts
+python hardware/mqtt_publisher.py      # Terminal 1 — publishes sensor readings
+python hardware/mqtt_detector.py       # Terminal 2 — evaluates and triggers alerts
 ```
 
 ### WhatsApp Alerts (Twilio)
 ```bash
 # Requires TWILIO_* variables in .env
 pip install twilio
-python main.py
+python hardware/main.py
 ```
 
 ### Python Face Recognition (OpenCV + dlib)
 ```bash
 # Alternative to in-browser face-api.js — runs on the machine, not in browser
 pip install opencv-python face-recognition numpy
-python FaceRecognition.py
+python hardware/FaceRecognition.py
 ```
 > **Windows users:** `face-recognition` requires CMake + Visual Studio build tools.  
 > See [dlib installation guide](https://github.com/davisking/dlib) for your OS.
