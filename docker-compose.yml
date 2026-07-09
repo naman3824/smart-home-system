@@ -14,6 +14,14 @@ services:
       - ./climate-control/.env
     expose:
       - "3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 48M
     restart: unless-stopped
 
   # Public dashboard. The only service exposed to the host.
@@ -34,8 +42,19 @@ services:
     # Persist SQLite DB + logs across restarts/redeploys (matches Dockerfile VOLUME).
     volumes:
       - smarthome-data:/app/data
+      # Live static files — overrides the image's baked-in copy so index.html
+      # edits show up without a rebuild. Read-only; server never writes here.
+      - ./static:/app/static:ro
       # Face embeddings, read-only — the container only ever reads embeddings.json.
       - ./face-data:/app/face-data:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
     restart: unless-stopped
 
 volumes:

@@ -18,6 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import db
 import auth
@@ -755,6 +758,35 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 
+# ── Rate limiting (slowapi) ──────────────────────────────────────────────
+# Per-client-IP limits on every route. In-memory storage — resets on restart,
+# which is fine for a single-container deployment.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+
+def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded):
+    # Custom 429 body so the frontend can detect it and show a toast
+    # instead of slowapi's default plain-text error.
+    retry_after = 60
+    try:
+        retry_after = int(exc.limit.limit.get_expiry())
+    except Exception:
+        pass
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests — please wait a moment",
+            "retry_after": retry_after,
+        },
+    )
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded)
+
 # Catch anything that isn't an explicit HTTPException — log the full
 # traceback so a live crash actually leaves a record instead of just
 # becoming a generic 500 with nothing written down anywhere.
@@ -835,6 +867,7 @@ def _client_ip(request: Request) -> str:
 
 
 @app.post("/api/auth/login")
+@limiter.limit("5/minute")
 async def login(body: LoginRequest, request: Request, response: Response):
     user = auth.authenticate(body.username, body.password)
     if not user:
@@ -861,6 +894,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
 
 
 @app.post("/api/auth/logout")
+@limiter.limit("10/minute")
 async def logout(request: Request, response: Response, smarthome_session: Optional[str] = Cookie(default=None)):
     user = auth.get_session_user(smarthome_session)
     if user:
@@ -871,7 +905,8 @@ async def logout(request: Request, response: Response, smarthome_session: Option
 
 
 @app.get("/api/auth/me")
-async def get_me(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_me(request: Request, user: dict = Depends(get_current_user)):
     return {
         "username": user["username"],
         "display_name": user["display_name"],
@@ -885,6 +920,7 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 @app.post("/api/auth/change-password")
+@limiter.limit("5/minute")
 async def change_password(body: ChangePasswordRequest, request: Request, user: dict = Depends(get_current_user)):
     full_user = db.get_user_by_username(user["username"])
     if not auth.verify_password(body.current_password, full_user["password_hash"], full_user["password_salt"]):
@@ -898,13 +934,15 @@ async def change_password(body: ChangePasswordRequest, request: Request, user: d
 
 
 @app.get("/api/audit-log")
-async def get_audit_log(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_audit_log(request: Request, user: dict = Depends(get_current_user)):
     # Any logged-in member can view the audit log — transparency for the whole household
     return db.get_audit_log()
 
 
 @app.get("/api/system-logs")
-async def get_system_logs(lines: int = 200, level: Optional[str] = None, user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_system_logs(request: Request, lines: int = 200, level: Optional[str] = None, user: dict = Depends(get_current_user)):
     """
     Server-side error/debug log — distinct from security_logs (who arrived
     at the house) and audit_log (who changed what in the dashboard). This is
@@ -944,11 +982,13 @@ class AutomationRuleCreate(BaseModel):
 
 
 @app.get("/api/automation/rules")
-async def list_automation_rules(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def list_automation_rules(request: Request, user: dict = Depends(get_current_user)):
     return db.get_automation_rules()
 
 
 @app.post("/api/automation/rules")
+@limiter.limit("10/minute")
 async def create_automation_rule(body: AutomationRuleCreate, request: Request, user: dict = Depends(get_current_user)):
     # Validate the action targets a real device before saving — a rule
     # pointing at a room/device that doesn't exist would silently no-op
@@ -966,6 +1006,7 @@ async def create_automation_rule(body: AutomationRuleCreate, request: Request, u
 
 
 @app.post("/api/automation/rules/{rule_id}/toggle")
+@limiter.limit("10/minute")
 async def toggle_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
     rule = db.get_automation_rule(rule_id)
     if not rule:
@@ -976,6 +1017,7 @@ async def toggle_automation_rule(rule_id: int, request: Request, user: dict = De
 
 
 @app.delete("/api/automation/rules/{rule_id}")
+@limiter.limit("10/minute")
 async def delete_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
     rule = db.get_automation_rule(rule_id)
     db.delete_automation_rule(rule_id)
@@ -984,7 +1026,8 @@ async def delete_automation_rule(rule_id: int, request: Request, user: dict = De
 
 
 @app.get("/api/automation/runs")
-async def list_automation_runs(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def list_automation_runs(request: Request, user: dict = Depends(get_current_user)):
     return db.get_automation_runs()
 
 
@@ -1043,7 +1086,8 @@ def _check_guest_access(guest: dict) -> tuple[bool, str]:
 
 
 @app.get("/api/routines")
-async def list_routines(member_id: Optional[int] = None, user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def list_routines(request: Request, member_id: Optional[int] = None, user: dict = Depends(get_current_user)):
     # Non-owners can only see their own routines
     if user["role"] != "owner" and member_id != user["member_id"]:
         member_id = user["member_id"]
@@ -1051,6 +1095,7 @@ async def list_routines(member_id: Optional[int] = None, user: dict = Depends(ge
 
 
 @app.post("/api/routines")
+@limiter.limit("10/minute")
 async def create_routine_endpoint(body: RoutineCreate, request: Request, user: dict = Depends(get_current_user)):
     # Determine which member this routine belongs to
     target_member_id = body.member_id or user["member_id"]
@@ -1095,6 +1140,7 @@ async def create_routine_endpoint(body: RoutineCreate, request: Request, user: d
 
 
 @app.post("/api/routines/{routine_id}/toggle")
+@limiter.limit("10/minute")
 async def toggle_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
     routine = db.get_routine(routine_id)
     if not routine:
@@ -1107,6 +1153,7 @@ async def toggle_routine(routine_id: int, request: Request, user: dict = Depends
 
 
 @app.delete("/api/routines/{routine_id}")
+@limiter.limit("10/minute")
 async def delete_routine(routine_id: int, request: Request, user: dict = Depends(get_current_user)):
     routine = db.get_routine(routine_id)
     if not routine:
@@ -1121,11 +1168,13 @@ async def delete_routine(routine_id: int, request: Request, user: dict = Depends
 # ── Scheduled guests ──────────────────────────────────────────────────────
 
 @app.get("/api/guests")
-async def list_scheduled_guests(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def list_scheduled_guests(request: Request, user: dict = Depends(get_current_user)):
     return db.get_scheduled_guests()
 
 
 @app.post("/api/guests")
+@limiter.limit("10/minute")
 async def create_scheduled_guest(body: ScheduledGuestCreate, request: Request, user: dict = Depends(get_current_user)):
     if not (0 <= body.start_hour <= 23 and 0 <= body.start_min <= 59 and
             0 <= body.end_hour <= 23 and 0 <= body.end_min <= 59):
@@ -1143,6 +1192,7 @@ async def create_scheduled_guest(body: ScheduledGuestCreate, request: Request, u
 
 
 @app.post("/api/guests/{guest_id}/toggle")
+@limiter.limit("10/minute")
 async def toggle_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
     guest = db.get_scheduled_guest(guest_id)
     if not guest:
@@ -1154,6 +1204,7 @@ async def toggle_scheduled_guest(guest_id: int, request: Request, user: dict = D
 
 
 @app.delete("/api/guests/{guest_id}")
+@limiter.limit("10/minute")
 async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
     guest = db.get_scheduled_guest(guest_id)
     if not guest:
@@ -1165,7 +1216,8 @@ async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = D
 
 
 @app.post("/api/security/guest-detected")
-async def log_guest_detected(body: dict):
+@limiter.limit("10/minute")
+async def log_guest_detected(body: dict, request: Request):
     """
     Called when a face is recognized but doesn't match any family member.
     Checks if the person has a scheduled access entry and whether the
@@ -1228,11 +1280,13 @@ class MarkPaymentRequest(BaseModel):
 
 
 @app.get("/api/payments/config")
-async def get_payment_config(user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_payment_config(request: Request, user: dict = Depends(get_current_user)):
     return db.get_rent_config()
 
 
 @app.post("/api/payments/config")
+@limiter.limit("10/minute")
 async def update_payment_config(body: RentConfigUpdate, request: Request, user: dict = Depends(get_current_user)):
     if user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Only the owner can update rent configuration")
@@ -1248,7 +1302,8 @@ async def update_payment_config(body: RentConfigUpdate, request: Request, user: 
 
 
 @app.get("/api/payments")
-async def get_payments(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def get_payments(request: Request, month: Optional[str] = None, user: dict = Depends(get_current_user)):
     """
     Returns payments for a given month (YYYY-MM format).
     If no month given, defaults to the current month.
@@ -1282,6 +1337,7 @@ async def get_payments(month: Optional[str] = None, user: dict = Depends(get_cur
 
 
 @app.post("/api/payments/{payment_id}/mark")
+@limiter.limit("10/minute")
 async def mark_payment(payment_id: int, body: MarkPaymentRequest,
                        request: Request, user: dict = Depends(get_current_user)):
     payment = db.get_payment(payment_id)
@@ -1303,11 +1359,13 @@ async def mark_payment(payment_id: int, body: MarkPaymentRequest,
 
 
 @app.get("/")
-async def root():
+@limiter.limit("30/minute")
+async def root(request: Request):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 @app.get("/api/status")
-async def get_status():
+@limiter.limit("60/minute")
+async def get_status(request: Request):
     with state_lock:
         return {
             "sensors": sensors.copy(),
@@ -1318,12 +1376,14 @@ async def get_status():
         }
 
 @app.get("/api/sensors")
-async def get_sensors():
+@limiter.limit("60/minute")
+async def get_sensors(request: Request):
     with state_lock:
         return sensors.copy()
 
 @app.get("/api/climate/history")
-async def get_climate_history(metric: str = "temperature", range_: str = Query("1h", alias="range")):
+@limiter.limit("60/minute")
+async def get_climate_history(request: Request, metric: str = "temperature", range_: str = Query("1h", alias="range")):
     """History for the dashboard range-filter charts. Each range returns a
     different time window AND point density, so 6H visibly spans more real
     time / more points than 1H."""
@@ -1349,11 +1409,13 @@ async def get_climate_history(metric: str = "temperature", range_: str = Query("
     }
 
 @app.get("/api/devices")
-async def get_devices():
+@limiter.limit("30/minute")
+async def get_devices(request: Request):
     with state_lock:
         return devices.copy()
 
 @app.post("/api/device/toggle")
+@limiter.limit("20/minute")
 async def toggle_device(body: DeviceToggle, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     with state_lock:
         if body.room not in devices:
@@ -1371,10 +1433,12 @@ async def toggle_device(body: DeviceToggle, request: Request, user: Optional[dic
         return {"ok": True, "device": dev, "energy_watts": calculate_energy()}
 
 @app.get("/api/family")
-async def get_family():
+@limiter.limit("30/minute")
+async def get_family(request: Request):
     return family_members
 
 @app.post("/api/family/add")
+@limiter.limit("10/minute")
 async def add_family(body: MemberAdd, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     colors = ["#4f46e5","#7c3aed","#0891b2","#059669","#dc2626","#d97706","#be185d"]
     avatar = body.name[:2].upper()
@@ -1385,6 +1449,7 @@ async def add_family(body: MemberAdd, request: Request, user: Optional[dict] = D
     return member
 
 @app.delete("/api/family/{member_id}")
+@limiter.limit("10/minute")
 async def delete_member(member_id: int, request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     global family_members
     removed = next((m for m in family_members if m["id"] == member_id), None)
@@ -1394,11 +1459,13 @@ async def delete_member(member_id: int, request: Request, user: Optional[dict] =
     return {"ok": True}
 
 @app.get("/api/security/logs")
-async def get_security_logs():
+@limiter.limit("60/minute")
+async def get_security_logs(request: Request):
     return db.get_security_logs()
 
 @app.post("/api/security/logs")
-async def add_security_log(body: LogAdd):
+@limiter.limit("10/minute")
+async def add_security_log(body: LogAdd, request: Request):
     entry = db.add_security_log(
         person=body.person,
         type_=body.type,
@@ -1412,7 +1479,8 @@ async def add_security_log(body: LogAdd):
     return entry
 
 @app.post("/api/security/intruder")
-async def log_intruder():
+@limiter.limit("10/minute")
+async def log_intruder(request: Request):
     entry = db.add_security_log(
         person="Unknown Person",
         type_="intruder",
@@ -1425,7 +1493,8 @@ async def log_intruder():
     return entry
 
 @app.post("/api/security/member-detected")
-async def log_member_detected(body: dict):
+@limiter.limit("10/minute")
+async def log_member_detected(body: dict, request: Request):
     name = body.get("name", "Unknown")
     entry = db.add_security_log(
         person=name,
@@ -1444,11 +1513,13 @@ async def log_member_detected(body: dict):
     return entry
 
 @app.get("/api/alerts")
-async def get_alerts():
+@limiter.limit("30/minute")
+async def get_alerts(request: Request):
     return alert_history[-20:]
 
 @app.get("/api/energy")
-async def get_energy():
+@limiter.limit("30/minute")
+async def get_energy(request: Request):
     with state_lock:
         watts = calculate_energy()
         room_breakdown_watts = {}
@@ -1505,8 +1576,38 @@ async def get_energy():
 # ──────────────────────────────────────────────
 # WEBSOCKET for real-time updates
 # ──────────────────────────────────────────────
+# slowapi decorators only work on HTTP routes, so the WebSocket endpoint is
+# limited by capping concurrent connections per client IP instead. The counter
+# lives on the single asyncio event loop (check + increment happen with no
+# await in between), so no lock is needed.
+MAX_WS_CONNECTIONS_PER_IP = 5
+ws_connections_per_ip: dict = {}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    ip = websocket.client.host if websocket.client else "unknown"
+    if ws_connections_per_ip.get(ip, 0) >= MAX_WS_CONNECTIONS_PER_IP:
+        logger.warning("WebSocket rejected — %s already has %d open connections",
+                       ip, MAX_WS_CONNECTIONS_PER_IP)
+        if "websocket.http.response" in websocket.scope.get("extensions", {}):
+            # Deny the upgrade with a real HTTP 429 (supported by uvicorn)
+            await websocket.send({
+                "type": "websocket.http.response.start",
+                "status": 429,
+                "headers": [(b"content-type", b"application/json"),
+                            (b"retry-after", b"60")],
+            })
+            await websocket.send({
+                "type": "websocket.http.response.body",
+                "body": b'{"error": "rate_limit_exceeded", "message": '
+                        b'"Too many WebSocket connections - please wait a moment", '
+                        b'"retry_after": 60}',
+            })
+        else:
+            await websocket.close(code=1013)  # 1013 = try again later
+        return
+    ws_connections_per_ip[ip] = ws_connections_per_ip.get(ip, 0) + 1
     await websocket.accept()
     ws_clients.append(websocket)
     try:
@@ -1521,12 +1622,17 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json(data)
             await __import__('asyncio').sleep(3)
     except WebSocketDisconnect:
-        if websocket in ws_clients:
-            ws_clients.remove(websocket)
+        pass
     except Exception as e:
         logger.error("WebSocket connection error: %s", e, exc_info=True)
+    finally:
         if websocket in ws_clients:
             ws_clients.remove(websocket)
+        remaining = ws_connections_per_ip.get(ip, 1) - 1
+        if remaining <= 0:
+            ws_connections_per_ip.pop(ip, None)
+        else:
+            ws_connections_per_ip[ip] = remaining
 
 # ──────────────────────────────────────────────
 # STARTUP
@@ -1556,4 +1662,7 @@ async def startup_event():
     print("="*55 + "\n")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    # PORT env var lets a dev harness assign a free port when 8000 is taken
+    # (e.g. by the docker compose stack). Docker itself uses the Dockerfile
+    # CMD (uvicorn CLI, explicit port), so this only affects direct runs.
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=False)

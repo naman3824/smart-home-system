@@ -1254,10 +1254,20 @@
             <path id="clim-modal-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
             <path id="clim-modal-area" fill="url(#clim-modal-grad)"/>
             <path id="clim-modal-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <line id="clim-modal-hair" x1="-10" x2="-10" y1="0" y2="200" stroke="var(--border2)" stroke-width="1" style="display:none"/>
-            <circle id="clim-modal-dot" r="4" cx="-10" cy="-10" fill="#f59e0b" stroke="#0d0f18" stroke-width="1.5" style="display:none"/>
+            <line id="clim-modal-hairline"
+              x1="0" y1="0" x2="0" y2="200"
+              stroke="#253347" stroke-width="1"
+              display="none"/>
+            <circle id="clim-modal-dot" r="4"
+              fill="#f59e0b" stroke="#111827" stroke-width="2"
+              display="none"/>
           </svg>
-          <div id="clim-modal-tip" style="display:none;position:absolute;pointer-events:none;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;color:var(--text);white-space:nowrap;z-index:5;box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>
+          <div id="clim-modal-tooltip" style="
+            display:none; position:absolute; pointer-events:none;
+            background:#1a2235; border:1px solid #253347; border-radius:6px;
+            padding:6px 10px; font-size:12px; color:#e2e8f0;
+            white-space:nowrap; z-index:10;
+          "></div>
           <div id="clim-modal-empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--text3);font-size:12px"></div>
         </div>
       </div>
@@ -2168,6 +2178,30 @@ function connectWebSocket(){
   }
 }
 let wsRetryCount=0;
+
+// Global 429 handler — every fetch (apiFetch or direct) passes through this
+// wrapper; on a rate-limit response a brief non-blocking toast is shown.
+// Throttled so a burst of 429s produces one toast, not a stack of them.
+let _lastRateLimitToastAt=0;
+const _origFetch=window.fetch.bind(window);
+window.fetch=async function(...args){
+  const r=await _origFetch(...args);
+  if(r.status===429){
+    const now=Date.now();
+    if(now-_lastRateLimitToastAt>3000){
+      _lastRateLimitToastAt=now;
+      const c=document.getElementById('alertToast');
+      if(c){
+        const t=document.createElement('div');
+        t.className='toast toast-warn';
+        t.innerHTML=`<span class="toast-close" onclick="this.parentElement.remove()">✕</span><div class="toast-title">Too many requests — slowing down</div>`;
+        c.appendChild(t);
+        setTimeout(()=>{if(t.parentNode)t.remove();},3000);
+      }
+    }
+  }
+  return r;
+};
 
 // API
 async function apiFetch(path,options){
@@ -4351,14 +4385,19 @@ function climRenderModal(){
     line.setAttribute('d','');area.setAttribute('d','');grid.setAttribute('d','');
     stats.innerHTML='';empty.style.display='flex';
     empty.textContent='No data for this range yet.';
-    _climModalScale=null;
+    modalCurrentData=[];modalCurrentTimestamps=[];modalCurrentScale=null;
     return;
   }
   empty.style.display='none';
   const {d,mn,mx}=climBuildPath(vals,W,H,metric==='temp'?2:4);
   if(vals.length>=2){area.setAttribute('d',d+` L${W},${H} L0,${H} Z`);line.setAttribute('d',d);}
   else{area.setAttribute('d','');line.setAttribute('d','');}
-  _climModalScale={mn,mx,vals:vals.slice()};   // scale info for the hover tooltip
+  // Expose this render's data + scale to the hover handler
+  modalCurrentData=vals.slice();
+  modalCurrentTimestamps=(climModalData.timestamps||[]).slice();
+  modalCurrentScale={mn,mx};
+  // Dot color tracks the metric: temp → orange, hum → teal
+  document.getElementById('clim-modal-dot').setAttribute('fill',metric==='temp'?'#f59e0b':'#22d3ee');
   let gd='';for(let i=0;i<=4;i++){const y=(i/4)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
   const avg=(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
   stats.innerHTML=`
@@ -4369,35 +4408,44 @@ function climRenderModal(){
 }
 
 // ── Modal chart hover tooltip (modal ONLY — small inline charts unaffected) ──
-let _climModalScale=null;   // {mn,mx,vals} captured on each modal render
+let modalCurrentData=[];        // values drawn in the modal, set on every climRenderModal()
+let modalCurrentTimestamps=[];  // matching ISO timestamps
+let modalCurrentScale=null;     // {mn,mx} from climBuildPath — same scale as the drawn path
 function climModalHideHover(){
-  const tip=document.getElementById('clim-modal-tip'),hair=document.getElementById('clim-modal-hair'),dot=document.getElementById('clim-modal-dot');
-  if(tip)tip.style.display='none';if(hair)hair.style.display='none';if(dot)dot.style.display='none';
+  const tip=document.getElementById('clim-modal-tooltip'),hair=document.getElementById('clim-modal-hairline'),dot=document.getElementById('clim-modal-dot');
+  if(tip)tip.style.display='none';
+  if(hair)hair.setAttribute('display','none');
+  if(dot)dot.setAttribute('display','none');
 }
 (function climModalHoverInit(){
   const svg=document.getElementById('clim-modal-svg');if(!svg)return;
-  const tip=document.getElementById('clim-modal-tip'),hair=document.getElementById('clim-modal-hair'),dot=document.getElementById('clim-modal-dot');
+  const tip=document.getElementById('clim-modal-tooltip'),hair=document.getElementById('clim-modal-hairline'),dot=document.getElementById('clim-modal-dot');
   svg.addEventListener('mousemove',e=>{
-    const s=_climModalScale;
-    if(!s||!s.vals.length){climModalHideHover();return;}
-    // Convert mouse position to SVG viewBox coords via the rendered rect —
-    // no fixed pixel assumptions (viewBox is 700x200, stretched to fit).
+    const data=modalCurrentData,s=modalCurrentScale;
+    if(!data.length||!s){climModalHideHover();return;}
     const rect=svg.getBoundingClientRect();if(!rect.width)return;
-    const mouseX=e.clientX-rect.left;
-    const frac=Math.max(0,Math.min(1,mouseX/rect.width));
-    const n=s.vals.length,W=700,H=200;
-    const idx=Math.round(frac*(n-1));
-    const v=s.vals[idx],span=(s.mx-s.mn)||1;
-    // Hairline follows the mouse; dot snaps to the nearest data point.
-    const hx=frac*W, px=n>1?(idx/(n-1))*W:W, py=H-((v-s.mn)/span)*H;
-    hair.setAttribute('x1',hx);hair.setAttribute('x2',hx);hair.style.display='';
-    dot.setAttribute('cx',px);dot.setAttribute('cy',py);dot.setAttribute('fill',CLIM_COLORS[climModalMetric]);dot.style.display='';
-    const iso=(climModalData.timestamps||[])[idx];
-    tip.textContent=`${v.toFixed(1)}${CLIM_UNITS[climModalMetric]}${iso?' — '+climFmtTs(iso,climModalFilter):''}`;
-    tip.style.display='block';tip.style.top='8px';
-    let left=mouseX+12;const tw=tip.offsetWidth;
-    if(left+tw>rect.width-6)left=mouseX-tw-12;   // flip side near the right edge
-    tip.style.left=Math.max(6,left)+'px';
+    const W=700,H=200;
+    // Mouse → SVG viewBox coordinates (viewBox 700x200 stretched to the rect)
+    const svgX=((e.clientX-rect.left)/rect.width)*W;
+    let index=Math.round((svgX/W)*(data.length-1));
+    index=Math.max(0,Math.min(data.length-1,index));
+    const v=data[index],span=(s.mx-s.mn)||1;
+    // Same scale math climBuildPath used to plot the line: sx(i), sy(v)
+    const cx=data.length<2?W:(index/(data.length-1))*W;
+    const cy=H-((v-s.mn)/span)*H;
+    hair.setAttribute('x1',svgX);hair.setAttribute('x2',svgX);hair.setAttribute('display','block');
+    dot.setAttribute('cx',cx);dot.setAttribute('cy',cy);dot.setAttribute('display','block');
+    const iso=modalCurrentTimestamps[index];
+    let hhmm='';
+    if(iso){const dt=new Date(iso);hhmm=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');}
+    tip.textContent=`${v.toFixed(1)}${CLIM_UNITS[climModalMetric]}${hhmm?' — '+hhmm:''}`;
+    // Cursor-relative placement (+12px right, 28px above). The div is
+    // position:absolute inside .c2-modal-chart, so convert client coords
+    // to container-relative ones — raw clientX/Y would be page-offset.
+    const cont=tip.parentElement.getBoundingClientRect();
+    tip.style.left=(e.clientX-cont.left+12)+'px';
+    tip.style.top=(e.clientY-cont.top-28)+'px';
+    tip.style.display='block';
   });
   svg.addEventListener('mouseleave',climModalHideHover);
 })();

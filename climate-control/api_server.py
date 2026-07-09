@@ -19,10 +19,15 @@ from typing import Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # ──────────────────────────────────────────────
 # CONFIGURATION & LOGGING
@@ -241,12 +246,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Rate limiting (slowapi) ──────────────────────────────────────────────
+# Internal service (only server.py calls it in production), but limited
+# anyway as a safety measure. default_limits + SlowAPIMiddleware cover any
+# route without its own @limiter.limit decorator at 30/minute.
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+app.state.limiter = limiter
+
+
+def _rate_limit_exceeded(request: Request, exc: RateLimitExceeded):
+    retry_after = 60
+    try:
+        retry_after = int(exc.limit.limit.get_expiry())
+    except Exception:
+        pass
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests — please wait a moment",
+            "retry_after": retry_after,
+        },
+    )
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded)
+app.add_middleware(SlowAPIMiddleware)
+
 
 # ──────────────────────────────────────────────
 # ENDPOINTS
 # ──────────────────────────────────────────────
 @app.get("/api/all", response_model=AllDataResponse, responses={503: {"model": ErrorResponse}})
-async def get_all():
+@limiter.limit("60/minute")
+async def get_all(request: Request):
     """Return all weather + HVAC data in one response."""
     async with data_lock:
         if latest_data["last_updated"] is None:
