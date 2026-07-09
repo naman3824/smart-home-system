@@ -18,7 +18,12 @@ services:
 
   # Public dashboard. The only service exposed to the host.
   smart-home:
-    image: ${ECR_REGISTRY}/smart-home-system:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # ECR_REGISTRY is set in CI/production (GitHub Actions secret).
+    # Locally it defaults to "smart-home-system", triggering a local build.
+    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system:latest
     ports:
       - "8000:8000"
     environment:
@@ -29,6 +34,8 @@ services:
     # Persist SQLite DB + logs across restarts/redeploys (matches Dockerfile VOLUME).
     volumes:
       - smarthome-data:/app/data
+      # Face embeddings, read-only — the container only ever reads embeddings.json.
+      - ./face-data:/app/face-data:ro
     restart: unless-stopped
 
 volumes:

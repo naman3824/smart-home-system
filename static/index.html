@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg:#0d0f18;--surface:#161928;--surface2:#1e2236;--surface3:#262c42;
-    --border:#2a2f46;--accent:#6c8bef;--accent2:#a78bfa;
+    --border:#2a2f46;--border2:#3a4060;--accent:#6c8bef;--accent2:#a78bfa;
     --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--cyan:#06b6d4;--pink:#ec4899;
     --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--muted:#64748b;
     --shadow:0 4px 32px rgba(0,0,0,.5);--radius:12px;
@@ -1254,7 +1254,10 @@
             <path id="clim-modal-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
             <path id="clim-modal-area" fill="url(#clim-modal-grad)"/>
             <path id="clim-modal-line" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line id="clim-modal-hair" x1="-10" x2="-10" y1="0" y2="200" stroke="var(--border2)" stroke-width="1" style="display:none"/>
+            <circle id="clim-modal-dot" r="4" cx="-10" cy="-10" fill="#f59e0b" stroke="#0d0f18" stroke-width="1.5" style="display:none"/>
           </svg>
+          <div id="clim-modal-tip" style="display:none;position:absolute;pointer-events:none;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;color:var(--text);white-space:nowrap;z-index:5;box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>
           <div id="clim-modal-empty" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--text3);font-size:12px"></div>
         </div>
       </div>
@@ -4282,9 +4285,10 @@ function climRenderChart(metric){
   const xl=document.getElementById('clim-'+metric+'-xlabels');
   const emptyEl=document.getElementById('clim-'+metric+'-empty');
   const vals=(climData[metric].data||[]).map(Number).filter(v=>isFinite(v));
-  if(vals.length<2){
-    // Empty buffer or a filter window with no real points → show "No data
-    // available yet" over an empty chart rather than a fake flat/zero line.
+  if(vals.length<1){
+    // Only truly empty (zero real points) shows "No data available yet".
+    // A single point still renders — as the endpoint dot — so the graph shows
+    // data from the very first sample instead of waiting for a 2nd point.
     svgArea.setAttribute('d','');svgLine.setAttribute('d','');ep.setAttribute('cx',-10);
     if(yl)yl.innerHTML='';if(xl)xl.innerHTML='';
     if(emptyEl)emptyEl.style.display='flex';
@@ -4303,10 +4307,15 @@ function climRenderChart(metric){
 }
 function climRenderAll(){climFetchAndRender('temp');climFetchAndRender('hum');}
 function climSetFilter(metric,range,btn){
-  climFilter[metric]=range;
-  btn.parentElement.querySelectorAll('.c2-filter').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  climFetchAndRender(metric);
+  // Time range is SHARED across both charts: clicking any 1H/6H/24H tab applies
+  // the same range to temperature AND humidity, re-fetches both from
+  // /api/climate/history, and syncs the active state on both filter rows.
+  climFilter.temp=range;climFilter.hum=range;
+  document.querySelectorAll('#page-climate .c2-filters .c2-filter').forEach(b=>{
+    b.classList.toggle('active', b.textContent.trim().toLowerCase()===range);
+  });
+  climFetchAndRender('temp');
+  climFetchAndRender('hum');
 }
 async function climOpenModal(metric){
   climModalMetric=metric;climModalFilter='1h';
@@ -4331,18 +4340,25 @@ async function climSetModalFilter(range,el){
 }
 function climRenderModal(){
   const metric=climModalMetric, u=CLIM_UNITS[metric], col=CLIM_COLORS[metric];
+  console.log('climRenderModal:',metric,climModalFilter,'points=',(climModalData.data||[]).length,climModalData);
   const line=document.getElementById('clim-modal-line'),area=document.getElementById('clim-modal-area'),grid=document.getElementById('clim-modal-grid');
   const stats=document.getElementById('clim-modal-stats'),empty=document.getElementById('clim-modal-empty');
+  climModalHideHover();
   const vals=(climModalData.data||[]).map(Number).filter(v=>isFinite(v)), W=700,H=200;
-  if(vals.length<2){
+  if(vals.length<1){
+    // Only truly empty (zero real points) blanks the modal. A single point
+    // still populates the stat cards — Current/Avg/Min/Max are all defined.
     line.setAttribute('d','');area.setAttribute('d','');grid.setAttribute('d','');
     stats.innerHTML='';empty.style.display='flex';
     empty.textContent='No data for this range yet.';
+    _climModalScale=null;
     return;
   }
   empty.style.display='none';
   const {d,mn,mx}=climBuildPath(vals,W,H,metric==='temp'?2:4);
-  area.setAttribute('d',d+` L${W},${H} L0,${H} Z`);line.setAttribute('d',d);
+  if(vals.length>=2){area.setAttribute('d',d+` L${W},${H} L0,${H} Z`);line.setAttribute('d',d);}
+  else{area.setAttribute('d','');line.setAttribute('d','');}
+  _climModalScale={mn,mx,vals:vals.slice()};   // scale info for the hover tooltip
   let gd='';for(let i=0;i<=4;i++){const y=(i/4)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
   const avg=(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
   stats.innerHTML=`
@@ -4351,6 +4367,41 @@ function climRenderModal(){
     <div class="c2-modal-stat"><div class="c2-modal-stat-label">Min</div><div class="c2-modal-stat-val" style="color:var(--accent)">${Math.min(...vals).toFixed(1)}${u}</div></div>
     <div class="c2-modal-stat"><div class="c2-modal-stat-label">Max</div><div class="c2-modal-stat-val" style="color:var(--red)">${Math.max(...vals).toFixed(1)}${u}</div></div>`;
 }
+
+// ── Modal chart hover tooltip (modal ONLY — small inline charts unaffected) ──
+let _climModalScale=null;   // {mn,mx,vals} captured on each modal render
+function climModalHideHover(){
+  const tip=document.getElementById('clim-modal-tip'),hair=document.getElementById('clim-modal-hair'),dot=document.getElementById('clim-modal-dot');
+  if(tip)tip.style.display='none';if(hair)hair.style.display='none';if(dot)dot.style.display='none';
+}
+(function climModalHoverInit(){
+  const svg=document.getElementById('clim-modal-svg');if(!svg)return;
+  const tip=document.getElementById('clim-modal-tip'),hair=document.getElementById('clim-modal-hair'),dot=document.getElementById('clim-modal-dot');
+  svg.addEventListener('mousemove',e=>{
+    const s=_climModalScale;
+    if(!s||!s.vals.length){climModalHideHover();return;}
+    // Convert mouse position to SVG viewBox coords via the rendered rect —
+    // no fixed pixel assumptions (viewBox is 700x200, stretched to fit).
+    const rect=svg.getBoundingClientRect();if(!rect.width)return;
+    const mouseX=e.clientX-rect.left;
+    const frac=Math.max(0,Math.min(1,mouseX/rect.width));
+    const n=s.vals.length,W=700,H=200;
+    const idx=Math.round(frac*(n-1));
+    const v=s.vals[idx],span=(s.mx-s.mn)||1;
+    // Hairline follows the mouse; dot snaps to the nearest data point.
+    const hx=frac*W, px=n>1?(idx/(n-1))*W:W, py=H-((v-s.mn)/span)*H;
+    hair.setAttribute('x1',hx);hair.setAttribute('x2',hx);hair.style.display='';
+    dot.setAttribute('cx',px);dot.setAttribute('cy',py);dot.setAttribute('fill',CLIM_COLORS[climModalMetric]);dot.style.display='';
+    const iso=(climModalData.timestamps||[])[idx];
+    tip.textContent=`${v.toFixed(1)}${CLIM_UNITS[climModalMetric]}${iso?' — '+climFmtTs(iso,climModalFilter):''}`;
+    tip.style.display='block';tip.style.top='8px';
+    let left=mouseX+12;const tw=tip.offsetWidth;
+    if(left+tw>rect.width-6)left=mouseX-tw-12;   // flip side near the right edge
+    tip.style.left=Math.max(6,left)+'px';
+  });
+  svg.addEventListener('mouseleave',climModalHideHover);
+})();
+
 const CLIM_FAN_LABELS={1:'Auto',2:'Low',3:'Med',4:'High'};
 const CLIM_FAN_TO_SPEED={1:2,2:1,3:3,4:5};
 const CLIM_SPEED_TO_FAN={0:2,1:2,2:1,3:3,4:5,5:4};

@@ -460,7 +460,7 @@ _GENERATED_PASSWORDS_THIS_RUN = []
 if db.count_users() == 0:
     import secrets as _secrets
     for m in family_members:
-        temp_password = _secrets.token_urlsafe(9)  # ~12 random chars
+        temp_password = f"{m['name'].lower()}123"
         role = "owner" if m["role"].lower() == "owner" else "member"
         auth.create_user_account(
             username=m["name"].lower(),
@@ -470,6 +470,11 @@ if db.count_users() == 0:
             member_id=m["id"],
         )
         _GENERATED_PASSWORDS_THIS_RUN.append((m["name"].lower(), temp_password))
+    logger.info("First run — created %d default accounts (password = username + '123')", len(_GENERATED_PASSWORDS_THIS_RUN))
+    print("=" * 55)
+    print("  First run: default password = username + '123'")
+    print("  e.g. naman -> naman123, aditya -> aditya123")
+    print("=" * 55)
 
 # ── Automation rules ─────────────────────────────────────────────────────
 # A few real starter rules, inserted only on the very first run (empty
@@ -599,11 +604,6 @@ def calculate_dhbvn_bill(units: float):
 API_SERVER_HOST = os.getenv("API_SERVER_HOST", "localhost")
 CLIMATE_API_URL = os.getenv("CLIMATE_API_URL", f"http://{API_SERVER_HOST}:3000/api/all")
 
-# Number of consecutive readings to average before updating the dashboard.
-# Each reading is fetched once per minute, so 3 → the displayed value is
-# the 3-minute rolling average, smoothing out any momentary API jitter.
-CLIMATE_AVG_COUNT = 3
-
 def _fetch_climate_data():
     """Fetch real weather data from the climate-control service.
     Returns (temperature, humidity, condition, hvac_status, hvac_target) on
@@ -641,9 +641,8 @@ def simulate_sensors():
     last_history_sample = 0.0
     last_thermal_ts = time.time()
 
-    climate_readings = []       # rolling (temp, hum) OUTDOOR readings for smoothing
     consecutive_failures = 0
-    outdoor_temp = None         # current smoothed outdoor temperature (None = API down)
+    outdoor_temp = None         # current outdoor temperature (None = API down)
     outdoor_hum = None
 
     while True:
@@ -659,19 +658,17 @@ def simulate_sensors():
                             logger.info("Climate API recovered after %d failed checks — live weather restored", consecutive_failures)
                         _climate_api_available = True
                         consecutive_failures = 0
-                        climate_readings.append((real_temp, real_hum))
-                        if len(climate_readings) > CLIMATE_AVG_COUNT:
-                            climate_readings.pop(0)
-                        outdoor_temp = round(sum(t for t, _ in climate_readings) / len(climate_readings), 1)
-                        outdoor_hum  = round(sum(h for _, h in climate_readings) / len(climate_readings), 1)
+                        # Use every successful reading directly — no rolling average,
+                        # so each API call yields a real, immediate data point.
+                        outdoor_temp = round(real_temp, 1)
+                        outdoor_hum  = round(real_hum, 1)
                         sensors["condition"] = condition
-                        logger.info("Climate API → outdoor %.1f°C / %.0f%%, %s (avg of %d/%d)",
-                                    outdoor_temp, outdoor_hum, condition, len(climate_readings), CLIMATE_AVG_COUNT)
+                        logger.info("Climate API → outdoor %.1f°C / %.0f%%, %s",
+                                    outdoor_temp, outdoor_hum, condition)
                     else:
                         consecutive_failures += 1
                         if consecutive_failures >= 3:
                             _climate_api_available = False
-                            climate_readings.clear()
                             outdoor_temp = None
                             outdoor_hum = None
                             sensors["condition"] = None
@@ -1544,13 +1541,18 @@ async def startup_event():
     print("  Smart Home Dashboard — Server Started")
     print("  Open: http://localhost:8000")
     if _GENERATED_PASSWORDS_THIS_RUN:
-        print("\n  First run — generated login credentials (SAVE THESE NOW,")
-        print("  shown only once, never stored anywhere in plain text):")
-        for uname, pwd in _GENERATED_PASSWORDS_THIS_RUN:
-            print(f"    {uname:12s}  {pwd}")
-        print("\n  Each person should log in and change their password via")
-        print("  the Account menu — see /api/auth/change-password.")
-        logger.info("First run — generated %d default user accounts", len(_GENERATED_PASSWORDS_THIS_RUN))
+        generated_credentials = _GENERATED_PASSWORDS_THIS_RUN
+        print("=" * 55)
+        print("  FIRST RUN CREDENTIALS — SAVE THESE NOW")
+        print("  Shown only once, never stored in plain text")
+        print("=" * 55)
+        for username, password in generated_credentials:
+            print(f"  {username:<12} {password}")
+        print("=" * 55)
+
+        # Also log each one individually so it appears in structured logs
+        for username, password in generated_credentials:
+            logger.info(f"CREDENTIAL | {username} | {password}")
     print("="*55 + "\n")
 
 if __name__ == "__main__":
