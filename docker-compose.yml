@@ -37,6 +37,11 @@ services:
     environment:
       # Resolves to the api-server container via compose's internal DNS.
       - API_SERVER_HOST=api-server
+      # Mark the session cookie Secure (HTTPS-only). Browsers still accept
+      # Secure cookies on http://localhost, so local docker testing keeps working.
+      - SECURE_COOKIES=true
+      # The only origin allowed for credentialed cross-origin API calls.
+      - CORS_ORIGIN=https://smart-home-system-url.duckdns.org
     depends_on:
       - api-server
     # Persist SQLite DB + logs across restarts/redeploys (matches Dockerfile VOLUME).
@@ -46,7 +51,10 @@ services:
       # edits show up without a rebuild. Read-only; server never writes here.
       - ./static:/app/static:ro
       # Face embeddings, read-only — the container only ever reads embeddings.json.
-      - ./face-data:/app/face-data:ro
+      # embeddings.json is gitignored, so in production the git clone's face-data/
+      # is EMPTY — the deploy script exports FACE_DATA_HOST_PATH=/mnt/face-data
+      # (the EBS mount where embeddings.json is scp'd). Local dev keeps ./face-data.
+      - ${FACE_DATA_HOST_PATH:-./face-data}:/app/face-data:ro
     deploy:
       resources:
         limits:

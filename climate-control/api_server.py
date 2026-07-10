@@ -25,7 +25,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -250,7 +249,16 @@ app.add_middleware(
 # Internal service (only server.py calls it in production), but limited
 # anyway as a safety measure. default_limits + SlowAPIMiddleware cover any
 # route without its own @limiter.limit decorator at 30/minute.
-limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+def get_real_client_ip(request: Request) -> str:
+    """Rate-limit key: X-Forwarded-For's first hop when behind a proxy,
+    else the direct client IP (matches server.py's keying)."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+limiter = Limiter(key_func=get_real_client_ip, default_limits=["30/minute"])
 app.state.limiter = limiter
 
 

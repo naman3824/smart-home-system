@@ -2086,9 +2086,13 @@ function updateClock(){
   document.getElementById('dateDisplay').textContent=now.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
   const h=now.getHours();
   const greet=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-  const owner=familyMembers.find(m=>m.role==='Owner');
   const homeCount=familyMembers.filter(m=>m.status==='home').length;
-  setText('greetingText',`${greet}, ${owner?.name||'Aditya'} 👋`);
+  // updateClock() runs once immediately at load — before `currentUser` (declared
+  // later) is initialized — so reading it directly would throw a temporal-dead-zone
+  // ReferenceError and halt the script. Guard that first tick; after init this is
+  // the logged-in user's display name (from /api/auth/me), null when logged out.
+  let who='there'; try{ who=currentUser?.display_name||'there'; }catch(e){}
+  setText('greetingText',`${greet}, ${who} 👋`);
   setText('greetingSub',homeCount>0?`${homeCount} member${homeCount>1?'s':''} at home. Everything looks fine.`:'Everyone is out. House is secured.');
 }
 setInterval(updateClock,1000);updateClock();

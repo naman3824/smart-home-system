@@ -19,7 +19,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 import db
@@ -754,14 +753,30 @@ app = FastAPI(title="Smart Home API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
+    # Same-origin dashboard doesn't need CORS at all; this list only affects
+    # cross-origin callers (e.g. API testing tools). Wildcard + credentials is
+    # both insecure and rejected by browsers, so restrict to one known origin.
+    allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:8000")],
+    allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"]
 )
 
 # ── Rate limiting (slowapi) ──────────────────────────────────────────────
 # Per-client-IP limits on every route. In-memory storage — resets on restart,
 # which is fine for a single-container deployment.
-limiter = Limiter(key_func=get_remote_address)
+
+def get_real_client_ip(request: Request) -> str:
+    """Rate-limit key: the real client IP. Behind Nginx every request's socket
+    peer is the proxy, which would put ALL users in one shared rate-limit
+    bucket — so use X-Forwarded-For's first hop when present, falling back to
+    the direct client IP for local/no-proxy runs."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+limiter = Limiter(key_func=get_real_client_ip)
 app.state.limiter = limiter
 
 
@@ -843,6 +858,11 @@ class LoginRequest(BaseModel):
 # ── Authentication ──────────────────────────────
 SESSION_COOKIE_NAME = "smarthome_session"
 
+# Secure flag on the session cookie — set SECURE_COOKIES=true in production
+# (HTTPS). Default off so plain-HTTP local dev keeps working; browsers do
+# accept Secure cookies on http://localhost, so docker-compose can enable it.
+SECURE_COOKIES = os.getenv("SECURE_COOKIES", "false").lower() == "true"
+
 
 async def get_current_user(smarthome_session: Optional[str] = Cookie(default=None)):
     """FastAPI dependency — raises 401 if there's no valid session cookie.
@@ -878,6 +898,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
         key=SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
+        secure=SECURE_COOKIES,
         samesite="lax",
         max_age=auth.SESSION_DURATION_HOURS * 3600,
     )
@@ -1586,7 +1607,12 @@ ws_connections_per_ip: dict = {}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    ip = websocket.client.host if websocket.client else "unknown"
+    # Same proxy-awareness as get_real_client_ip: behind Nginx the socket peer
+    # is the proxy, which would make every household dashboard share the same
+    # 5-connection budget.
+    forwarded = websocket.headers.get("x-forwarded-for")
+    ip = (forwarded.split(",")[0].strip() if forwarded
+          else (websocket.client.host if websocket.client else "unknown"))
     if ws_connections_per_ip.get(ip, 0) >= MAX_WS_CONNECTIONS_PER_IP:
         logger.warning("WebSocket rejected — %s already has %d open connections",
                        ip, MAX_WS_CONNECTIONS_PER_IP)

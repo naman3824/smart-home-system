@@ -40,11 +40,22 @@ jobs:
           script: |
             cd ~/smart-home-system
 
+            # Sync the clone first — docker-compose.yml, static/ (bind-mounted into
+            # the container), and climate-control/ (api-server builds from source
+            # on EC2) must match the commit that produced the image being deployed.
+            git pull origin main
+
             # Login to ECR on the EC2 instance
             aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
             # Export ECR_REGISTRY so docker compose can interpolate ${ECR_REGISTRY} in the image field
             export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
+
+            # Host path of the face-embeddings EBS mount — docker-compose.yml
+            # interpolates ${FACE_DATA_HOST_PATH:-./face-data} for the volume.
+            # Without this, compose would mount the (gitignored, empty) clone dir
+            # and face recognition would silently lose embeddings.json.
+            export FACE_DATA_HOST_PATH=/mnt/face-data
 
             # Ensure docker compose plugin is available
             if ! docker compose version > /dev/null 2>&1; then
