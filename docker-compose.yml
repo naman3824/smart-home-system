@@ -7,7 +7,7 @@ services:
   api-server:
     # Swapped out local build context for remote ECR registry pull.
     # Locally defaults to "smart-home-system", triggering a local image lookup.
-    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system-api:latest
+    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system:api-latest
     # OPENWEATHER_API_KEY etc. come from climate-control/.env at runtime (not
     # baked into the image). Fails fast on startup if the key is missing.
     env_file:
