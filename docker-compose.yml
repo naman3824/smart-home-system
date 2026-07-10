@@ -5,9 +5,9 @@ services:
   # Weather / HVAC micro-service. Internal only — no host port mapping, so it is
   # NOT reachable from outside the compose network, only by the sibling service.
   api-server:
-    build:
-      context: .
-      dockerfile: climate-control/Dockerfile
+    # Swapped out local build context for remote ECR registry pull.
+    # Locally defaults to "smart-home-system", triggering a local image lookup.
+    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system-api:latest
     # OPENWEATHER_API_KEY etc. come from climate-control/.env at runtime (not
     # baked into the image). Fails fast on startup if the key is missing.
     env_file:
@@ -26,9 +26,6 @@ services:
 
   # Public dashboard. The only service exposed to the host.
   smart-home:
-    build:
-      context: .
-      dockerfile: Dockerfile
     # ECR_REGISTRY is set in CI/production (GitHub Actions secret).
     # Locally it defaults to "smart-home-system", triggering a local build.
     image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system:latest
@@ -36,9 +33,9 @@ services:
       - "8000:8000"
     environment:
       # Resolves to the api-server container via compose's internal DNS.
-      - API_SERVER_HOST=api-server
       # Mark the session cookie Secure (HTTPS-only). Browsers still accept
       # Secure cookies on http://localhost, so local docker testing keeps working.
+      - API_SERVER_HOST=api-server
       - SECURE_COOKIES=true
       # The only origin allowed for credentialed cross-origin API calls.
       - CORS_ORIGIN=https://smart-home-system-url.duckdns.org

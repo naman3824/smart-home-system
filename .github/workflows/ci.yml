@@ -20,8 +20,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      # Modified: Proactively install standard dependencies for both the main dashboard and the climate engine
       - name: Install core dependencies
-        run: pip install fastapi "uvicorn[standard]" pydantic python-dotenv requests
+        run: |
+          pip install fastapi "uvicorn[standard]" pydantic python-dotenv requests
+          if [ -f climate-control/requirements.txt ]; then
+            pip install -r climate-control/requirements.txt
+          fi
 
       - name: Check server.py syntax
         run: python -m py_compile server.py && echo "server.py OK"
@@ -29,7 +34,7 @@ jobs:
       - name: Check all Python files compile
         run: |
           for f in $(find . -name "*.py" -not -path "./.venv/*" -not -path "./__pycache__/*"); do
-            python -m py_compile "$f" && echo "OK: $f" || echo "FAIL: $f"
+            python -m py_compile "$f" && echo "OK: $f" || exit 1
           done
 
       - name: Validate server imports and startup
