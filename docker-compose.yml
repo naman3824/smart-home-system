@@ -1,13 +1,19 @@
-# Runs the two services as separate, independently-manageable containers on the
-# same host and default network. The dashboard (smart-home) reaches the weather
-# service (api-server) by its compose service name over Docker's internal DNS.
+# ─────────────────────────────────────────────────────────────────
+# Base compose file — LOCAL DEVELOPMENT
+# ─────────────────────────────────────────────────────────────────
+# Just run:  docker compose up -d
+# Both services build from local source. No registry access needed.
+# For production, layer the prod override on top:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ─────────────────────────────────────────────────────────────────
 services:
   # Weather / HVAC micro-service. Internal only — no host port mapping, so it is
   # NOT reachable from outside the compose network, only by the sibling service.
   api-server:
-    # Swapped out local build context for remote ECR registry pull.
-    # Locally defaults to "smart-home-system", triggering a local image lookup.
-    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system:api-latest
+    # Always builds from the climate-control subdirectory, in every environment.
+    build:
+      context: .
+      dockerfile: climate-control/Dockerfile
     # OPENWEATHER_API_KEY etc. come from climate-control/.env at runtime (not
     # baked into the image). Fails fast on startup if the key is missing.
     env_file:
@@ -26,9 +32,9 @@ services:
 
   # Public dashboard. The only service exposed to the host.
   smart-home:
-    # ECR_REGISTRY is set in CI/production (GitHub Actions secret).
-    # Locally it defaults to "smart-home-system", triggering a local build.
-    image: ${ECR_REGISTRY:-smart-home-system}/smart-home-system:latest
+    # Locally: build from the repo root Dockerfile.
+    # Production: overridden to pull from ECR via docker-compose.prod.yml.
+    build: .
     ports:
       - "8000:8000"
     environment:
@@ -47,11 +53,9 @@ services:
       # Live static files — overrides the image's baked-in copy so index.html
       # edits show up without a rebuild. Read-only; server never writes here.
       - ./static:/app/static:ro
-      # Face embeddings, read-only — the container only ever reads embeddings.json.
-      # embeddings.json is gitignored, so in production the git clone's face-data/
-      # is EMPTY — the deploy script exports FACE_DATA_HOST_PATH=/mnt/face-data
-      # (the EBS mount where embeddings.json is scp'd). Local dev keeps ./face-data.
-      - ${FACE_DATA_HOST_PATH:-./face-data}:/app/face-data:ro
+      # Face embeddings — named volume (writable) so face enrollment via
+      # POST /api/face-embeddings can persist embeddings.json across redeploys.
+      - face-data:/app/face-data
     deploy:
       resources:
         limits:
@@ -64,3 +68,4 @@ services:
 
 volumes:
   smarthome-data:
+  face-data:

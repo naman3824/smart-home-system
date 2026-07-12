@@ -416,6 +416,7 @@
             <div class="am-name" id="amName">—</div>
             <div class="am-role" id="amRole">—</div>
           </div>
+          <button onclick="window.open('tools/enroll-faces.html','_blank')">📷 Register Face</button>
           <button onclick="showChangePasswordModal()">🔑 Change password</button>
           <button onclick="showPage('audit')">📋 Audit log</button>
           <button class="danger" onclick="handleLogout()">🚪 Sign out</button>
@@ -1115,6 +1116,8 @@
   #page-climate .c2-modal-stat-label{font-size:10px;color:var(--text2);margin-bottom:3px}
   #page-climate .c2-modal-stat-val{font-size:18px;font-weight:700}
   #page-climate .c2-modal-chart{height:230px;position:relative}
+  #page-climate .c2-modal-ylabels{position:absolute;left:0;top:4px;bottom:22px;width:34px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;padding-right:6px;font-size:10px;color:var(--text3);pointer-events:none}
+  #page-climate .c2-modal-xlabels{position:absolute;left:38px;right:8px;bottom:2px;height:14px;display:flex;justify-content:space-between;font-size:10px;color:var(--text3);pointer-events:none}
   @media(max-width:900px){#page-climate .c2-metric-row,#page-climate .c2-controls,#page-climate .c2-charts{grid-template-columns:1fr}}
   </style>
   <div class="content page" id="page-climate">
@@ -1124,12 +1127,12 @@
       <div class="c2-card">
         <div class="c2-label" id="cl-temp-label">Indoor Temperature</div>
         <div class="c2-value" style="color:var(--orange)" id="cl-temp">--<span class="sensor-unit">°C</span></div>
-        <div class="c2-sub" id="cl-feels-like">feels like --°C</div>
+        <div class="c2-sub" id="cl-feels-like">outdoor: —</div>
       </div>
       <div class="c2-card">
         <div class="c2-label">Humidity</div>
         <div class="c2-value" style="color:var(--cyan)" id="cl-hum">--<span class="sensor-unit">%</span></div>
-        <div class="c2-sub" id="cl-hum-status">checking…</div>
+        <div class="c2-sub" id="cl-hum-status">outdoor: —</div>
       </div>
       <div class="c2-card">
         <div class="c2-label">HVAC Mode</div>
@@ -1249,7 +1252,8 @@
         </div>
         <div class="c2-modal-stats" id="clim-modal-stats"></div>
         <div class="c2-modal-chart">
-          <svg id="clim-modal-svg" viewBox="0 0 700 200" style="width:100%;height:100%" preserveAspectRatio="none">
+          <div class="c2-modal-ylabels" id="clim-modal-ylabels"></div>
+          <svg id="clim-modal-svg" viewBox="0 0 700 200" style="position:absolute;left:38px;right:8px;top:4px;bottom:22px;width:auto;height:auto" preserveAspectRatio="none">
             <defs><linearGradient id="clim-modal-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f59e0b" stop-opacity="0.25" id="clim-modal-g1"/><stop offset="100%" stop-color="#f59e0b" stop-opacity="0" id="clim-modal-g2"/></linearGradient></defs>
             <path id="clim-modal-grid" stroke="#2a2f46" stroke-width="0.5" fill="none"/>
             <path id="clim-modal-area" fill="url(#clim-modal-grad)"/>
@@ -1262,6 +1266,7 @@
               fill="#f59e0b" stroke="#111827" stroke-width="2"
               display="none"/>
           </svg>
+          <div class="c2-modal-xlabels" id="clim-modal-xlabels"></div>
           <div id="clim-modal-tooltip" style="
             display:none; position:absolute; pointer-events:none;
             background:#1a2235; border:1px solid #253347; border-radius:6px;
@@ -2288,15 +2293,14 @@ function climUpdateHero(s){
   const avg=s.temperature;                 // whole-home average; null when the API is down
   const shown=(rt!=null)?rt:avg;           // null when there is no real reading at all
   const tempEl=document.getElementById('cl-temp');
+  // Sub-value: outdoor reading from the same sensors payload; '—' when unavailable
+  setText('cl-feels-like',`outdoor: ${s.outdoor_temperature!=null?s.outdoor_temperature+'°C':'—'}`);
   if(isNil(shown)){
     tempEl.innerHTML='—';tempEl.style.color='var(--muted)';
-    setText('cl-feels-like','No data available');
     setText('cl-temp-label','Indoor Temperature');
     return;
   }
   tempEl.innerHTML=`${shown}<span class="sensor-unit">°C</span>`;tempEl.style.color='var(--orange)';
-  const rf=(room&&s.room_feels_like&&s.room_feels_like[room]!=null)?s.room_feels_like[room]:s.feels_like;
-  setText('cl-feels-like',`feels like ${rf!=null?rf:'--'}°C${rt!=null?` · home avg ${avg}°C`:''}`);
   setText('cl-temp-label',rt!=null?`${ROOM_NAMES[room]||room} Temperature`:'Indoor Temperature');
 }
 
@@ -2338,7 +2342,7 @@ function updateSensorUI(s,watts){
   const clHvac=document.getElementById('cl-hvac');
   if(hvacOffline){clHvac.textContent='HVAC OFFLINE';clHvac.style.color='var(--muted)';setText('cl-target','No data available');}
   else{clHvac.textContent=s.hvac_status;clHvac.style.color='';setText('cl-target',`Target: ${s.hvac_target||'--'} °C`);}
-  setText('cl-hum-status',isNil(s.humidity)?'No data available':(s.humidity<40?'too dry':s.humidity>70?'too humid':'comfortable'));
+  setText('cl-hum-status',`outdoor: ${s.outdoor_humidity!=null?s.outdoor_humidity+'%':'—'}`);
   const ac=aqiColor(aqi);
   setText('aqi-num',aqi||'--');setText('aqi-cat',s.aqi_category||'--');
   const an=document.getElementById('aqi-num'),ac2=document.getElementById('aqi-cat');
@@ -3162,14 +3166,6 @@ const FACE_API_WEIGHTS_URLS=[
   'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights',
   'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights'
 ];
-const KNOWN_FACES=[
-  {name:'Aditya',  file:'/images/Aditya.jpeg'},
-  {name:'Diksha',  file:'/images/Diksha.jpeg'},
-  {name:'Agrim',   file:'/images/Agrim.jpeg'},
-  {name:'Naman',   file:'/images/Naman.jpeg'},
-  {name:'Kamakshi',file:'/images/Kamakshi.jpeg'}
-];
-
 // Dynamically load a <script> tag, resolving/rejecting on load/error
 function loadScript(src){
   return new Promise((resolve,reject)=>{
@@ -3236,11 +3232,21 @@ async function loadFaceModels(){
   // descriptor computation on every page load (though the three model bundles are
   // still required for live camera detection — none can be skipped).
   if(statusEl)statusEl.textContent='Loading face embeddings…';
+  // Shown when there is simply no enrolled face data yet — a normal empty
+  // state, distinct from an actual load failure below.
+  const NOT_ENROLLED_MSG='<span style="color:var(--orange)">No faces enrolled yet — open <b>Register Face</b> from your account menu to add one.</span>';
   try{
-    const resp=await fetch('/face-data/embeddings.json');
+    const resp=await fetch('/api/face-embeddings',{credentials:'include'});
+    // 404 = embeddings.json doesn't exist yet (nobody has enrolled). Not an
+    // error — recognition just stays off until someone enrolls via the tool.
+    if(resp.status===404){
+      faceLabeledDescriptors=[];faceMatcher=null;faceModelsReady=true;
+      if(statusEl)statusEl.innerHTML=NOT_ENROLLED_MSG;
+      return false;
+    }
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     const entries=await resp.json();
-    if(!Array.isArray(entries)||!entries.length)throw new Error('empty or invalid');
+    if(!Array.isArray(entries))throw new Error('embeddings.json is not a list');
     const results=[];
     for(const entry of entries){
       if(!entry.name||!Array.isArray(entry.descriptors)||!entry.descriptors.length)continue;
@@ -3251,17 +3257,21 @@ async function loadFaceModels(){
     faceMatcher=results.length?new faceapi.FaceMatcher(results,0.6):null;
     faceModelsReady=true;
     if(statusEl){
+      // results.length===0 means the file exists but has no usable entries —
+      // still just "nothing enrolled yet" from the user's point of view.
       statusEl.innerHTML=results.length
         ?`✅ Recognizing ${results.length} registered faces (from embeddings)`
-        :'<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
+        :NOT_ENROLLED_MSG;
     }
     return results.length>0;
   }catch(e){
+    // A genuine failure (network error, non-404 HTTP, malformed JSON) —
+    // distinct from the empty "not enrolled yet" state above.
     console.warn('Could not load embeddings.json:',e);
     faceLabeledDescriptors=[];
     faceMatcher=null;
     faceModelsReady=true; // models are loaded, just no reference data
-    if(statusEl)statusEl.innerHTML='<span style="color:var(--orange)">No reference faces could be loaded — recognition disabled, use the simulate buttons</span>';
+    if(statusEl)statusEl.innerHTML=`<span style="color:var(--orange)">Could not load face data (${e.message}) — recognition disabled, use the simulate buttons.</span>`;
     return false;
   }
 }
@@ -4305,6 +4315,26 @@ function climPickLabels(timestamps,range,n){
   for(let i=0;i<n;i++)out.push(climFmtTs(timestamps[Math.floor(i*(timestamps.length-1)/(n-1||1))],range));
   return out;
 }
+// ── Time-axis labels derived from the CURRENT clock ──────────────────────────
+// The backend history timestamps proved unreliable for wall-clock display (the
+// server emits them in the container's timezone, so they render hours off in
+// the browser). Instead we label the axis by counting back from "now" across
+// the selected window — so labels always reflect the real current time.
+const CLIM_WINDOW_SEC={'1h':3600,'6h':21600,'24h':86400,'7d':604800,'30d':2592000};
+function climFmtClock(d,range){
+  if(range==='7d'||range==='30d')return (d.getMonth()+1)+'/'+d.getDate();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+// Wall-clock time at fractional position f in [0,1] across the window ending now.
+function climTimeAtFrac(range,f){
+  const win=(CLIM_WINDOW_SEC[range]||3600)*1000;
+  return new Date(Date.now()-win*(1-f));
+}
+function climAxisLabels(range,n){
+  const out=[];n=Math.max(2,n);
+  for(let i=0;i<n;i++)out.push(climFmtClock(climTimeAtFrac(range,i/(n-1)),range));
+  return out;
+}
 function climBuildPath(vals,W,H,pad){
   pad=pad||4;
   const mn=Math.min(...vals)-pad, mx=Math.max(...vals)+pad, span=(mx-mn)||1;
@@ -4341,19 +4371,19 @@ function climRenderChart(metric){
   ep.setAttribute('cx',ex);ep.setAttribute('cy',ey);
   let gd='';for(let i=0;i<=3;i++){const y=(i/3)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
   if(yl){yl.innerHTML='';for(let i=0;i<=3;i++){const v=mx-(i/3)*(mx-mn);const s=document.createElement('span');s.textContent=v.toFixed(0);yl.appendChild(s);}}
-  if(xl){xl.innerHTML='';climPickLabels(climData[metric].timestamps,climFilter[metric],5).forEach(l=>{const s=document.createElement('span');s.textContent=l;xl.appendChild(s);});}
+  if(xl){xl.innerHTML='';climAxisLabels(climFilter[metric],5).forEach(l=>{const s=document.createElement('span');s.textContent=l;xl.appendChild(s);});}
 }
 function climRenderAll(){climFetchAndRender('temp');climFetchAndRender('hum');}
 function climSetFilter(metric,range,btn){
-  // Time range is SHARED across both charts: clicking any 1H/6H/24H tab applies
-  // the same range to temperature AND humidity, re-fetches both from
-  // /api/climate/history, and syncs the active state on both filter rows.
-  climFilter.temp=range;climFilter.hum=range;
-  document.querySelectorAll('#page-climate .c2-filters .c2-filter').forEach(b=>{
-    b.classList.toggle('active', b.textContent.trim().toLowerCase()===range);
-  });
-  climFetchAndRender('temp');
-  climFetchAndRender('hum');
+  // Each chart keeps its OWN range — changing temperature's filter must not
+  // touch humidity's, and vice-versa. Only this metric's state, its own filter
+  // button row, and its data are updated.
+  climFilter[metric]=range;
+  if(btn&&btn.parentElement){
+    btn.parentElement.querySelectorAll('.c2-filter').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  climFetchAndRender(metric);
 }
 async function climOpenModal(metric){
   climModalMetric=metric;climModalFilter='1h';
@@ -4381,12 +4411,14 @@ function climRenderModal(){
   console.log('climRenderModal:',metric,climModalFilter,'points=',(climModalData.data||[]).length,climModalData);
   const line=document.getElementById('clim-modal-line'),area=document.getElementById('clim-modal-area'),grid=document.getElementById('clim-modal-grid');
   const stats=document.getElementById('clim-modal-stats'),empty=document.getElementById('clim-modal-empty');
+  const mylabels=document.getElementById('clim-modal-ylabels'),mxlabels=document.getElementById('clim-modal-xlabels');
   climModalHideHover();
   const vals=(climModalData.data||[]).map(Number).filter(v=>isFinite(v)), W=700,H=200;
   if(vals.length<1){
     // Only truly empty (zero real points) blanks the modal. A single point
     // still populates the stat cards — Current/Avg/Min/Max are all defined.
     line.setAttribute('d','');area.setAttribute('d','');grid.setAttribute('d','');
+    if(mylabels)mylabels.innerHTML='';if(mxlabels)mxlabels.innerHTML='';
     stats.innerHTML='';empty.style.display='flex';
     empty.textContent='No data for this range yet.';
     modalCurrentData=[];modalCurrentTimestamps=[];modalCurrentScale=null;
@@ -4403,6 +4435,10 @@ function climRenderModal(){
   // Dot color tracks the metric: temp → orange, hum → teal
   document.getElementById('clim-modal-dot').setAttribute('fill',metric==='temp'?'#f59e0b':'#22d3ee');
   let gd='';for(let i=0;i<=4;i++){const y=(i/4)*H;gd+=`M0,${y} L${W},${y} `;}grid.setAttribute('d',gd);
+  // Y axis: value scale (max at top → min at bottom), same mn/mx the line is plotted against.
+  if(mylabels){mylabels.innerHTML='';for(let i=0;i<=4;i++){const yv=mx-(i/4)*(mx-mn);const s=document.createElement('span');s.textContent=yv.toFixed(metric==='temp'?1:0);mylabels.appendChild(s);}}
+  // X axis: real wall-clock times across the selected window (oldest left → now right).
+  if(mxlabels){mxlabels.innerHTML='';climAxisLabels(climModalFilter,6).forEach(l=>{const s=document.createElement('span');s.textContent=l;mxlabels.appendChild(s);});}
   const avg=(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
   stats.innerHTML=`
     <div class="c2-modal-stat"><div class="c2-modal-stat-label">Current</div><div class="c2-modal-stat-val" style="color:${col}">${vals[vals.length-1].toFixed(1)}${u}</div></div>
@@ -4439,10 +4475,12 @@ function climModalHideHover(){
     const cy=H-((v-s.mn)/span)*H;
     hair.setAttribute('x1',svgX);hair.setAttribute('x2',svgX);hair.setAttribute('display','block');
     dot.setAttribute('cx',cx);dot.setAttribute('cy',cy);dot.setAttribute('display','block');
-    const iso=modalCurrentTimestamps[index];
-    let hhmm='';
-    if(iso){const dt=new Date(iso);hhmm=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');}
-    tip.textContent=`${v.toFixed(1)}${CLIM_UNITS[climModalMetric]}${hhmm?' — '+hhmm:''}`;
+    // Time shown must match the count-back-from-now X axis (not the backend's
+    // timezone-shifted timestamps), so derive it from the hovered point's
+    // fractional position across the window.
+    const frac=data.length<2?1:index/(data.length-1);
+    const hhmm=climFmtClock(climTimeAtFrac(climModalFilter,frac),climModalFilter);
+    tip.textContent=`${v.toFixed(1)}${CLIM_UNITS[climModalMetric]} — ${hhmm}`;
     // Cursor-relative placement (+12px right, 28px above). The div is
     // position:absolute inside .c2-modal-chart, so convert client coords
     // to container-relative ones — raw clientX/Y would be page-offset.
@@ -4515,23 +4553,41 @@ async function climFanCommit(v){
   if(r&&r.device){devices[room].fan=r.device;showToast(`${climActiveMember}: fan ${CLIM_FAN_LABELS[v]}`,'success');}
   else showToast('Could not update fan','danger');
 }
+// Mode presets — clicking a mode is a one-shot preset that sets BOTH a sensible
+// target temperature AND fan speed (not just on/off + mode). The RC thermal sim
+// then drives the room toward that target on every tick.
+//   Cool → cold (20°) + High fan     Heat → warm (27°) + Low fan
+//   Fan  → AC off + Med fan          Auto → moderate (24°) + Auto fan
+//   Off  → AC + fan both off
+// Fan device speeds (5/3/1/2) are chosen so they map cleanly to the slider's
+// High/Med/Low/Auto labels via CLIM_SPEED_TO_FAN.
+const CLIM_MODE_PRESETS={
+  cool:{ac:{on:true,mode:'cool',temp:20}, fan:{on:true,speed:5}},
+  heat:{ac:{on:true,mode:'heat',temp:27}, fan:{on:true,speed:1}},
+  fan: {ac:{on:false},                    fan:{on:true,speed:3}},
+  auto:{ac:{on:true,mode:'cool',temp:24}, fan:{on:true,speed:2}},
+  off: {ac:{on:false},                    fan:{on:false}},
+};
 async function climSetMode(mode,el){
   const room=climRoomOf(climActiveMember), dev=devices[room]||{}, calls=[];
+  const preset=CLIM_MODE_PRESETS[mode];
+  if(!preset){climLoadMemberPrefs();return;}
   document.querySelectorAll('#clim-mode-pills .c2-pill').forEach(p=>p.classList.remove('active'));
-  el.classList.add('active');
-  if(mode==='off'){ if(dev.ac)calls.push(['ac',{on:false}]); if(dev.fan)calls.push(['fan',{on:false}]); }
-  else if(mode==='fan'){ if(dev.ac)calls.push(['ac',{on:false}]); if(dev.fan)calls.push(['fan',{on:true}]); }
-  else if(mode==='cool'){ if(dev.ac)calls.push(['ac',{on:true,mode:'cool'}]); }
-  else if(mode==='heat'){ if(dev.ac)calls.push(['ac',{on:true,mode:'heat'}]); }
-  else if(mode==='auto'){ if(dev.ac)calls.push(['ac',{on:true,mode:'cool'}]); }
-  if(!calls.length){showToast('No controllable device for this mode in the room','warn');climLoadMemberPrefs();return;}
+  if(el)el.classList.add('active');
+  // Apply the preset to whichever of AC / fan actually exist in the room.
+  if(preset.ac&&dev.ac)calls.push(['ac',preset.ac]);
+  if(preset.fan&&dev.fan)calls.push(['fan',preset.fan]);
+  if(!calls.length){showToast('No controllable device for this mode in this room','warn');climLoadMemberPrefs();return;}
   for(const [device,value] of calls){
     const r=await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device,value})});
     if(r&&r.device)devices[room][device]=r.device;
   }
   setText('cl-hvac',mode.toUpperCase());
-  showToast(`${climActiveMember}: mode ${mode}`,'success');
+  showToast(`${climActiveMember}: ${mode} preset applied`,'success');
+  // Re-sync sliders/displays from the new device state, then keep the clicked
+  // preset highlighted (climLoadMemberPrefs only re-derives cool/heat/off).
   climLoadMemberPrefs();
+  document.querySelectorAll('#clim-mode-pills .c2-pill').forEach(p=>p.classList.toggle('active',p.dataset.mode===mode));
 }
 function climOnShow(){
   climRenderMemberTabs();

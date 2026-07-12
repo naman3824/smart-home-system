@@ -51,9 +51,9 @@ jobs:
             # Authenticate internal Docker host using EC2 IAM instance identity role
             aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-            # Export orchestration contexts for tag evaluation inside docker-compose.yml
+            # Export orchestration contexts used by docker-compose.prod.yml
             export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
-            export FACE_DATA_HOST_PATH=/mnt/face-data
+            export ECR_REPOSITORY=${{ env.ECR_REPOSITORY }}
 
             # Guarantee core deployment dependency frameworks are available
             if ! docker compose version > /dev/null 2>&1; then
@@ -65,7 +65,7 @@ jobs:
             docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:api-latest
 
             # Cleanly teardown legacy running instances and clear execution layers
-            docker compose down || true
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
 
-            # Boot up the environment with zero local code building required
-            docker compose up -d
+            # Boot up the environment using pre-built ECR images (prod override)
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d

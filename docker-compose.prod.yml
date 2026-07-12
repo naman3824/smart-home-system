@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────────────────────
+# Production override — PULL PRE-BUILT IMAGES FROM ECR
+# ─────────────────────────────────────────────────────────────────
+# Usage (on EC2 / in CI):
+#   export ECR_REGISTRY=169424082626.dkr.ecr.ap-south-1.amazonaws.com
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# This file overrides services to pull pre-built images from ECR.
+# When both `image:` and `build:` are present in the merged config,
+# Compose uses `image:` as the image name and only builds if the
+# image is missing. Since we pre-pull the ECR images in deploy.yml,
+# no build ever runs in production.
+# ─────────────────────────────────────────────────────────────────
+services:
+  api-server:
+    # Override: pull pre-built api image from ECR instead of building locally.
+    image: ${ECR_REGISTRY}/smart-home-system:api-latest
+
+  smart-home:
+    # Override: pull pre-built dashboard image from ECR instead of building locally.
+    image: ${ECR_REGISTRY}/smart-home-system:latest

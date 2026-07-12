@@ -8,6 +8,8 @@ COPY auth.py .
 COPY applog.py .
 COPY automation.py .
 COPY static/ static/
+# Standalone browser tools (enroll-faces.html) served at /tools by server.py.
+COPY tools/ tools/
 
 # /app/data holds smarthome.db (SQLite) and logs/server.log. Mount this as a
 # Docker volume in production (-v smarthome-data:/app/data) so security logs,

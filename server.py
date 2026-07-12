@@ -5,6 +5,7 @@ Integrates: Climate Control, AQI Monitor, Smoke/Fire/Gas Detector,
 """
 
 import os
+import json
 import time
 import random
 import threading
@@ -17,7 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Requ
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 
@@ -768,11 +769,13 @@ app.add_middleware(
 def get_real_client_ip(request: Request) -> str:
     """Rate-limit key: the real client IP. Behind Nginx every request's socket
     peer is the proxy, which would put ALL users in one shared rate-limit
-    bucket — so use X-Forwarded-For's first hop when present, falling back to
-    the direct client IP for local/no-proxy runs."""
+    bucket — so use X-Forwarded-For when present, taking the LAST hop (the IP
+    Nginx actually observed and appended). The FIRST XFF value is client-supplied
+    and can be spoofed to dodge the limiter, so it must never be trusted. Falls
+    back to the direct client IP for local/no-proxy runs."""
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -823,10 +826,17 @@ images_dir = os.path.join(os.path.dirname(__file__), "images")
 os.makedirs(images_dir, exist_ok=True)
 app.mount("/images", StaticFiles(directory=images_dir), name="images")
 
-# Mount face-data directory (pre-computed face embeddings for recognition)
+# Face-data directory holds embeddings.json. It is deliberately NOT served as a
+# public static mount — biometric embeddings are returned only via the
+# authenticated GET /api/face-embeddings endpoint below.
 FACE_DATA_DIR = os.getenv("FACE_DATA_DIR", os.path.join(os.path.dirname(__file__), "face-data"))
 os.makedirs(FACE_DATA_DIR, exist_ok=True)
-app.mount("/face-data", StaticFiles(directory=FACE_DATA_DIR), name="face-data")
+
+# Mount tools directory (standalone browser utilities, e.g. enroll-faces.html —
+# the "Register Face" link in the dashboard opens /tools/enroll-faces.html).
+tools_dir = os.path.join(os.path.dirname(__file__), "tools")
+os.makedirs(tools_dir, exist_ok=True)
+app.mount("/tools", StaticFiles(directory=tools_dir), name="tools")
 
 # ──────────────────────────────────────────────
 # PYDANTIC MODELS
@@ -975,6 +985,98 @@ async def get_system_logs(request: Request, lines: int = 200, level: Optional[st
         raise HTTPException(status_code=403, detail="Only the owner account can view system logs")
     lines = max(1, min(lines, 1000))
     return {"lines": get_recent_logs(lines=lines, level=level)}
+
+
+class FaceEmbeddingsUpload(BaseModel):
+    embeddings: list
+
+    @field_validator("embeddings")
+    @classmethod
+    def _validate_embeddings(cls, v):
+        # Bound the payload so an authenticated member can't fill the disk with a
+        # giant upload. A real face-api descriptor is exactly 128 floats in
+        # [-1, 1]; a household is a handful of members with a few photos each.
+        if len(v) > 10:
+            raise ValueError("At most 10 entries allowed per upload")
+        for entry in v:
+            if not isinstance(entry, dict):
+                raise ValueError("Each embedding entry must be an object")
+            descs = entry.get("descriptors")
+            if not isinstance(descs, list):
+                raise ValueError("Each entry must include a 'descriptors' list")
+            if len(descs) > 10:
+                raise ValueError("At most 10 descriptors per person allowed")
+            for d in descs:
+                if not isinstance(d, list) or len(d) != 128:
+                    raise ValueError("Each descriptor must be exactly 128 floats")
+                for f in d:
+                    if isinstance(f, bool) or not isinstance(f, (int, float)):
+                        raise ValueError("Descriptor values must be numbers")
+                    if f < -1.0 or f > 1.0:
+                        raise ValueError("Descriptor floats must be in range -1.0 to 1.0")
+        return v
+
+
+@app.post("/api/face-embeddings")
+@limiter.limit("10/minute")
+async def save_face_embeddings(body: FaceEmbeddingsUpload, request: Request, user: dict = Depends(get_current_user)):
+    """Register the CALLER'S OWN face embedding.
+
+    Any authenticated member may enroll, but only for themselves: the entry is
+    always stored under the session's own display name (any name in the payload
+    is ignored), and it is MERGED into face-data/embeddings.json — replacing
+    only this member's entry and leaving every other member's data untouched.
+    So a member can never add or overwrite another member's face. The file
+    stays a JSON array, matching what the dashboard loads from
+    /face-data/embeddings.json."""
+    my_name = user["display_name"]
+
+    # Collect the caller's descriptors from the payload. The payload's name is
+    # deliberately ignored — a member can only ever write their OWN entry.
+    descriptors = []
+    for entry in body.embeddings:
+        if isinstance(entry, dict) and isinstance(entry.get("descriptors"), list):
+            descriptors.extend(entry["descriptors"])
+    if not descriptors:
+        raise HTTPException(status_code=400, detail="No face descriptors provided")
+
+    os.makedirs(FACE_DATA_DIR, exist_ok=True)
+    path = os.path.join(FACE_DATA_DIR, "embeddings.json")
+
+    # Load existing entries so other members' data is preserved on write.
+    existing = []
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, list):
+                existing = loaded
+        except Exception:
+            existing = []
+
+    # Drop any previous entry for THIS member, then append the fresh one.
+    merged = [e for e in existing
+              if not (isinstance(e, dict) and e.get("name") == my_name)]
+    merged.append({"name": my_name, "descriptors": descriptors})
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merged, f)
+    db.add_audit_entry(user["username"], "face_embeddings_updated",
+                       detail=f"{my_name}: {len(descriptors)} descriptor(s)", ip_address=_client_ip(request))
+    return {"success": True}
+
+
+@app.get("/api/face-embeddings")
+@limiter.limit("30/minute")
+async def get_face_embeddings(request: Request, user: dict = Depends(get_current_user)):
+    """Return the enrolled face embeddings (the JSON array the dashboard's face
+    matcher loads). Auth-gated — biometric data is no longer exposed via a public
+    static mount. 404 when nothing has been enrolled yet."""
+    path = os.path.join(FACE_DATA_DIR, "embeddings.json")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No embeddings enrolled yet")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 # ── Automation rules ────────────────────────────────────────────────────
