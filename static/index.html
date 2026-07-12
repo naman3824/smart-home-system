@@ -1461,11 +1461,12 @@
         <div class="card-header"><span class="card-title">🚪 Security events</span></div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Triggers face recognition pipeline → security log → floor-plan entrance pulse → notifications</div>
-          <button class="btn sim-btn sim-member" onclick="simulateFace('Aditya')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Aditya arrives</div><div style="font-size:11px;opacity:.7">Owner · authorized</div></div></button>
+           <button class="btn sim-btn sim-member" onclick="simulateFace('Aditya')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Aditya arrives</div><div style="font-size:11px;opacity:.7">Owner · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Diksha')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Diksha arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Agrim')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Agrim arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Naman')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Naman arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Kamakshi')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Kamakshi arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Shreyas')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Shreyas arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-intruder" onclick="simulateFace('Unknown')">
             <span style="font-size:18px">🚨</span>
             <div style="text-align:left"><div style="font-weight:700">Unknown intruder</div><div style="font-size:11px;opacity:.7">Unrecognized face → siren + alert</div></div>
@@ -1690,6 +1691,7 @@
             <button class="btn btn-sm" onclick="simulateFace('Agrim')">Agrim</button>
             <button class="btn btn-sm" onclick="simulateFace('Naman')">Naman</button>
             <button class="btn btn-sm" onclick="simulateFace('Kamakshi')">Kamakshi</button>
+            <button class="btn btn-sm" onclick="simulateFace('Shreyas')">Shreyas</button>
             <button class="btn btn-sm btn-danger" onclick="simulateFace('Unknown')">Unknown 🚨</button>
           </div>
         </div>
@@ -2082,7 +2084,7 @@ let energyHistory=Array(20).fill(0),tempHistory=Array(20).fill(0),humHistory=Arr
 let lockState=true,cameraStream=null,alertCount=0,lastAqiPush=0,notifications=[],activeScene=null;
 
 const ROOM_NAMES={living_room:'Living Room',aditya_room:"Aditya's Room",diksha_room:"Diksha's Room",agrim_room:"Agrim's Room",naman_room:"Naman's Room",kamakshi_room:"Kamakshi's Room",kitchen:'Kitchen',bathroom:'Bathroom'};
-const MEMBER_ROOM={Aditya:'aditya_room',Diksha:'diksha_room',Agrim:'agrim_room',Naman:'naman_room',Kamakshi:'kamakshi_room'};
+const MEMBER_ROOM={Aditya:'aditya_room',Diksha:'diksha_room',Agrim:'agrim_room',Naman:'naman_room',Kamakshi:'kamakshi_room',Shreyas:'living_room'};
 
 // CLOCK
 function updateClock(){

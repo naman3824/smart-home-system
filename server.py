@@ -442,10 +442,17 @@ _DEFAULT_FAMILY = [
     {"id": 2, "name": "Diksha", "role": "Member", "status": "away", "avatar": "D", "color": "#7c3aed"},
     {"id": 3, "name": "Agrim",  "role": "Member", "status": "away", "avatar": "Ag", "color": "#0891b2"},
     {"id": 4, "name": "Naman",  "role": "Member", "status": "away", "avatar": "N", "color": "#059669"},
-    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"}
+    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"},
+    {"id": 6, "name": "Shreyas", "role": "Member", "status": "away", "avatar": "S", "color": "#d97706"}
 ]
 db.seed_family_if_empty(_DEFAULT_FAMILY)
 family_members = db.get_family_members()
+
+# Check if Shreyas is in family members database; if not, add him
+shreyas_member = next((m for m in family_members if m["name"].lower() == "shreyas"), None)
+if not shreyas_member:
+    shreyas_member = db.add_family_member(name="Shreyas", role="Member", status="away", avatar="S", color="#d97706")
+    family_members = db.get_family_members()
 
 # Security logs — persisted in SQLite, starts empty on a fresh database.
 # Real entries are added going forward by actual face recognition / manual
@@ -478,6 +485,19 @@ if db.count_users() == 0:
     print("  First run: default password = username + '123'")
     print("  e.g. naman -> naman123, aditya -> aditya123")
     print("=" * 55)
+
+# Ensure shreyas user exists in database
+shreyas_user = db.get_user_by_username("shreyas")
+if not shreyas_user:
+    shreyas_member = next((m for m in family_members if m["name"].lower() == "shreyas"), None)
+    if shreyas_member:
+        auth.create_user_account(
+            username="shreyas",
+            password="shreyas123",
+            display_name="Shreyas",
+            role="member",
+            member_id=shreyas_member["id"]
+        )
 
 # ── Automation rules ─────────────────────────────────────────────────────
 # A few real starter rules, inserted only on the very first run (empty
@@ -1233,7 +1253,8 @@ async def create_routine_endpoint(body: RoutineCreate, request: Request, user: d
     # Resolve room: use provided room or fall back to member's own room
     MEMBER_ROOM_MAP = {
         "Aditya": "aditya_room", "Diksha": "diksha_room",
-        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room"
+        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room",
+        "Shreyas": "living_room"
     }
     room = body.room or MEMBER_ROOM_MAP.get(member["name"], "living_room")
 
