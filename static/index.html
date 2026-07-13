@@ -1771,7 +1771,7 @@
     </div>
 
     <!-- ═══ Usage breakdown by member ═══ -->
-    <div class="card" style="margin-bottom:18px">
+    <div class="card" style="margin-bottom:18px" id="elec-card">
       <div class="card-header"><span class="card-title">⚡ Usage breakdown by member</span></div>
       <div class="card-body" id="elecMemberList" style="padding:0">
         <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading electricity data…</div>
@@ -4662,7 +4662,15 @@ async function renderPaymentsPage(){
     setText('pay-pending-count', `${data.pending_count} pending`);
   }
 
-  // ── Electricity section ──────────────────────────────────
+  // ── Electricity section (only show for current month) ────
+  const actualD = new Date();
+  const actualMonth = `${actualD.getFullYear()}-${String(actualD.getMonth()+1).padStart(2,'0')}`;
+  const isCurrentMonth = (currentPaymentMonth === actualMonth);
+
+  document.getElementById('elec-overview').style.display = isCurrentMonth ? 'flex' : 'none';
+  const elecCard = document.getElementById('elec-card');
+  if(elecCard) elecCard.style.display = isCurrentMonth ? 'block' : 'none';
+
   const elecListEl = document.getElementById('elecMemberList');
   if(elec && elecListEl){
     setText('elec-total-units', elec.total_units.toLocaleString('en-IN'));
