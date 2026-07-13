@@ -1,37 +1,31 @@
 name: CI
-
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-
 jobs:
   lint-and-syntax:
     runs-on: ubuntu-latest
     name: Syntax & import check
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install core dependencies
         run: |
           pip install -r requirements.txt
           if [ -f climate-control/requirements.txt ]; then
             pip install -r climate-control/requirements.txt
           fi
-
       - name: Check all Python files compile
         run: |
           for f in $(find . -name "*.py" -not -path "./.venv/*" -not -path "./__pycache__/*"); do
             python -m py_compile "$f" && echo "OK: $f" || exit 1
           done
-
       - name: Validate server imports and startup
-        run: python -c "import server; print('import: OK')"
+        run: |
+          python -c "import server; print('import: OK')"
