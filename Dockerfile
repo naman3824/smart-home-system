@@ -7,6 +7,7 @@ COPY db.py .
 COPY auth.py .
 COPY applog.py .
 COPY automation.py .
+COPY alert_responses.py .
 COPY static/ static/
 # Standalone browser tools (enroll-faces.html) served at /tools by server.py.
 COPY tools/ tools/
