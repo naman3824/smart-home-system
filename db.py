@@ -615,6 +615,7 @@ def get_rent_config():
 
 
 def upsert_rent_config(total_rent, due_day, auto_pay=False, notes=None):
+    from datetime import datetime as _dt
     with _db_lock, get_conn() as conn:
         existing = conn.execute("SELECT id FROM rent_config LIMIT 1").fetchone()
         if existing:
@@ -628,6 +629,17 @@ def upsert_rent_config(total_rent, due_day, auto_pay=False, notes=None):
                 "INSERT INTO rent_config (total_rent, due_day, auto_pay, notes) VALUES (?, ?, ?, ?)",
                 (total_rent, due_day, 1 if auto_pay else 0, notes)
             )
+        
+        # When rent changes, update any pending payments for the current month to the new share
+        month = _dt.now().strftime("%Y-%m")
+        # Currently 6 members hardcoded or fetch from family_members logic.
+        # It's safest to just update where status='pending' and month=month
+        n = 6 # len(family_members)
+        per_share = round(total_rent / n, 2) if n > 0 and total_rent > 0 else 0
+        conn.execute(
+            "UPDATE payments SET amount = ? WHERE month = ? AND status = 'pending'",
+            (per_share, month)
+        )
     return get_rent_config()
 
 
