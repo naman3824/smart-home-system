@@ -312,6 +312,19 @@
     .sensor-grid{grid-template-columns:repeat(2,1fr)}
     .two-col,.three-col{grid-template-columns:1fr}
   }
+  .ctrl-master-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px 10px;border-radius:12px;border:1.5px solid rgba(255,255,255,.08);background:var(--surface2);cursor:pointer;color:var(--text);font-size:12px;font-weight:600;transition:all .15s;min-height:80px}
+  .ctrl-master-btn:hover{background:rgba(var(--mc,108,139,239),.15);border-color:color-mix(in srgb,var(--mc,#6b8bef) 60%,transparent);transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.2)}
+  .ctrl-master-btn:active{transform:translateY(0)}
+  .ctrl-room-card{background:var(--surface2);border-radius:10px;border:1px solid var(--border);padding:12px}
+  .ctrl-room-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .ctrl-room-name{font-size:13px;font-weight:700}
+  .ctrl-device-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .ctrl-device-row:last-child{border-bottom:none}
+  .ctrl-toggle{width:34px;height:18px;border-radius:9px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+  .ctrl-toggle.on{background:var(--green)}
+  .ctrl-toggle.off{background:var(--surface)}
+  .ctrl-toggle::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .2s}
+  .ctrl-toggle.on::after{transform:translateX(16px)}
 </style>
 </head>
 <body>
@@ -351,6 +364,9 @@
     </div>
     <div class="nav-item" onclick="showPage('devices')" id="nav-devices">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg><span>Devices</span>
+    </div>
+    <div class="nav-item" onclick="showPage('control')" id="nav-control">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="8" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/><path d="M12 8v4M10 10h4"/></svg><span>Control Room</span>
     </div>
     <div class="nav-section">Monitoring</div>
     <div class="nav-item" onclick="showPage('climate')" id="nav-climate">
@@ -993,8 +1009,15 @@
               <circle cx="18" cy="86" r="6" fill="#22c55e"/>
               <text x="32" y="89" fill="#3a4060" font-size="8" font-family="Segoe UI,sans-serif">Member home</text>
             </g>
+            <!-- Emergency overlay: JS injects pulsing badges here when
+                 sprinklers/windows are active during an alert response -->
+            <g id="fp-emergency-layer"></g>
           </svg>
           <div class="room-tooltip" id="roomTooltip"></div>
+          <div id="fpEmergencyStrip" style="display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);align-items:center;gap:10px">
+            <span style="font-size:16px;animation:pulse 1s ease-in-out infinite">🚨</span>
+            <span id="fpEmergencyText" style="font-size:12.5px;color:var(--red);font-weight:600"></span>
+          </div>
         </div>
       </div>
     </div>
@@ -1120,6 +1143,72 @@
   #page-climate .c2-modal-xlabels{position:absolute;left:38px;right:8px;bottom:2px;height:14px;display:flex;justify-content:space-between;font-size:10px;color:var(--text3);pointer-events:none}
   @media(max-width:900px){#page-climate .c2-metric-row,#page-climate .c2-controls,#page-climate .c2-charts{grid-template-columns:1fr}}
   </style>
+
+  <!-- CONTROL ROOM -->
+  <div class="content page" id="page-control">
+    <div id="ctrl-emergency-banner" style="display:none;border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;background:rgba(239,68,68,.1);border:1.5px solid rgba(239,68,68,.5);align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:28px;animation:pulse 1s ease-in-out infinite">🚨</span>
+        <div>
+          <div style="font-weight:700;font-size:14px;color:var(--red)">EMERGENCY MODE ACTIVE</div>
+          <div id="ctrl-emergency-detail" style="font-size:12px;color:var(--text2);margin-top:2px"></div>
+        </div>
+      </div>
+      <button onclick="emergencyReset()" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px">✅ All Clear — Reset</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px" id="ctrl-sensor-strip">
+      <div class="sensor-card"><div class="sensor-label">🌡 Temp</div><div class="sensor-value" id="ctrl-temp" style="color:var(--orange)">--</div><div class="sensor-sub">°C</div></div>
+      <div class="sensor-card"><div class="sensor-label">💧 Humidity</div><div class="sensor-value" id="ctrl-humidity" style="color:var(--cyan)">--</div><div class="sensor-sub">%</div></div>
+      <div class="sensor-card"><div class="sensor-label">🌫 AQI</div><div class="sensor-value" id="ctrl-aqi" style="color:var(--green)">--</div><div class="sensor-sub" id="ctrl-aqi-cat">--</div></div>
+      <div class="sensor-card"><div class="sensor-label">💨 CO₂</div><div class="sensor-value" id="ctrl-co2" style="color:var(--accent)">--</div><div class="sensor-sub">ppm</div></div>
+      <div class="sensor-card"><div class="sensor-label">🔥 Smoke</div><div class="sensor-value" id="ctrl-smoke" style="color:var(--text)">--</div><div class="sensor-sub">%</div></div>
+      <div class="sensor-card"><div class="sensor-label">⚡ Power</div><div class="sensor-value" id="ctrl-watts" style="color:var(--yellow)">--</div><div class="sensor-sub">W live</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">🎛 Master Controls</span><span style="font-size:11px;color:var(--text3)">Affects every room instantly</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+          <button class="ctrl-master-btn" onclick="masterToggle('light',true)" style="--mc:#fbbf24"><span style="font-size:22px">💡</span><span>All Lights ON</span></button>
+          <button class="ctrl-master-btn" onclick="masterToggle('light',false)" style="--mc:#6b7280"><span style="font-size:22px">🌑</span><span>All Lights OFF</span></button>
+          <button class="ctrl-master-btn" onclick="masterToggle('ac',true)" style="--mc:#22d3ee"><span style="font-size:22px">❄️</span><span>All AC ON</span></button>
+          <button class="ctrl-master-btn" onclick="masterToggle('ac',false)" style="--mc:#6b7280"><span style="font-size:22px">⏸</span><span>All AC OFF</span></button>
+          <button class="ctrl-master-btn" onclick="masterToggle('fan',true)" style="--mc:#818cf8"><span style="font-size:22px">🌀</span><span>All Fans ON</span></button>
+          <button class="ctrl-master-btn" onclick="masterToggle('fan',false)" style="--mc:#6b7280"><span style="font-size:22px">⏹</span><span>All Fans OFF</span></button>
+          <button class="ctrl-master-btn" style="--mc:#ef4444" onclick="ctrlLockdown()"><span style="font-size:22px">🔒</span><span>Lockdown</span></button>
+          <button class="ctrl-master-btn" style="--mc:#22c55e" onclick="ctrlNightMode()"><span style="font-size:22px">🌙</span><span>Night Mode</span></button>
+          <button class="ctrl-master-btn" style="--mc:#f59e0b" onclick="ctrlAwayMode()"><span style="font-size:22px">🏠</span><span>Away Mode</span></button>
+          <button class="ctrl-master-btn" style="--mc:#a78bfa" onclick="ctrlMorningMode()"><span style="font-size:22px">🌅</span><span>Morning Mode</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">🏠 Room Controls</span><span style="font-size:11px;color:var(--text3)">Per-room quick toggles</span></div>
+      <div class="card-body" id="ctrl-room-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🔔 Active Alerts</span></div>
+        <div class="card-body" id="ctrl-alerts" style="max-height:220px;overflow-y:auto">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No alerts</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🔐 Security Status</span></div>
+        <div class="card-body" id="ctrl-security-status">
+          <div style="display:grid;gap:10px" id="ctrl-sec-grid">
+            <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="content page" id="page-climate">
 
     <!-- Metric cards (live from WebSocket sensors) -->
@@ -1328,6 +1417,33 @@
       <div class="card-body" id="en-tariff-breakdown"></div>
     </div>
     <div class="card"><div class="card-header"><span class="card-title">💡 Device breakdown</span></div><div class="card-body" id="en-devices"></div></div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🌿 Efficiency Score</span>
+        <span style="font-size:11px;color:var(--text3)">Based on current load vs rooms occupied</span>
+      </div>
+      <div class="card-body" id="en-efficiency">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+          <div style="position:relative;width:90px;height:90px;flex-shrink:0">
+            <svg viewBox="0 0 90 90" style="transform:rotate(-90deg);width:90px;height:90px">
+              <circle cx="45" cy="45" r="38" fill="none" stroke="var(--surface2)" stroke-width="10"/>
+              <circle cx="45" cy="45" r="38" fill="none" id="effCircle"
+                stroke="var(--green)" stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="239" stroke-dashoffset="239"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <div id="effScore" style="font-size:22px;font-weight:800;color:var(--green)">--</div>
+              <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">score</div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div id="effLabel" style="font-size:14px;font-weight:700;margin-bottom:6px">Calculating…</div>
+            <div id="effTips" style="font-size:12px;color:var(--text2);line-height:1.7"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- SAFETY -->
@@ -1404,6 +1520,20 @@
       </div>
     </div>
 
+    <!-- Emergency status banner (hidden when normal) -->
+    <div id="sf-emergency-banner" style="display:none;border-radius:var(--radius);padding:16px 18px;margin-bottom:18px;background:rgba(239,68,68,.1);border:1.5px solid rgba(239,68,68,.4)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:28px;animation:pulse 1s ease-in-out infinite">🚨</span>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--red)">EMERGENCY MODE ACTIVE</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:3px">Sprinklers, siren, or mains cutoff are currently active — check Control Room for detail.</div>
+          </div>
+        </div>
+        <button onclick="emergencyReset()" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px">✅ All Clear — Reset</button>
+      </div>
+    </div>
+
     <!-- Alert history -->
     <div class="card">
       <div class="card-header"><span class="card-title">🕐 Alert history</span></div>
@@ -1461,12 +1591,11 @@
         <div class="card-header"><span class="card-title">🚪 Security events</span></div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Triggers face recognition pipeline → security log → floor-plan entrance pulse → notifications</div>
-           <button class="btn sim-btn sim-member" onclick="simulateFace('Aditya')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Aditya arrives</div><div style="font-size:11px;opacity:.7">Owner · authorized</div></div></button>
+          <button class="btn sim-btn sim-member" onclick="simulateFace('Aditya')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Aditya arrives</div><div style="font-size:11px;opacity:.7">Owner · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Diksha')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Diksha arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Agrim')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Agrim arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Naman')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Naman arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-member" onclick="simulateFace('Kamakshi')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Kamakshi arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
-          <button class="btn sim-btn sim-member" onclick="simulateFace('Shreyas')"><span style="font-size:18px">👤</span><div style="text-align:left"><div style="font-weight:700">Shreyas arrives</div><div style="font-size:11px;opacity:.7">Member · authorized</div></div></button>
           <button class="btn sim-btn sim-intruder" onclick="simulateFace('Unknown')">
             <span style="font-size:18px">🚨</span>
             <div style="text-align:left"><div style="font-weight:700">Unknown intruder</div><div style="font-size:11px;opacity:.7">Unrecognized face → siren + alert</div></div>
@@ -1527,6 +1656,28 @@
       <div>
         <div style="font-weight:700;font-size:14px">Automation rules</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px">If a condition becomes true (AQI too high, nobody home, etc.), the matching action runs automatically. Checked every few seconds — each rule has its own cooldown so it won't spam-fire.</div>
+      </div>
+    </div>
+
+    <!-- Smart Suggestions -->
+    <div class="card" style="margin-bottom:18px" id="smartSuggestionsCard">
+      <div class="card-header">
+        <span class="card-title">🧠 Smart Suggestions</span>
+        <span style="font-size:11px;color:var(--text3)">Learned from your manual toggle habits</span>
+      </div>
+      <div class="card-body" id="smartSuggestionsList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Looking for patterns…</div>
+      </div>
+    </div>
+
+    <!-- Template Bundles -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <span class="card-title">🎛 Automation Bundles</span>
+        <span style="font-size:11px;color:var(--text3)">One-click rule sets — enable or remove as a group</span>
+      </div>
+      <div class="card-body" id="automationTemplatesList">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
       </div>
     </div>
 
@@ -1691,7 +1842,6 @@
             <button class="btn btn-sm" onclick="simulateFace('Agrim')">Agrim</button>
             <button class="btn btn-sm" onclick="simulateFace('Naman')">Naman</button>
             <button class="btn btn-sm" onclick="simulateFace('Kamakshi')">Kamakshi</button>
-            <button class="btn btn-sm" onclick="simulateFace('Shreyas')">Shreyas</button>
             <button class="btn btn-sm btn-danger" onclick="simulateFace('Unknown')">Unknown 🚨</button>
           </div>
         </div>
@@ -1887,10 +2037,13 @@
     <div class="modal-title">New automation rule</div>    <div class="form-group">
       <label>Template</label>
       <select id="autoTemplate" onchange="applyAutomationTemplate()">
-        <option value="custom">Custom (advanced)</option>
-        <option value="sensor_above">When a sensor goes above a value</option>
-        <option value="sensor_below">When a sensor goes below a value</option>
-        <option value="nobody_home">When nobody's been home for a while</option>
+        <option value="sensor_above">Sensor above threshold (e.g. AQI &gt; 200)</option>
+        <option value="sensor_below">Sensor below threshold (e.g. temp &lt; 24°C)</option>
+        <option value="nobody_home">Nobody home for N minutes</option>
+        <option value="someone_arrived_home">Someone just arrived home</option>
+        <option value="time_of_day">Time of day (daily schedule)</option>
+        <option value="aqi_category">AQI category equals (Good / Poor / etc.)</option>
+        <option value="device_state">A device is ON or OFF</option>
       </select>
     </div>
     <div class="form-group"><label>Rule name</label><input type="text" id="autoName" placeholder="e.g. High AQI -> air purifier on"/></div>
@@ -1905,12 +2058,37 @@
           <option value="humidity">Humidity (%)</option>
           <option value="smoke">Smoke (%)</option>
           <option value="gas">Gas (%)</option>
+          <option value="co2_ppm">CO₂ (ppm)</option>
         </select>
       </div>
       <div class="form-group"><label>Threshold</label><input type="number" id="autoConditionThreshold" placeholder="e.g. 200"/></div>
     </div>
     <div class="form-group" id="autoMinutesField" style="display:none">
       <label>Minutes nobody's been home</label><input type="number" id="autoConditionMinutes" placeholder="30" value="30"/>
+    </div>
+    <div class="form-group" id="autoTimeFields" style="display:none">
+      <label>Time (hour : minute)</label>
+      <div style="display:flex;gap:8px">
+        <input type="number" id="autoCondHour" placeholder="Hour (0-23)" min="0" max="23" value="8" style="flex:1"/>
+        <input type="number" id="autoCondMinute" placeholder="Min (0-59)" min="0" max="59" value="0" style="flex:1"/>
+      </div>
+    </div>
+    <div class="form-group" id="autoAqiCatField" style="display:none">
+      <label>AQI category</label>
+      <select id="autoCondAqiCat">
+        <option value="Good">Good</option><option value="Satisfactory">Satisfactory</option>
+        <option value="Moderate">Moderate</option><option value="Poor" selected>Poor</option>
+        <option value="Very Poor">Very Poor</option><option value="Severe">Severe</option>
+      </select>
+    </div>
+    <div id="autoDevStateFields" style="display:none">
+      <div class="form-group"><label>Room (for device-state condition)</label>
+        <select id="autoCondDevRoom" onchange="updateCondDevOptions()"></select>
+      </div>
+      <div class="form-group"><label>Device</label><select id="autoCondDevDevice"></select></div>
+      <div class="form-group"><label>State</label>
+        <select id="autoCondDevOn"><option value="true">ON</option><option value="false">OFF</option></select>
+      </div>
     </div>
 
     <div class="form-group"><label>Then — room</label>
@@ -2084,7 +2262,7 @@ let energyHistory=Array(20).fill(0),tempHistory=Array(20).fill(0),humHistory=Arr
 let lockState=true,cameraStream=null,alertCount=0,lastAqiPush=0,notifications=[],activeScene=null;
 
 const ROOM_NAMES={living_room:'Living Room',aditya_room:"Aditya's Room",diksha_room:"Diksha's Room",agrim_room:"Agrim's Room",naman_room:"Naman's Room",kamakshi_room:"Kamakshi's Room",kitchen:'Kitchen',bathroom:'Bathroom'};
-const MEMBER_ROOM={Aditya:'aditya_room',Diksha:'diksha_room',Agrim:'agrim_room',Naman:'naman_room',Kamakshi:'kamakshi_room',Shreyas:'living_room'};
+const MEMBER_ROOM={Aditya:'aditya_room',Diksha:'diksha_room',Agrim:'agrim_room',Naman:'naman_room',Kamakshi:'kamakshi_room'};
 
 // CLOCK
 function updateClock(){
@@ -2105,7 +2283,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',control:'Control Room',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -2126,6 +2304,7 @@ function showPage(page){
   if(page==='climate')climOnShow();
   if(page==='audit')renderAuditLog();
   if(page==='systemlogs')renderSystemLogs();
+  if(page==='control')renderControlRoom();
 }
 
 // CONNECTION STATUS
@@ -2169,6 +2348,7 @@ function connectWebSocket(){
         updateSensorUI(sensors,watts);updateFloorPlan();updateCharts();updateSparklines();
         if(document.getElementById('page-energy').classList.contains('active'))renderEnergy();
         if(document.getElementById('page-safety').classList.contains('active'))renderSafety();
+        refreshControlRoom();
       }catch(e){console.warn('WS message parse error:',e);}
     };
     ws.onerror=()=>{/* handled in onclose */};
@@ -2450,6 +2630,7 @@ const ROOM_FILLS = {
 // Glow tints when devices are on
 function roomActiveFill(room){
   const devs=devices[room]||{};
+  if(devs.sprinkler?.on)   return '#1a3a2e'; // wet-alert green-teal — emergency takes priority
   const lightOn=devs.light?.on;
   const acOn=devs.ac?.on;
   const fanOn=devs.fan?.on&&devs.fan.speed>0;
@@ -2462,6 +2643,7 @@ function roomActiveFill(room){
 }
 function roomStroke(room){
   const devs=devices[room]||{};
+  if(devs.sprinkler?.on)   return['#22d3ee','3'];
   if(devs.light?.on)       return['rgba(251,191,36,.55)','2'];
   if(devs.ac?.on)          return['rgba(6,182,212,.5)','2'];
   if(Object.values(devs).some(d=>d.on)) return['rgba(108,139,239,.4)','1.5'];
@@ -2533,6 +2715,49 @@ function updateFloorPlan(){
   updateOccupancy('fp-occ-agrim_room','agrim_room',   437, 452);
   updateOccupancy('fp-occ-naman_room','naman_room',   615, 452);
   updateOccupancy('fp-occ-kamakshi_room','kamakshi_room',780,452);
+  renderFloorPlanEmergencyOverlay();
+}
+
+const ROOM_CENTERS = {
+  living_room:[200,272], kitchen:[385,93], bathroom:[566,93],
+  aditya_room:[730,93], diksha_room:[897,93],
+  agrim_room:[370,452], naman_room:[551,452], kamakshi_room:[730,452],
+};
+
+function renderFloorPlanEmergencyOverlay(){
+  const layer=document.getElementById('fp-emergency-layer');
+  const strip=document.getElementById('fpEmergencyStrip');
+  const stripText=document.getElementById('fpEmergencyText');
+  if(!layer)return;
+  let badges='';
+  const activeRooms=[];
+  for(const [roomId,[cx,cy]] of Object.entries(ROOM_CENTERS)){
+    const devs=devices[roomId]||{};
+    const icons=[];
+    if(devs.sprinkler?.on)icons.push('🚿');
+    if(devs.window?.on)icons.push('🪟');
+    if(!icons.length)continue;
+    activeRooms.push(ROOM_NAMES[roomId]||roomId);
+    badges+=`
+      <circle cx="${cx}" cy="${cy-30}" r="16" fill="none" stroke="#22d3ee" stroke-width="2" opacity="0.7">
+        <animate attributeName="r" values="12;20;12" dur="1.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.8;0.1;0.8" dur="1.6s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="${cx}" cy="${cy-30}" r="13" fill="#0e1118" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="${cx}" y="${cy-25}" text-anchor="middle" font-size="14">${icons[0]}</text>
+      ${icons.length>1?`<text x="${cx+16}" y="${cy-33}" text-anchor="middle" font-size="11">${icons[1]}</text>`:''}
+    `;
+  }
+  layer.innerHTML=badges;
+  const sec=devices.security||{};
+  const flags=[];
+  if(sec.siren?.on)flags.push('Siren sounding');
+  if(sec.mains_power?.on===false)flags.push('Mains power cut');
+  if(activeRooms.length)flags.push(`Active in: ${activeRooms.join(', ')}`);
+  if(strip){
+    if(flags.length){strip.style.display='flex';if(stripText)stripText.textContent=flags.join(' · ');}
+    else strip.style.display='none';
+  }
 }
 
 // Floor plan room click panel
@@ -2799,6 +3024,45 @@ async function renderEnergy(){
     barsEl.innerHTML=energyHistory.map((w,i)=>`<div class="energy-bar-item${i===19?' now':''}" style="height:${Math.max(4,w/maxE*92)}px" title="${w}W"></div>`).join('');
     labsEl.innerHTML=energyHistory.map((_,i)=>`<span>${i===19?'now':''}</span>`).join('');
   }
+
+  // ── Efficiency score ─────────────────────────────────────────────────────
+  const effEl=document.getElementById('en-efficiency');
+  if(effEl){
+    const homeCount=familyMembers.filter(m=>m.status==='home').length;
+    const onDevs=Object.values(devices).reduce((s,r)=>s+Object.values(r).filter(d=>d.on).length,0);
+    const liveW=totalWatts||energyHistory[energyHistory.length-1]||0;
+
+    let score=100;
+    if(homeCount===0){
+      score=Math.max(0,100-Math.round(liveW/15));
+    } else {
+      const perPerson=liveW/Math.max(1,homeCount);
+      score=Math.max(0,100-Math.round(Math.max(0,perPerson-200)/12));
+    }
+
+    const circle=document.getElementById('effCircle');
+    const scoreEl=document.getElementById('effScore');
+    const label=document.getElementById('effLabel');
+    const tipsEl=document.getElementById('effTips');
+    const color=score>=75?'var(--green)':score>=45?'var(--orange)':'var(--red)';
+    const circumference=239;
+    const offset=circumference*(1-score/100);
+    if(circle){circle.style.strokeDashoffset=offset;circle.style.stroke=color;}
+    if(scoreEl){scoreEl.textContent=score;scoreEl.style.color=color;}
+
+    const grades=['Excellent — very efficient','Good — room to improve','Fair — several devices wasting power','Poor — significant waste detected'];
+    const grade=score>=80?grades[0]:score>=60?grades[1]:score>=35?grades[2]:grades[3];
+    if(label)label.textContent=grade;
+
+    const tips=[];
+    if(homeCount===0&&onDevs>3)tips.push('Nobody is home but '+onDevs+' devices are on — Away Mode can fix this.');
+    const acOn=Object.entries(devices).filter(([,r])=>r.ac?.on).length;
+    const windowOpen=Object.entries(devices).filter(([,r])=>r.window?.on).length;
+    if(acOn>0&&windowOpen>0)tips.push(`${acOn} AC unit${acOn>1?'s':''} running with ${windowOpen} window${windowOpen>1?'s':''} open — wasted energy.`);
+    if(liveW>3000)tips.push('High load ('+liveW+'W) — consider turning off unused devices.');
+    if(!tips.length)tips.push('Looking good! Keep it up.');
+    if(tipsEl)tipsEl.innerHTML=tips.map(t=>'💡 '+t).join('<br>');
+  }
 }
 
 // ── SAFETY PAGE ──────────────────────────────────
@@ -2866,7 +3130,8 @@ function renderSafety(){
       ?safetyAlertLog.slice().reverse().map(a=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)">
           <span style="font-size:16px">${a.type==='smoke'?'💨':a.type==='gas'?'⚠️':'🔥'}</span>
           <div><div style="font-size:12.5px;font-weight:600;color:var(--red)">${a.message}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.time}</div></div></div>`).join('')
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.time}</div>
+          ${a.auto_actions&&a.auto_actions.length?`<div style="font-size:10.5px;color:#22c55e;margin-top:4px;background:rgba(34,197,94,.08);border-radius:5px;padding:4px 7px">⚡ Auto: ${a.auto_actions.slice(0,3).join(' · ')}</div>`:''}</div></div>`).join('')
       :'<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No alerts triggered today</div>';
   }
 }
@@ -2907,6 +3172,13 @@ function triggerTestAlert(type){
   showToast(msgs[type],'danger');
   sendBrowserNotif(`🚨 Safety Alert — ${type.toUpperCase()}`,msgs[type]);
   playIntruderSiren();
+
+  // Fire the real backend alert so auto-responses (sprinklers, mains cutoff, etc) trigger for real
+  apiFetch('/api/simulate/alert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type})})
+    .then(r=>{
+      if(r?.changes?.length){ alertEntry.auto_actions=r.changes; renderSafety(); }
+      setTimeout(pollEmergencyStatus,1000);
+    });
 
   // Set sensor override for 8s so gauges visually spike
   safetyOverride={key:o.key,value:o.value,expiresAt:Date.now()+8000};
@@ -3280,6 +3552,13 @@ async function loadFaceModels(){
 
 // Runs every ~1.5s while camera is on: detect a face in the video frame and
 // match it against the known reference descriptors.
+// Recognition tunables — raise CONFIRM_FRAMES if still too twitchy, raise
+// UNCERTAIN_ZONE for an even wider "don't panic yet" buffer around the
+// matcher's 0.6 threshold (set where faceMatcher is built in loadFaceModels).
+const CONFIRM_FRAMES = 3;      // consecutive frames that must agree before acting
+const UNCERTAIN_ZONE = 0.08;   // distance band above threshold treated as "verifying…", not intruder
+let frameConfirmBuffer = {name:null, count:0};
+
 async function detectFaceLoop(){
   if(!cameraStream||!faceModelsReady||!faceMatcher)return;
   const video=document.getElementById('cameraFeed');
@@ -3293,30 +3572,60 @@ async function detectFaceLoop(){
 
     if(!detection){
       setText('faceResult','📹 Camera running… no face in frame');
+      frameConfirmBuffer={name:null,count:0};
       return;
     }
 
     const match=faceMatcher.findBestMatch(detection.descriptor);
-    const name=match.label==='unknown'?'Unknown':match.label;
+    const dist=match.distance;
     const now=Date.now();
+    const THRESHOLD=0.6; // must match the threshold faceMatcher was built with
 
-    // Cooldown: don't re-fire the same result repeatedly (30s for known members, 20s for intruder)
-    const cooldown=name==='Unknown'?20000:30000;
-    if(lastFaceDetection.name===name&&(now-lastFaceDetection.at)<cooldown){
-      setText('faceResult',name==='Unknown'
-        ?`📹 Unrecognized face still in frame (distance ${match.distance.toFixed(2)})`
-        :`📹 ${name} still in frame`);
-      return;
-    }
-    lastFaceDetection={name,at:now};
-
-    if(name==='Unknown'){
-      setText('faceResult',`<span style="color:var(--red)">🚨 Unrecognized face detected (distance ${match.distance.toFixed(2)})</span>`);
+    // Classify into CERTAIN MEMBER / UNCERTAIN (don't act) / UNKNOWN
+    let resolvedName;
+    if(match.label!=='unknown' && dist < THRESHOLD){
+      resolvedName = match.label;
+    } else if(dist < THRESHOLD + UNCERTAIN_ZONE){
+      resolvedName = '_uncertain_';
     } else {
-      setText('faceResult',`<span style="color:var(--green)">✅ ${name} recognized (distance ${match.distance.toFixed(2)})</span>`);
+      resolvedName = 'Unknown';
     }
+
+    // Require CONFIRM_FRAMES consecutive frames to agree before acting — a
+    // single head-tilt or motion-blur frame can no longer trigger a false alarm.
+    if(resolvedName===frameConfirmBuffer.name){
+      frameConfirmBuffer.count++;
+    } else {
+      frameConfirmBuffer={name:resolvedName,count:1};
+    }
+    const confirmed=frameConfirmBuffer.count>=CONFIRM_FRAMES;
+    const framesLeft=Math.max(0,CONFIRM_FRAMES-frameConfirmBuffer.count);
+
+    if(resolvedName==='_uncertain_'){
+      setText('faceResult',`<span style="color:var(--orange)">🔍 Verifying… (distance ${dist.toFixed(2)}, ${framesLeft} frame${framesLeft!==1?'s':''} to confirm)</span>`);
+      return; // never fire an alert while uncertain
+    }
+
+    if(resolvedName==='Unknown'){
+      setText('faceResult',confirmed
+        ? `<span style="color:var(--red)">🚨 Unrecognized face detected (distance ${dist.toFixed(2)})</span>`
+        : `<span style="color:var(--red)">🚨 Unrecognized face — confirming (${framesLeft} left, distance ${dist.toFixed(2)})</span>`);
+    } else {
+      setText('faceResult',confirmed
+        ? `<span style="color:var(--green)">✅ ${resolvedName} recognized (distance ${dist.toFixed(2)})</span>`
+        : `<span style="color:var(--green)">🔄 ${resolvedName} — confirming (${framesLeft} left)</span>`);
+    }
+
+    if(!confirmed)return; // wait for more agreeing frames before acting
+
+    // Cooldown: don't re-fire the same confirmed result repeatedly
+    const cooldown=resolvedName==='Unknown'?20000:30000;
+    if(lastFaceDetection.name===resolvedName&&(now-lastFaceDetection.at)<cooldown)return;
+    lastFaceDetection={name:resolvedName,at:now};
+    frameConfirmBuffer={name:null,count:0}; // reset so the next event needs fresh confirmation
+
     // Reuse the existing simulate pathway — fires alerts, logs, sounds, floor-plan pulse, etc.
-    simulateFace(name);
+    simulateFace(resolvedName);
   }catch(e){
     // Don't spam errors to the UI; just log for debugging
     console.warn('Face detection error:',e);
@@ -3427,6 +3736,9 @@ async function simulateFace(name){
 
     // 4. Pulse entrance marker on floor plan — red
     pulseEntrance('#ef4444');
+
+    // 5. Refresh emergency banner — lockdown was triggered by the backend
+    setTimeout(pollEmergencyStatus, 1000);
 
     alertCount++;
     const badge=document.getElementById('alertBadge');
@@ -3615,9 +3927,9 @@ document.querySelectorAll('.modal-backdrop').forEach(m=>{m.addEventListener('cli
 // HELPERS
 function setText(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
 function setBar(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct||0))+'%';if(color)el.style.background=color;}
-function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust',air_purifier:'Air Purifier'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
-function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️',air_purifier:'🌬️'}[n]||'⚙️';}
-function deviceStatus(dev,n){if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;if(n==='air_purifier')return`speed ${dev.speed}/3`;return'on';}
+function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust',air_purifier:'Air Purifier',sprinkler:'Sprinkler',window:'Window',siren:'Siren',mains_power:'Mains Power',door_lock:'Door Lock'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
+function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️',air_purifier:'🌬️',sprinkler:'🚿',window:'🪟',siren:'🔔',mains_power:'⚡',door_lock:'🔒'}[n]||'⚙️';}
+function deviceStatus(dev,n){if(n==='door_lock')return dev.on?'locked':'unlocked';if(n==='mains_power')return dev.on?'supplied':'cut off';if(n==='window')return dev.on?'open':'closed';if(n==='sprinkler')return dev.on?'spraying':'standby';if(n==='siren')return dev.on?'SOUNDING':'silent';if(!dev.on)return'off';if(n==='fan')return`speed ${dev.speed}/5`;if(n==='light')return`${dev.brightness}% brightness`;if(n==='ac')return`${dev.temp}°C · ${dev.mode||'cool'}`;if(n==='air_purifier')return`speed ${dev.speed}/3`;return'on';}
 
 // WEBSOCKET
 // INIT
@@ -3779,43 +4091,174 @@ async function renderSystemLogs(){
 // AUTOMATION
 // ─────────────────────────────────────────────────
 async function renderAutomationPage(){
+  await renderSmartSuggestions();
+  await renderAutomationTemplates();
   await renderAutomationRules();
   await renderAutomationRuns();
 }
 
+async function renderSmartSuggestions(){
+  const el=document.getElementById('smartSuggestionsList');
+  const card=document.getElementById('smartSuggestionsCard');
+  if(!el)return;
+  const suggestions=await apiFetch('/api/automation/suggestions');
+  if(!suggestions||!suggestions.length){
+    if(card)card.style.display='none';
+    return;
+  }
+  if(card)card.style.display='';
+  el.innerHTML=suggestions.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:20px;flex-shrink:0">${deviceEmoji(s.device)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px;font-weight:700">${s.title}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${s.description}</div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick='acceptSuggestion(${i},this)' style="flex-shrink:0">✨ Automate</button>
+    </div>`).join('');
+  window._pendingSuggestions=suggestions;
+}
+
+async function acceptSuggestion(idx,btnEl){
+  const s=window._pendingSuggestions?.[idx];
+  if(!s)return;
+  btnEl.disabled=true;btnEl.textContent='Adding…';
+  const r=await apiFetch('/api/automation/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s.proposed_rule)});
+  if(r){
+    showToast(`✅ Automated: ${s.title}`,'success');
+    await renderAutomationPage();
+  } else {
+    btnEl.disabled=false;btnEl.textContent='✨ Automate';
+  }
+}
+
+async function renderAutomationTemplates(){
+  const el=document.getElementById('automationTemplatesList');
+  if(!el)return;
+  const bundles=await apiFetch('/api/automation/templates');
+  if(!bundles||!bundles.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No bundles available</div>';
+    return;
+  }
+  el.style.display='grid';el.style.gridTemplateColumns='repeat(auto-fill,minmax(240px,1fr))';el.style.gap='12px';
+  el.innerHTML=bundles.map(b=>{
+    const state=b.installed?'on':b.partial?'partial':'off';
+    const label=b.installed?'Enabled':b.partial?'Partial':'Disabled';
+    const btnBg=b.installed?'#ef4444':b.color;
+    const btnLabel=b.installed?'Remove':'Enable';
+    const action=b.installed?`disableTemplate('${b.id}')`:`enableTemplate('${b.id}')`;
+    return`<div style="border-radius:12px;border:1.5px solid var(--border);padding:14px 16px;background:var(--surface2);position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${b.color}"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:24px">${b.icon}</span>
+        <div style="font-size:13px;font-weight:700">${b.name}</div>
+        <span style="margin-left:auto;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;background:${state==='on'?'rgba(34,197,94,.15)':state==='partial'?'rgba(245,158,11,.15)':'var(--surface)'};color:${state==='on'?'var(--green)':state==='partial'?'var(--orange)':'var(--text3)'}">${label}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--text2);margin-bottom:12px;line-height:1.5">${b.description}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;color:var(--text3)">📋 ${b.rule_count} rule${b.rule_count!==1?'s':''}</span>
+        <button style="border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;background:${btnBg};color:#fff" onclick="${action}">${btnLabel}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function enableTemplate(id){
+  const r=await apiFetch(`/api/automation/templates/${id}/enable`,{method:'POST'});
+  if(r?.ok){
+    showToast(r.created.length?`✅ ${r.created.length} rule${r.created.length!==1?'s':''} added`:'Already fully installed','success');
+    await renderAutomationPage();
+  }
+}
+
+async function disableTemplate(id){
+  if(!confirm('Remove all rules in this bundle? Custom edits to those rules will be lost.'))return;
+  const r=await apiFetch(`/api/automation/templates/${id}/disable`,{method:'POST'});
+  if(r?.ok){
+    showToast(`🗑 ${r.removed.length} rule${r.removed.length!==1?'s':''} removed`,'info');
+    await renderAutomationPage();
+  }
+}
+
+let _autoStatus={};
+
 async function renderAutomationRules(){
   const el=document.getElementById('automationRulesList');
   if(!el)return;
-  const rules=await apiFetch('/api/automation/rules');
+  const [rules,status]=await Promise.all([
+    apiFetch('/api/automation/rules'),
+    apiFetch('/api/automation/status').catch(()=>[])
+  ]);
+  _autoStatus={};
+  (status||[]).forEach(s=>{_autoStatus[s.id]=s;});
   if(!rules){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load rules</div>';return;}
   if(!rules.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No rules yet — click "+ New rule" to create one</div>';return;}
   const condLabel=c=>{
+    if(!c)return'?';
     if(c.type==='sensor_above')return`${c.key} > ${c.threshold}`;
     if(c.type==='sensor_below')return`${c.key} < ${c.threshold}`;
-    if(c.type==='nobody_home_minutes')return`nobody home for ${c.minutes} min`;
-    if(c.type==='time_of_day')return`every day at ${String(c.hour).padStart(2,'0')}:${String(c.minute||0).padStart(2,'0')}`;
+    if(c.type==='aqi_category')return`AQI = ${c.category}`;
+    if(c.type==='nobody_home_minutes')return`nobody home ≥ ${c.minutes}m`;
+    if(c.type==='someone_arrived_home')return`someone arrived`;
+    if(c.type==='time_of_day')return`daily at ${String(c.hour).padStart(2,'0')}:${String(c.minute||0).padStart(2,'0')}`;
+    if(c.type==='device_state')return`${c.room}.${c.device} ${c.on?'ON':'OFF'}`;
+    if(c.type==='and')return`ALL: ${(c.conditions||[]).map(condLabel).join(' + ')}`;
+    if(c.type==='or')return`ANY: ${(c.conditions||[]).map(condLabel).join(' / ')}`;
     return c.type;
   };
-  const actLabel=a=>`${a.room}.${a.device} → ${JSON.stringify(a.set)}`;
-  el.innerHTML=rules.map(r=>`
-    <div style="padding:14px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:700;${r.enabled?'':'opacity:.4;text-decoration:line-through'}">${r.name}</span>
-          <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${r.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${r.enabled?'var(--green)':'var(--text3)'}">${r.enabled?'ON':'OFF'}</span>
+  const actLabel=a=>{
+    if(Array.isArray(a))return a.map(x=>`${deviceEmoji(x.device)} ${ROOM_NAMES[x.room]||x.room}`).join(' · ');
+    return`${deviceEmoji(a.device)} ${ROOM_NAMES[a.room]||a.room} ${formatDevName(a.device)}`;
+  };
+  const devCount=a=>Array.isArray(a)?a.length:1;
+  const cdLabel=s=>{
+    if(!s||!s.on_cooldown)return'';
+    const r=s.cooldown_remaining;
+    return r>3600?`${Math.round(r/3600)}h cd`:r>60?`${Math.round(r/60)}m cd`:`${r}s cd`;
+  };
+  el.innerHTML=rules.map(r=>{
+    const s=_autoStatus[r.id]||{};
+    const cd=cdLabel(s);
+    const dc=devCount(r.action);
+    return`<div style="padding:14px 0;border-bottom:1px solid var(--border);${r.enabled?'':'opacity:.5'}">
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px">
+            <span style="font-size:13px;font-weight:700">${r.name}</span>
+            <span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:${r.enabled?'rgba(34,197,94,.15)':'var(--surface2)'};color:${r.enabled?'var(--green)':'var(--text3)'}">${r.enabled?'ON':'OFF'}</span>
+            ${dc>1?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(108,139,239,.15);color:var(--accent)">${dc} devices</span>`:''}
+            ${cd?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(245,158,11,.12);color:var(--orange)">⏱ ${cd}</span>`:''}
+            ${s.last_fired?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--text3)">↩ ${s.last_fired}</span>`:''}
+          </div>
+          ${r.description?`<div style="font-size:11px;color:var(--text3);margin-bottom:5px">${r.description}</div>`:''}
+          <div style="font-size:11.5px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:800;color:var(--accent);letter-spacing:.5px">IF</span>
+            <code style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:11px;color:var(--text2);border:1px solid var(--border)">${condLabel(r.condition)}</code>
+          </div>
+          <div style="font-size:11.5px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:3px">
+            <span style="font-size:10px;font-weight:800;color:var(--accent);letter-spacing:.5px">THEN</span>
+            <code style="background:var(--surface2);padding:2px 7px;border-radius:5px;font-size:11px;color:var(--text2);border:1px solid var(--border)">${actLabel(r.action)}</code>
+            <span style="color:var(--text3);font-size:10px">· ${r.cooldown_seconds>=3600?(r.cooldown_seconds/3600).toFixed(0)+'h':r.cooldown_seconds+'s'}</span>
+          </div>
         </div>
-        ${r.description?`<div style="font-size:11.5px;color:var(--text3);margin-bottom:6px">${r.description}</div>`:''}
-        <div style="font-size:11px;color:var(--text2)">
-          <span style="color:var(--accent)">IF</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${condLabel(r.condition)}</code>
-          &nbsp;<span style="color:var(--accent)">THEN</span> <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">${actLabel(r.action)}</code>
-          &nbsp;<span style="color:var(--text3)">· cooldown ${r.cooldown_seconds}s</span>
+        <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+          <button class="btn btn-sm" onclick="toggleAutomationRule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
+          <button class="btn btn-sm" onclick="testAutomationRule(${r.id})" title="Test if condition is met right now">🧪 Test</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteAutomationRule(${r.id},this)">Delete</button>
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-sm" onclick="toggleAutomationRule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteAutomationRule(${r.id},this)">Delete</button>
-      </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+async function testAutomationRule(id){
+  const r=await apiFetch(`/api/automation/rules/${id}/test`,{method:'POST'});
+  if(!r){showToast('Test failed','danger');return;}
+  const met=r.condition_met;
+  const cd=r.cooldown_remaining>0?`\n⏱ On cooldown: ${r.cooldown_remaining}s remaining`:'';
+  const would=met&&!r.cooldown_remaining?`\n\nWould act on:\n• ${(r.would_do||[]).join('\n• ')}`:met?'\n\nWill fire once cooldown expires':'';
+  const err=r.error?`\n\n⚠ Error: ${r.error}`:'';
+  alert(`${met?'✅':'❌'} Rule Test\n\nCondition is ${met?'MET':'NOT MET'} right now.${cd}${would}${err}`);
 }
 
 async function renderAutomationRuns(){
@@ -3856,19 +4299,42 @@ function applyAutomationTemplate(){
   const tpl=document.getElementById('autoTemplate')?.value;
   const condFields=document.getElementById('autoConditionFields');
   const minField=document.getElementById('autoMinutesField');
+  const timeFields=document.getElementById('autoTimeFields');
+  const aqiCatField=document.getElementById('autoAqiCatField');
+  const devStateFields=document.getElementById('autoDevStateFields');
+  [condFields,minField,timeFields,aqiCatField,devStateFields].forEach(el=>{if(el)el.style.display='none';});
+
   if(tpl==='nobody_home'){
-    if(condFields)condFields.style.display='none';
     if(minField)minField.style.display='';
+  } else if(tpl==='someone_arrived_home'){
+    // no extra fields
+  } else if(tpl==='time_of_day'){
+    if(timeFields)timeFields.style.display='';
+  } else if(tpl==='aqi_category'){
+    if(aqiCatField)aqiCatField.style.display='';
+  } else if(tpl==='device_state'){
+    if(devStateFields){
+      devStateFields.style.display='';
+      const roomSel=document.getElementById('autoCondDevRoom');
+      if(roomSel&&Object.keys(devices).length){
+        roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
+        updateCondDevOptions();
+      }
+    }
   } else {
     if(condFields)condFields.style.display='';
-    if(minField)minField.style.display='none';
-    if(tpl==='sensor_above'||tpl==='sensor_below'){
-      const keyEl=document.getElementById('autoConditionKey');
-      if(keyEl)keyEl.value=tpl==='sensor_above'?'aqi':'temperature';
-      const thEl=document.getElementById('autoConditionThreshold');
-      if(thEl)thEl.value=tpl==='sensor_above'?'200':'18';
-    }
+    const keyEl=document.getElementById('autoConditionKey');
+    if(keyEl)keyEl.value=tpl==='sensor_above'?'aqi':'temperature';
+    const thEl=document.getElementById('autoConditionThreshold');
+    if(thEl)thEl.value=tpl==='sensor_above'?'200':'18';
   }
+}
+
+function updateCondDevOptions(){
+  const room=document.getElementById('autoCondDevRoom')?.value;
+  const devSel=document.getElementById('autoCondDevDevice');
+  if(!devSel||!room||!devices[room])return;
+  devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
 }
 
 function updateAutomationDeviceOptions(){
@@ -3885,6 +4351,20 @@ async function submitAutomationRule(){
   let condition;
   if(tpl==='nobody_home'){
     condition={type:'nobody_home_minutes',minutes:parseInt(document.getElementById('autoConditionMinutes').value)||30};
+  } else if(tpl==='someone_arrived_home'){
+    condition={type:'someone_arrived_home'};
+  } else if(tpl==='time_of_day'){
+    const hr=parseInt(document.getElementById('autoCondHour')?.value||'8');
+    const mn=parseInt(document.getElementById('autoCondMinute')?.value||'0');
+    condition={type:'time_of_day',hour:hr,minute:mn,window_minutes:2};
+  } else if(tpl==='aqi_category'){
+    condition={type:'aqi_category',category:document.getElementById('autoCondAqiCat')?.value||'Poor'};
+  } else if(tpl==='device_state'){
+    const dr=document.getElementById('autoCondDevRoom')?.value;
+    const dd=document.getElementById('autoCondDevDevice')?.value;
+    const don=document.getElementById('autoCondDevOn')?.value==='true';
+    if(!dr||!dd){showToast('Pick a room and device for the condition','danger');return;}
+    condition={type:'device_state',room:dr,device:dd,on:don};
   } else {
     const key=document.getElementById('autoConditionKey').value;
     const threshold=parseFloat(document.getElementById('autoConditionThreshold').value);
@@ -4606,6 +5086,226 @@ function climOnShow(){
 document.addEventListener('keydown',e=>{if(e.key==='Escape')climCloseModal();});
 
 init();
+
+// ─────────────────────────────────────────────────
+// EMERGENCY STATUS (shared: Safety banner + Control Room banner)
+// ─────────────────────────────────────────────────
+let emergencyStatus={siren:false,door_locked:true,mains_on:true,sprinklers_on:false,windows_open:false};
+
+async function pollEmergencyStatus(){
+  try{
+    const r=await apiFetch('/api/emergency/status');
+    if(r)emergencyStatus=r;
+  }catch(e){}
+  renderCtrlEmergencyBanner();
+}
+
+async function emergencyReset(){
+  if(!confirm('Confirm all-clear: this will silence the siren, turn off sprinklers, restore mains power, and re-lock doors.'))return;
+  const r=await apiFetch('/api/emergency/reset',{method:'POST'});
+  if(r?.ok){
+    showToast?.('Emergency reset — house returned to normal','info');
+    await pollEmergencyStatus();
+    renderControlRoom();
+  }
+}
+
+setInterval(pollEmergencyStatus,5000);
+
+// ─────────────────────────────────────────────────
+// CONTROL ROOM
+// ─────────────────────────────────────────────────
+async function renderControlRoom(){
+  renderCtrlSensorStrip();
+  renderCtrlRoomGrid();
+  renderCtrlAlerts();
+  renderCtrlSecurityStatus();
+  renderCtrlEmergencyBanner();
+  await pollEmergencyStatus();
+}
+
+function renderCtrlSensorStrip(){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=(val===null||val===undefined)?'--':val;};
+  set('ctrl-temp',   sensors.temperature??'--');
+  set('ctrl-humidity',sensors.humidity??'--');
+  set('ctrl-aqi',    sensors.aqi??'--');
+  set('ctrl-aqi-cat',sensors.aqi_category??'--');
+  set('ctrl-co2',    sensors.co2_ppm??'--');
+  set('ctrl-smoke',  sensors.smoke??'--');
+  let w=0;
+  for(const room of Object.values(devices)){
+    for(const [dn,d] of Object.entries(room)){
+      if(d.on){
+        let dw=d.watts||0;
+        if(dn==='fan')dw=Math.round(dw*((d.speed||0)/5));
+        if(dn==='light')dw=Math.round(dw*((d.brightness||100)/100));
+        w+=dw;
+      }
+    }
+  }
+  set('ctrl-watts',w);
+}
+
+function renderCtrlRoomGrid(){
+  const el=document.getElementById('ctrl-room-grid');
+  if(!el||!devices)return;
+  const SKIP_DEVICES=['door_lock','mains_power','siren'];
+  el.innerHTML=Object.entries(devices).map(([roomId,devs])=>{
+    const roomName=ROOM_NAMES[roomId]||roomId;
+    const devEntries=Object.entries(devs).filter(([dn])=>!SKIP_DEVICES.includes(dn));
+    if(!devEntries.length)return'';
+    const devRows=devEntries.map(([dn,d])=>{
+      const isOn=!!d.on;
+      const sub=dn==='fan'?` spd${d.speed||0}`:dn==='light'?` ${d.brightness||0}%`:dn==='ac'?` ${d.temp||24}°C`:'';
+      return`<div class="ctrl-device-row">
+        <span>${deviceEmoji(dn)} ${formatDevName(dn)}${sub?'<span style="color:var(--text3);margin-left:4px">'+sub+'</span>':''}</span>
+        <button class="ctrl-toggle ${isOn?'on':'off'}" onclick="ctrlToggleDevice('${roomId}','${dn}',${!isOn})" title="${isOn?'Turn off':'Turn on'}"></button>
+      </div>`;
+    }).join('');
+    const activeCount=devEntries.filter(([,d])=>d.on).length;
+    return`<div class="ctrl-room-card">
+      <div class="ctrl-room-card-header">
+        <span class="ctrl-room-name">${roomName}</span>
+        <span style="font-size:10.5px;color:${activeCount?'var(--green)':'var(--text3)'}">${activeCount}/${devEntries.length} on</span>
+      </div>
+      ${devRows}
+    </div>`;
+  }).join('');
+}
+
+function renderCtrlAlerts(){
+  const el=document.getElementById('ctrl-alerts');
+  if(!el)return;
+  apiFetch('/api/alerts').then(alerts=>{
+    if(!alerts||!alerts.length){
+      el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No alerts</div>';
+      return;
+    }
+    const recent=[...alerts].reverse().slice(0,8);
+    el.innerHTML=recent.map(a=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span>${a.type==='smoke'?'💨':a.type==='gas'?'⚠️':a.type==='fire'?'🔥':'🚨'}</span>
+        <div style="flex:1">
+          <div style="font-weight:600;color:var(--red)">${a.message||a.type.toUpperCase()}</div>
+          <div style="color:var(--text3);font-size:10.5px">${a.time||''}${a.auto_actions?.length?' · ⚡ '+a.auto_actions.length+' auto-actions':''}</div>
+        </div>
+      </div>`).join('');
+  }).catch(()=>{});
+}
+
+function renderCtrlSecurityStatus(){
+  const el=document.getElementById('ctrl-sec-grid');
+  if(!el)return;
+  const sec=devices.security||{};
+  const items=[
+    {icon:'🔒',label:'Door Lock',key:'door_lock',onLabel:'Locked',offLabel:'UNLOCKED'},
+    {icon:'⚡',label:'Mains Power',key:'mains_power',onLabel:'Supplied',offLabel:'CUT OFF'},
+    {icon:'🔔',label:'Siren',key:'siren',onLabel:'SOUNDING 🚨',offLabel:'Silent'},
+    {icon:'🚿',label:'Sprinklers',key:'sprinkler',onLabel:'ACTIVE 💦',offLabel:'Standby'},
+  ];
+  const anySpray=Object.values(devices).some(r=>r.sprinkler?.on);
+  el.innerHTML=items.map(item=>{
+    const dev=item.key==='sprinkler'?{on:anySpray}:(sec[item.key]||{on:false});
+    const isOn=!!dev.on;
+    const danger=(item.key==='siren'||item.key==='sprinkler')&&isOn;
+    const safe=(item.key==='door_lock'||item.key==='mains_power')&&isOn;
+    const color=danger?'var(--red)':safe?'var(--green)':'var(--orange)';
+    return`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span>${item.icon} ${item.label}</span>
+      <span style="font-weight:700;color:${color}">${isOn?item.onLabel:item.offLabel}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCtrlEmergencyBanner(){
+  const banner=document.getElementById('ctrl-emergency-banner');
+  if(banner){
+    const active=emergencyStatus.siren||emergencyStatus.sprinklers_on||!emergencyStatus.mains_on;
+    banner.style.display=active?'flex':'none';
+    const detail=document.getElementById('ctrl-emergency-detail');
+    if(detail){
+      const parts=[];
+      if(emergencyStatus.sprinklers_on)parts.push('Sprinklers ON');
+      if(emergencyStatus.siren)parts.push('Siren SOUNDING');
+      if(!emergencyStatus.mains_on)parts.push('Mains power CUT');
+      if(emergencyStatus.windows_open)parts.push('Windows OPEN');
+      if(!emergencyStatus.door_locked)parts.push('Doors UNLOCKED (evacuation)');
+      detail.textContent='Automated actions active: '+parts.join(' · ');
+    }
+  }
+  // Mirror onto the Safety page banner if present
+  const sfBanner=document.getElementById('sf-emergency-banner');
+  if(sfBanner){
+    const active=emergencyStatus.siren||emergencyStatus.sprinklers_on||!emergencyStatus.mains_on;
+    sfBanner.style.display=active?'block':'none';
+  }
+}
+
+async function ctrlToggleDevice(room,device,newOn){
+  await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device,value:{on:newOn}})});
+  if(devices[room]&&devices[room][device]){
+    devices[room][device].on=newOn;
+    renderCtrlRoomGrid();
+    renderCtrlSensorStrip();
+  }
+}
+
+async function masterToggle(deviceType, on){
+  const rooms=Object.keys(devices).filter(r=>devices[r][deviceType]!==undefined);
+  await Promise.all(rooms.map(room=>
+    apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:deviceType,value:{on}})})
+      .then(()=>{ if(devices[room][deviceType])devices[room][deviceType].on=on; })
+  ));
+  showToast?.(`All ${formatDevName(deviceType)}s turned ${on?'ON':'OFF'}`,'info');
+  renderCtrlRoomGrid();
+  renderCtrlSensorStrip();
+}
+
+async function ctrlLockdown(){
+  if(!confirm('Lockdown: lock all doors, close windows, sound siren?'))return;
+  const r=await apiFetch('/api/simulate/alert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'intruder'})});
+  if(r?.ok){showToast?.('🔒 Lockdown activated','danger');await pollEmergencyStatus();renderCtrlEmergencyBanner();}
+}
+
+async function ctrlNightMode(){
+  const rooms=Object.keys(devices).filter(r=>devices[r].light);
+  await Promise.all(rooms.map(r=>apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:r,device:'light',value:{on:true,brightness:30}})})));
+  if(devices.living_room?.tv)await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'living_room',device:'tv',value:{on:false}})});
+  if(devices.kitchen?.exhaust)await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'kitchen',device:'exhaust',value:{on:false}})});
+  rooms.forEach(r=>{if(devices[r].light)devices[r].light={...devices[r].light,on:true,brightness:30};});
+  showToast?.('🌙 Night Mode — lights dimmed to 30%','info');
+  renderCtrlRoomGrid();
+}
+
+async function ctrlAwayMode(){
+  await masterToggle('light',false);
+  await masterToggle('ac',false);
+  await masterToggle('fan',false);
+  if(devices.living_room?.tv)await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'living_room',device:'tv',value:{on:false}})});
+  showToast?.('🏠 Away Mode — everything off','info');
+}
+
+async function ctrlMorningMode(){
+  const calls=[];
+  if(devices.kitchen?.light)calls.push(apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'kitchen',device:'light',value:{on:true,brightness:100}})}));
+  if(devices.living_room?.light)calls.push(apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'living_room',device:'light',value:{on:true,brightness:90}})}));
+  if(devices.living_room?.ac)calls.push(apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'living_room',device:'ac',value:{on:false}})}));
+  await Promise.all(calls);
+  if(devices.kitchen?.light)devices.kitchen.light={...devices.kitchen.light,on:true,brightness:100};
+  if(devices.living_room?.light)devices.living_room.light={...devices.living_room.light,on:true,brightness:90};
+  showToast?.('🌅 Morning Mode — lights on, ready to go','info');
+  renderCtrlRoomGrid();
+}
+
+function refreshControlRoom(){
+  if(document.getElementById('page-control')?.classList.contains('active')){
+    renderCtrlSensorStrip();
+    renderCtrlRoomGrid();
+    renderCtrlAlerts();
+    renderCtrlSecurityStatus();
+  }
+}
+
 </script>
 </body>
 </html>

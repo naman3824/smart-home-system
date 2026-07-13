@@ -10,7 +10,7 @@ import time
 import random
 import threading
 from datetime import datetime, timedelta
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Union
 from dataclasses import dataclass
 
 import uvicorn
@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded
 import db
 import auth
 import automation
+import alert_responses
 from applog import logger, get_recent_logs
 
 # ── SMOKE / GAS / FIRE DETECTION ──
@@ -347,7 +348,9 @@ def _seed_climate_history():
 # (_seed_climate_history remains defined but is deliberately never called.)
 
 # ── SHARED STATE ──
-state_lock = threading.Lock()
+state_lock = threading.RLock()  # must be reentrant — automation.evaluate_rules()/
+# evaluate_routines() and alert_responses.* re-acquire this same lock from
+# inside the tick loop that already holds it; a plain Lock() deadlocks.
 
 # Device states — one room per family member + shared spaces
 devices = {
@@ -356,45 +359,62 @@ devices = {
         "fan":   {"on": False, "speed": 0,  "watts": 45},
         "tv":    {"on": False, "watts": 120},
         "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
-        "air_purifier": {"on": False, "speed": 2, "watts": 50}
+        "air_purifier": {"on": False, "speed": 2, "watts": 50},
+        "sprinkler": {"on": False, "watts": 0},   # on = actively spraying (fire suppression)
+        "window": {"on": False, "watts": 0}       # on = open
     },
     "aditya_room": {
         "light": {"on": False, "brightness": 70, "watts": 10},
         "fan":   {"on": True,  "speed": 2,  "watts": 45},
-        "ac":    {"on": True,  "temp": 22, "mode": "cool", "watts": 1500}
+        "ac":    {"on": True,  "temp": 22, "mode": "cool", "watts": 1500},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "diksha_room": {
         "light": {"on": False, "brightness": 60, "watts": 10},
         "fan":   {"on": False, "speed": 0,  "watts": 45},
-        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500}
+        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "agrim_room": {
         "light": {"on": False, "brightness": 70, "watts": 10},
         "fan":   {"on": False, "speed": 0,  "watts": 45},
-        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500}
+        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "naman_room": {
         "light": {"on": False, "brightness": 70, "watts": 10},
-        "fan":   {"on": False, "speed": 0,  "watts": 45}
+        "fan":   {"on": False, "speed": 0,  "watts": 45},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "kamakshi_room": {
         "light": {"on": True,  "brightness": 80, "watts": 10},
         "fan":   {"on": True,  "speed": 1,  "watts": 45},
-        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500}
+        "ac":    {"on": False, "temp": 24, "mode": "cool", "watts": 1500},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "kitchen": {
         "light":   {"on": True,  "brightness": 100, "watts": 15},
-        "exhaust": {"on": False, "watts": 30}
+        "exhaust": {"on": False, "watts": 30},
+        "sprinkler": {"on": False, "watts": 0},
+        "window": {"on": False, "watts": 0}
     },
     "bathroom": {
         "light":   {"on": False, "brightness": 100, "watts": 8},
-        "exhaust": {"on": False, "watts": 25}
+        "exhaust": {"on": False, "watts": 25},
+        "window": {"on": False, "watts": 0}
     },
     "security": {
         # Door lock as a real backend-tracked device (was previously
         # frontend-only state) so automation rules can actually act on it
         # — e.g. auto-unlock on a fire/smoke alert.
-        "door_lock": {"on": True, "watts": 0}  # on = locked, off = unlocked
+        "door_lock": {"on": True, "watts": 0},   # on = locked, off = unlocked
+        "siren": {"on": False, "watts": 10},     # on = sounding
+        "mains_power": {"on": True, "watts": 0}  # on = house is supplied with power
     }
 }
 
@@ -442,17 +462,10 @@ _DEFAULT_FAMILY = [
     {"id": 2, "name": "Diksha", "role": "Member", "status": "away", "avatar": "D", "color": "#7c3aed"},
     {"id": 3, "name": "Agrim",  "role": "Member", "status": "away", "avatar": "Ag", "color": "#0891b2"},
     {"id": 4, "name": "Naman",  "role": "Member", "status": "away", "avatar": "N", "color": "#059669"},
-    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"},
-    {"id": 6, "name": "Shreyas", "role": "Member", "status": "away", "avatar": "S", "color": "#d97706"}
+    {"id": 5, "name": "Kamakshi","role":"Member", "status": "away", "avatar": "K", "color": "#dc2626"}
 ]
 db.seed_family_if_empty(_DEFAULT_FAMILY)
 family_members = db.get_family_members()
-
-# Check if Shreyas is in family members database; if not, add him
-shreyas_member = next((m for m in family_members if m["name"].lower() == "shreyas"), None)
-if not shreyas_member:
-    shreyas_member = db.add_family_member(name="Shreyas", role="Member", status="away", avatar="S", color="#d97706")
-    family_members = db.get_family_members()
 
 # Security logs — persisted in SQLite, starts empty on a fresh database.
 # Real entries are added going forward by actual face recognition / manual
@@ -486,44 +499,166 @@ if db.count_users() == 0:
     print("  e.g. naman -> naman123, aditya -> aditya123")
     print("=" * 55)
 
-# Ensure shreyas user exists in database
-shreyas_user = db.get_user_by_username("shreyas")
-if not shreyas_user:
-    shreyas_member = next((m for m in family_members if m["name"].lower() == "shreyas"), None)
-    if shreyas_member:
-        auth.create_user_account(
-            username="shreyas",
-            password="shreyas123",
-            display_name="Shreyas",
-            role="member",
-            member_id=shreyas_member["id"]
-        )
-
 # ── Automation rules ─────────────────────────────────────────────────────
 # A few real starter rules, inserted only on the very first run (empty
 # table). Anyone can add/edit/disable more from the Automation page —
 # these are just sensible defaults, not hardcoded behavior.
 _DEFAULT_AUTOMATION_RULES = [
+    # ── Air quality ─────────────────────────────────────────────────────────
     {
-        "name": "High AQI -> air purifier on",
-        "description": "Turns on the living room air purifier at speed 3 whenever AQI rises above 200 (HERC 'Poor' threshold).",
+        "name": "Poor AQI → purifier on max",
+        "description": "AQI > 200 (Poor): turn on living room air purifier at full speed.",
         "condition": {"type": "sensor_above", "key": "aqi", "threshold": 200},
         "action": {"room": "living_room", "device": "air_purifier", "set": {"on": True, "speed": 3}},
         "cooldown_seconds": 600,
     },
     {
-        "name": "Nobody home 30 min -> all lights off",
-        "description": "If every family member has been away for 30+ minutes, turns off lights in every room to save energy.",
-        "condition": {"type": "nobody_home_minutes", "minutes": 30},
-        "action": {"room": "living_room", "device": "light", "set": {"on": False}},
+        "name": "Good AQI → purifier standby",
+        "description": "AQI back below 100 (Good): drop purifier to low speed to save power.",
+        "condition": {"type": "sensor_below", "key": "aqi", "threshold": 100},
+        "action": {"room": "living_room", "device": "air_purifier", "set": {"on": True, "speed": 1}},
+        "cooldown_seconds": 1200,
+    },
+    {
+        "name": "High CO₂ → open living room window + exhaust",
+        "description": "CO₂ > 1000 ppm: open window and run kitchen exhaust to ventilate.",
+        "condition": {"type": "sensor_above", "key": "co2_ppm", "threshold": 1000},
+        "action": [
+            {"room": "living_room", "device": "window", "set": {"on": True}},
+            {"room": "kitchen",     "device": "exhaust","set": {"on": True}},
+        ],
+        "cooldown_seconds": 600,
+    },
+
+    # ── Temperature & climate (skipped automatically while climate API is
+    #    down, since sensors["temperature"]/["humidity"] are None then) ────
+    {
+        "name": "Hot day → AC on (living room + bedrooms)",
+        "description": "Temperature > 32 °C: turn on AC in living room, Aditya & Diksha rooms.",
+        "condition": {"type": "sensor_above", "key": "temperature", "threshold": 32},
+        "action": [
+            {"room": "living_room", "device": "ac",  "set": {"on": True, "temp": 24, "mode": "cool"}},
+            {"room": "aditya_room", "device": "ac",  "set": {"on": True, "temp": 24, "mode": "cool"}},
+            {"room": "diksha_room", "device": "ac",  "set": {"on": True, "temp": 24, "mode": "cool"}},
+        ],
         "cooldown_seconds": 1800,
     },
     {
-        "name": "High smoke -> unlock door",
-        "description": "If smoke level exceeds the 40% safety threshold, automatically unlocks the front door so it's not blocking an evacuation.",
+        "name": "Cool night → AC off, fan on",
+        "description": "Temperature below 24 °C at night: switch off AC, run fans instead.",
+        "condition": {"type": "and", "conditions": [
+            {"type": "sensor_below",  "key": "temperature", "threshold": 24},
+            {"type": "time_of_day",   "hour": 22, "minute": 0, "window_minutes": 120},
+        ]},
+        "action": [
+            {"room": "living_room", "device": "ac",  "set": {"on": False}},
+            {"room": "aditya_room", "device": "ac",  "set": {"on": False}},
+            {"room": "diksha_room", "device": "ac",  "set": {"on": False}},
+            {"room": "living_room", "device": "fan", "set": {"on": True, "speed": 2}},
+        ],
+        "cooldown_seconds": 3600,
+    },
+    {
+        "name": "High humidity → exhaust + AC dry mode",
+        "description": "Humidity > 75%: run kitchen exhaust and set AC to dry mode.",
+        "condition": {"type": "sensor_above", "key": "humidity", "threshold": 75},
+        "action": [
+            {"room": "kitchen",     "device": "exhaust", "set": {"on": True}},
+            {"room": "living_room", "device": "ac",      "set": {"on": True, "mode": "dry"}},
+        ],
+        "cooldown_seconds": 900,
+    },
+
+    # ── Presence-based ───────────────────────────────────────────────────────
+    {
+        "name": "Nobody home 30 min → all lights off",
+        "description": "Everyone away 30+ min: turn off all lights to save energy.",
+        "condition": {"type": "nobody_home_minutes", "minutes": 30},
+        "action": [
+            {"room": "living_room",  "device": "light", "set": {"on": False}},
+            {"room": "aditya_room",  "device": "light", "set": {"on": False}},
+            {"room": "diksha_room",  "device": "light", "set": {"on": False}},
+            {"room": "agrim_room",   "device": "light", "set": {"on": False}},
+            {"room": "naman_room",   "device": "light", "set": {"on": False}},
+            {"room": "kamakshi_room","device": "light", "set": {"on": False}},
+            {"room": "kitchen",      "device": "light", "set": {"on": False}},
+        ],
+        "cooldown_seconds": 1800,
+    },
+    {
+        "name": "Nobody home → AC + TV off",
+        "description": "Everyone away: turn off AC units and TV.",
+        "condition": {"type": "nobody_home_minutes", "minutes": 15},
+        "action": [
+            {"room": "living_room", "device": "ac",  "set": {"on": False}},
+            {"room": "aditya_room", "device": "ac",  "set": {"on": False}},
+            {"room": "diksha_room", "device": "ac",  "set": {"on": False}},
+            {"room": "living_room", "device": "tv",  "set": {"on": False}},
+        ],
+        "cooldown_seconds": 900,
+    },
+    {
+        "name": "Someone arrived home → welcome lights on",
+        "description": "First person home: turn on living room & kitchen lights at 80%.",
+        "condition": {"type": "someone_arrived_home"},
+        "action": [
+            {"room": "living_room", "device": "light", "set": {"on": True, "brightness": 80}},
+            {"room": "kitchen",     "device": "light", "set": {"on": True, "brightness": 80}},
+        ],
+        "cooldown_seconds": 3600,
+    },
+
+    # ── Time-based (day/night) ───────────────────────────────────────────────
+    {
+        "name": "Morning (6 AM) → brighten lights",
+        "description": "6 AM: kitchen and living room lights on bright for the morning routine.",
+        "condition": {"type": "time_of_day", "hour": 6, "minute": 0, "window_minutes": 3},
+        "action": [
+            {"room": "kitchen",     "device": "light", "set": {"on": True, "brightness": 100}},
+            {"room": "living_room", "device": "light", "set": {"on": True, "brightness": 90}},
+        ],
+        "cooldown_seconds": 82800,  # 23 h — once per day
+    },
+    {
+        "name": "Night (11 PM) → dim everything",
+        "description": "11 PM: dim all lights to 30%, turn off TV and exhaust.",
+        "condition": {"type": "time_of_day", "hour": 23, "minute": 0, "window_minutes": 3},
+        "action": [
+            {"room": "living_room",  "device": "light",   "set": {"on": True, "brightness": 30}},
+            {"room": "kitchen",      "device": "light",   "set": {"on": True, "brightness": 30}},
+            {"room": "living_room",  "device": "tv",      "set": {"on": False}},
+            {"room": "kitchen",      "device": "exhaust", "set": {"on": False}},
+        ],
+        "cooldown_seconds": 82800,
+    },
+
+    # ── Safety (belt-and-braces beyond alert_responses.py) ──────────────────
+    {
+        "name": "High smoke → unlock door (rule backup)",
+        "description": "Smoke > 40%: unlock front door so occupants can evacuate.",
         "condition": {"type": "sensor_above", "key": "smoke", "threshold": 40},
         "action": {"room": "security", "device": "door_lock", "set": {"on": False}},
         "cooldown_seconds": 300,
+    },
+    {
+        "name": "AC on + window open → close window",
+        "description": "If AC is running and a window is open in the living room, close it (wasted energy).",
+        "condition": {"type": "and", "conditions": [
+            {"type": "device_state", "room": "living_room", "device": "ac",     "on": True},
+            {"type": "device_state", "room": "living_room", "device": "window", "on": True},
+        ]},
+        "action": {"room": "living_room", "device": "window", "set": {"on": False}},
+        "cooldown_seconds": 600,
+    },
+
+    # ── Predictive (uses the hourly-refreshed aqi_forecast_tomorrow virtual
+    #    sensor set in simulate_sensors — see _compute_aqi_forecast) ────────
+    {
+        "name": "Poor AQI forecast → pre-run purifier overnight",
+        "description": "If tomorrow's forecast AQI is Poor (>200), start the purifier tonight instead of waiting for tomorrow's air to actually turn bad.",
+        "condition": {"type": "sensor_above", "key": "aqi_forecast_tomorrow", "threshold": 200},
+        "action": {"room": "living_room", "device": "air_purifier", "set": {"on": True, "speed": 2}},
+        "cooldown_seconds": 21600,  # 6h — forecast only refreshes hourly anyway
     },
 ]
 db.seed_automation_rules_if_empty(_DEFAULT_AUTOMATION_RULES)
@@ -748,6 +883,23 @@ def simulate_sensors():
                     sensors["co2_ppm"] = round(random.uniform(700, 1100), 0)
                     last_aqi_update = now
 
+                # ── Predictive AQI (hourly) ──────────────────────────────
+                # Exposes tomorrow's forecast AQI as a virtual sensor so
+                # ordinary sensor_above rules can react to it, e.g.
+                # "aqi_forecast_tomorrow > 200 -> run purifier tonight".
+                # Hourly refresh only — LSTM inference is too slow for every
+                # 3s tick — and skipped entirely if the ML deps aren't installed.
+                if now - _last_aqi_forecast_fetch[0] >= 3600:
+                    _last_aqi_forecast_fetch[0] = now
+                    try:
+                        predict_fn = _get_aqi_predictor()
+                        if predict_fn:
+                            forecast = _compute_aqi_forecast(predict_fn, sensors)
+                            if forecast:
+                                sensors["aqi_forecast_tomorrow"] = forecast[0]
+                    except Exception as e:
+                        logger.warning("Predictive AQI refresh failed: %s", e)
+
                 # ── Smoke/fire detection ──
                 temp_for_detector = sensors["temperature"] if sensors["temperature"] is not None else 25.0
                 reading = SensorReading(timestamp=now, smoke=sensors["smoke"],
@@ -758,6 +910,14 @@ def simulate_sensors():
                     alert_history.append(alert_entry)
                     if len(alert_history) > 50:
                         alert_history.pop(0)
+                    # Automated device responses (sprinklers, mains cutoff, evacuation
+                    # unlock, siren) — runs inside state_lock, safe now that it's an RLock.
+                    try:
+                        changes = alert_responses.respond_to_environmental_alert(alert["type"], devices)
+                        if changes:
+                            alert_entry["auto_actions"] = changes
+                    except Exception as ae:
+                        logger.error("alert_responses error: %s", ae, exc_info=True)
 
                 # ── Automation rules + per-member routines ──
                 automation.evaluate_rules(devices, sensors, family_members, state_lock)
@@ -781,6 +941,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"]
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Adds standard defensive headers to every response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
 
 # ── Rate limiting (slowapi) ──────────────────────────────────────────────
 # Per-client-IP limits on every route. In-memory storage — resets on restart,
@@ -1102,13 +1272,23 @@ async def get_face_embeddings(request: Request, user: dict = Depends(get_current
 # ── Automation rules ────────────────────────────────────────────────────
 
 class AutomationConditionIn(BaseModel):
-    type: str  # sensor_above / sensor_below / nobody_home_minutes / time_of_day
+    type: str  # sensor_above / sensor_below / nobody_home_minutes / time_of_day /
+                # aqi_category / device_state / someone_arrived_home / and / or
     key: Optional[str] = None
     threshold: Optional[float] = None
     minutes: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
     window_minutes: Optional[int] = None
+    category: Optional[str] = None       # for aqi_category
+    room: Optional[str] = None           # for device_state
+    device: Optional[str] = None         # for device_state
+    on: Optional[bool] = None            # for device_state
+    conditions: Optional[List[dict]] = None  # for and/or — nested conditions kept
+                                               # as plain dicts rather than a
+                                               # recursive Pydantic model to
+                                               # keep this simple; automation.py
+                                               # validates their shape at eval time
 
 class AutomationActionIn(BaseModel):
     room: str
@@ -1119,7 +1299,9 @@ class AutomationRuleCreate(BaseModel):
     name: str
     description: Optional[str] = None
     condition: AutomationConditionIn
-    action: AutomationActionIn
+    action: Union[AutomationActionIn, List[AutomationActionIn]]  # single device
+             # or multiple — matches automation.py's _apply_action, which
+             # already handles both shapes
     enabled: bool = True
     cooldown_seconds: int = 300
 
@@ -1133,15 +1315,19 @@ async def list_automation_rules(request: Request, user: dict = Depends(get_curre
 @app.post("/api/automation/rules")
 @limiter.limit("10/minute")
 async def create_automation_rule(body: AutomationRuleCreate, request: Request, user: dict = Depends(get_current_user)):
-    # Validate the action targets a real device before saving — a rule
+    # Validate every action target is a real device before saving — a rule
     # pointing at a room/device that doesn't exist would silently no-op
-    # forever, which is worse than rejecting it up front.
-    if body.action.room not in devices or body.action.device not in devices[body.action.room]:
-        raise HTTPException(status_code=400, detail=f"{body.action.room}.{body.action.device} is not a real device")
+    # forever, which is worse than rejecting it up front. Handles both a
+    # single action and a multi-device action list.
+    actions = body.action if isinstance(body.action, list) else [body.action]
+    for a in actions:
+        if a.room not in devices or a.device not in devices[a.room]:
+            raise HTTPException(status_code=400, detail=f"{a.room}.{a.device} is not a real device")
+    action_payload = [a.dict() for a in actions] if isinstance(body.action, list) else body.action.dict()
     rule = db.create_automation_rule(
         name=body.name, description=body.description,
         condition=body.condition.dict(exclude_none=True),
-        action=body.action.dict(),
+        action=action_payload,
         enabled=body.enabled, cooldown_seconds=body.cooldown_seconds,
     )
     db.add_audit_entry(user["username"], "automation_rule_created", detail=body.name, ip_address=_client_ip(request))
@@ -1172,6 +1358,252 @@ async def delete_automation_rule(rule_id: int, request: Request, user: dict = De
 @limiter.limit("30/minute")
 async def list_automation_runs(request: Request, user: dict = Depends(get_current_user)):
     return db.get_automation_runs()
+
+
+@app.get("/api/automation/status")
+@limiter.limit("30/minute")
+async def automation_status(request: Request, user: dict = Depends(get_current_user)):
+    """Live status for every rule: when it last fired, cooldown remaining."""
+    rules = db.get_automation_rules(enabled_only=False)
+    now = time.time()
+    result = []
+    for r in rules:
+        last = automation._last_fired.get(r["id"], 0)
+        cooldown = r.get("cooldown_seconds", 300)
+        remaining = max(0, int(cooldown - (now - last)))
+        last_str = datetime.fromtimestamp(last).strftime("%H:%M:%S") if last > 0 else None
+        result.append({
+            "id": r["id"], "name": r["name"], "enabled": r["enabled"],
+            "last_fired": last_str, "cooldown_remaining": remaining,
+            "on_cooldown": remaining > 0,
+        })
+    return result
+
+
+@app.post("/api/automation/rules/{rule_id}/test")
+@limiter.limit("30/minute")
+async def test_automation_rule(rule_id: int, request: Request, user: dict = Depends(get_current_user)):
+    """Dry-run: evaluate the rule's condition right now without changing anything."""
+    rules = db.get_automation_rules()
+    rule = next((r for r in rules if r["id"] == rule_id), None)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    with state_lock:
+        try:
+            met = automation._condition_met(rule["condition"], sensors, family_members, devices)
+        except Exception as e:
+            return {"ok": False, "condition_met": False, "error": str(e)}
+    action = rule["action"]
+    if isinstance(action, list):
+        would_do = [f"{a['room']}.{a['device']} → {a['set']}" for a in action]
+    else:
+        would_do = [f"{action['room']}.{action['device']} → {action['set']}"]
+    return {
+        "ok": True, "condition_met": met, "would_do": would_do,
+        "cooldown_remaining": max(0, int(
+            rule.get("cooldown_seconds", 300) - (time.time() - automation._last_fired.get(rule_id, 0))
+        )),
+    }
+
+
+# ── Automation template bundles ────────────────────────────────────────────
+_TEMPLATE_BUNDLES = [
+    {
+        "id": "vacation_mode", "name": "Vacation Mode", "icon": "✈️", "color": "#6366f1",
+        "description": "Nobody home for days — absolute minimum power, maximum security.",
+        "rules": [
+            {"name": "[Vacation] Nobody home 10 min → all lights off", "description": "Part of Vacation Mode bundle.",
+             "condition": {"type": "nobody_home_minutes", "minutes": 10},
+             "action": [{"room": r, "device": "light", "set": {"on": False}}
+                        for r in ["living_room","aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room","kitchen"]],
+             "cooldown_seconds": 600},
+            {"name": "[Vacation] Nobody home 10 min → AC + fans off", "description": "Part of Vacation Mode bundle.",
+             "condition": {"type": "nobody_home_minutes", "minutes": 10},
+             "action": [{"room": "living_room", "device": "ac", "set": {"on": False}},
+                        {"room": "aditya_room", "device": "ac", "set": {"on": False}},
+                        {"room": "diksha_room", "device": "ac", "set": {"on": False}},
+                        {"room": "living_room", "device": "fan", "set": {"on": False}},
+                        {"room": "aditya_room", "device": "fan", "set": {"on": False}},
+                        {"room": "living_room", "device": "tv", "set": {"on": False}}],
+             "cooldown_seconds": 600},
+            {"name": "[Vacation] Evening random light", "description": "Part of Vacation Mode bundle — gives impression someone is home.",
+             "condition": {"type": "time_of_day", "hour": 20, "minute": 0, "window_minutes": 3},
+             "action": {"room": "living_room", "device": "light", "set": {"on": True, "brightness": 60}},
+             "cooldown_seconds": 82800},
+            {"name": "[Vacation] Night lights off", "description": "Part of Vacation Mode bundle.",
+             "condition": {"type": "time_of_day", "hour": 23, "minute": 30, "window_minutes": 3},
+             "action": {"room": "living_room", "device": "light", "set": {"on": False}},
+             "cooldown_seconds": 82800},
+        ],
+    },
+    {
+        "id": "energy_saver", "name": "Energy Saver", "icon": "🌿", "color": "#22c55e",
+        "description": "Aggressive power reduction — dims lights, raises AC setpoint, cuts standby loads.",
+        "rules": [
+            {"name": "[EnergySaver] Cap light brightness at 50%", "description": "Part of Energy Saver bundle.",
+             "condition": {"type": "time_of_day", "hour": 0, "minute": 0, "window_minutes": 2},
+             "action": [{"room": r, "device": "light", "set": {"brightness": 50}}
+                        for r in ["living_room","aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room","kitchen"]],
+             "cooldown_seconds": 82800},
+            {"name": "[EnergySaver] Raise AC to 26 °C", "description": "Part of Energy Saver bundle — each degree higher saves ~6% energy.",
+             "condition": {"type": "sensor_above", "key": "temperature", "threshold": 28},
+             "action": [{"room": "living_room", "device": "ac", "set": {"on": True, "temp": 26}},
+                        {"room": "aditya_room", "device": "ac", "set": {"on": True, "temp": 26}},
+                        {"room": "diksha_room", "device": "ac", "set": {"on": True, "temp": 26}}],
+             "cooldown_seconds": 1800},
+            {"name": "[EnergySaver] Nobody home 5 min → all off", "description": "Part of Energy Saver bundle — faster than the default 30-min rule.",
+             "condition": {"type": "nobody_home_minutes", "minutes": 5},
+             "action": [{"room": r, "device": "light", "set": {"on": False}}
+                        for r in ["living_room","aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room","kitchen"]]
+                       + [{"room": "living_room", "device": "tv", "set": {"on": False}},
+                          {"room": "kitchen", "device": "exhaust", "set": {"on": False}}],
+             "cooldown_seconds": 300},
+        ],
+    },
+    {
+        "id": "night_mode", "name": "Night Mode", "icon": "🌙", "color": "#818cf8",
+        "description": "Wind down automatically — dims lights, cuts noise, preps the house for sleep.",
+        "rules": [
+            {"name": "[Night] 10 PM → living areas dim", "description": "Part of Night Mode bundle.",
+             "condition": {"type": "time_of_day", "hour": 22, "minute": 0, "window_minutes": 3},
+             "action": [{"room": "living_room", "device": "light", "set": {"on": True, "brightness": 20}},
+                        {"room": "kitchen", "device": "light", "set": {"on": True, "brightness": 20}},
+                        {"room": "living_room", "device": "tv", "set": {"on": False}},
+                        {"room": "kitchen", "device": "exhaust", "set": {"on": False}}],
+             "cooldown_seconds": 82800},
+            {"name": "[Night] 11 PM → bedroom fans on low", "description": "Part of Night Mode bundle — quiet airflow for sleep.",
+             "condition": {"type": "time_of_day", "hour": 23, "minute": 0, "window_minutes": 3},
+             "action": [{"room": r, "device": "fan", "set": {"on": True, "speed": 1}}
+                        for r in ["aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room"]],
+             "cooldown_seconds": 82800},
+            {"name": "[Night] Midnight → all lights off", "description": "Part of Night Mode bundle.",
+             "condition": {"type": "time_of_day", "hour": 0, "minute": 0, "window_minutes": 3},
+             "action": [{"room": r, "device": "light", "set": {"on": False}}
+                        for r in ["living_room","aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room","kitchen"]],
+             "cooldown_seconds": 82800},
+        ],
+    },
+    {
+        "id": "party_mode", "name": "Party Mode", "icon": "🎉", "color": "#f59e0b",
+        "description": "Full brightness, fan on high, keep things lively — overrides energy-saving rules.",
+        "rules": [
+            {"name": "[Party] Full brightness living room", "description": "Part of Party Mode bundle.",
+             "condition": {"type": "time_of_day", "hour": 18, "minute": 0, "window_minutes": 3},
+             "action": [{"room": "living_room", "device": "light", "set": {"on": True, "brightness": 100}},
+                        {"room": "living_room", "device": "fan", "set": {"on": True, "speed": 3}},
+                        {"room": "kitchen", "device": "light", "set": {"on": True, "brightness": 100}},
+                        {"room": "kitchen", "device": "exhaust", "set": {"on": True}}],
+             "cooldown_seconds": 82800},
+            {"name": "[Party] AC comfort during party", "description": "Part of Party Mode bundle — more people = more heat.",
+             "condition": {"type": "sensor_above", "key": "temperature", "threshold": 26},
+             "action": [{"room": "living_room", "device": "ac", "set": {"on": True, "temp": 22, "mode": "cool"}}],
+             "cooldown_seconds": 900},
+            {"name": "[Party] High CO₂ → exhaust + window", "description": "Part of Party Mode bundle — more people = more CO₂.",
+             "condition": {"type": "sensor_above", "key": "co2_ppm", "threshold": 900},
+             "action": [{"room": "kitchen", "device": "exhaust", "set": {"on": True}},
+                        {"room": "living_room", "device": "window", "set": {"on": True}}],
+             "cooldown_seconds": 600},
+        ],
+    },
+    {
+        "id": "study_mode", "name": "Study Mode", "icon": "📚", "color": "#22d3ee",
+        "description": "Optimal conditions for focus — bright white light, cool temperature, CO₂ management.",
+        "rules": [
+            {"name": "[Study] Full brightness study areas", "description": "Part of Study Mode bundle.",
+             "condition": {"type": "time_of_day", "hour": 8, "minute": 0, "window_minutes": 3},
+             "action": [{"room": r, "device": "light", "set": {"on": True, "brightness": 100}}
+                        for r in ["aditya_room","agrim_room","naman_room","kamakshi_room"]],
+             "cooldown_seconds": 82800},
+            {"name": "[Study] Cool AC for focus", "description": "Part of Study Mode bundle — 22°C is optimal for concentration.",
+             "condition": {"type": "sensor_above", "key": "temperature", "threshold": 24},
+             "action": [{"room": "aditya_room", "device": "ac", "set": {"on": True, "temp": 22, "mode": "cool"}}],
+             "cooldown_seconds": 1200},
+            {"name": "[Study] CO₂ check → ventilate", "description": "Part of Study Mode bundle — high CO₂ reduces alertness.",
+             "condition": {"type": "sensor_above", "key": "co2_ppm", "threshold": 850},
+             "action": [{"room": "aditya_room", "device": "window", "set": {"on": True}},
+                        {"room": "agrim_room", "device": "window", "set": {"on": True}}],
+             "cooldown_seconds": 600},
+        ],
+    },
+    {
+        "id": "morning_routine", "name": "Morning Routine", "icon": "🌅", "color": "#fb923c",
+        "description": "Automated sunrise — gradual brightening, fresh air, AC off for the day.",
+        "rules": [
+            {"name": "[Morning] 6 AM → kitchen on full", "description": "Part of Morning Routine bundle.",
+             "condition": {"type": "time_of_day", "hour": 6, "minute": 0, "window_minutes": 3},
+             "action": [{"room": "kitchen", "device": "light", "set": {"on": True, "brightness": 100}},
+                        {"room": "living_room", "device": "light", "set": {"on": True, "brightness": 70}}],
+             "cooldown_seconds": 82800},
+            {"name": "[Morning] 6:30 AM → bedrooms brighten", "description": "Part of Morning Routine bundle — gentle wake-up.",
+             "condition": {"type": "time_of_day", "hour": 6, "minute": 30, "window_minutes": 3},
+             "action": [{"room": r, "device": "light", "set": {"on": True, "brightness": 80}}
+                        for r in ["aditya_room","diksha_room","agrim_room","naman_room","kamakshi_room"]],
+             "cooldown_seconds": 82800},
+            {"name": "[Morning] 7 AM → AC off, fans off, open windows", "description": "Part of Morning Routine bundle — fresh morning air.",
+             "condition": {"type": "time_of_day", "hour": 7, "minute": 0, "window_minutes": 3},
+             "action": [{"room": "living_room", "device": "ac", "set": {"on": False}},
+                        {"room": "aditya_room", "device": "ac", "set": {"on": False}},
+                        {"room": "diksha_room", "device": "ac", "set": {"on": False}},
+                        {"room": "living_room", "device": "fan", "set": {"on": False}},
+                        {"room": "living_room", "device": "window", "set": {"on": True}},
+                        {"room": "aditya_room", "device": "window", "set": {"on": True}}],
+             "cooldown_seconds": 82800},
+        ],
+    },
+]
+
+@app.get("/api/automation/templates")
+@limiter.limit("30/minute")
+async def list_templates(request: Request, user: dict = Depends(get_current_user)):
+    existing_rules = {r["name"] for r in db.get_automation_rules()}
+    result = []
+    for bundle in _TEMPLATE_BUNDLES:
+        installed_count = sum(1 for r in bundle["rules"] if r["name"] in existing_rules)
+        result.append({
+            "id": bundle["id"], "name": bundle["name"], "icon": bundle["icon"],
+            "description": bundle["description"], "color": bundle["color"],
+            "rule_count": len(bundle["rules"]),
+            "installed": installed_count == len(bundle["rules"]),
+            "partial": 0 < installed_count < len(bundle["rules"]),
+        })
+    return result
+
+@app.post("/api/automation/templates/{bundle_id}/enable")
+@limiter.limit("10/minute")
+async def enable_template(bundle_id: str, request: Request, user: dict = Depends(get_current_user)):
+    bundle = next((b for b in _TEMPLATE_BUNDLES if b["id"] == bundle_id), None)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="Template not found")
+    existing_names = {r["name"] for r in db.get_automation_rules()}
+    created = []
+    for rule in bundle["rules"]:
+        if rule["name"] in existing_names:
+            continue
+        db.create_automation_rule(
+            name=rule["name"], description=rule.get("description"),
+            condition=rule["condition"], action=rule["action"],
+            enabled=True, cooldown_seconds=rule.get("cooldown_seconds", 300),
+        )
+        created.append(rule["name"])
+    db.add_audit_entry(user["username"], "template_enabled",
+                       detail=f"{bundle['name']}: {len(created)} rules created", ip_address=_client_ip(request))
+    return {"ok": True, "created": created, "skipped": len(bundle["rules"]) - len(created)}
+
+@app.post("/api/automation/templates/{bundle_id}/disable")
+@limiter.limit("10/minute")
+async def disable_template(bundle_id: str, request: Request, user: dict = Depends(get_current_user)):
+    bundle = next((b for b in _TEMPLATE_BUNDLES if b["id"] == bundle_id), None)
+    if not bundle:
+        raise HTTPException(status_code=404, detail="Template not found")
+    bundle_names = {r["name"] for r in bundle["rules"]}
+    removed = []
+    for rule in db.get_automation_rules():
+        if rule["name"] in bundle_names:
+            db.delete_automation_rule(rule["id"])
+            removed.append(rule["name"])
+    db.add_audit_entry(user["username"], "template_disabled",
+                       detail=f"{bundle['name']}: {len(removed)} rules removed", ip_address=_client_ip(request))
+    return {"ok": True, "removed": removed}
 
 
 # ── Routines ───────────────────────────────────────────────────────────────
@@ -1253,8 +1685,7 @@ async def create_routine_endpoint(body: RoutineCreate, request: Request, user: d
     # Resolve room: use provided room or fall back to member's own room
     MEMBER_ROOM_MAP = {
         "Aditya": "aditya_room", "Diksha": "diksha_room",
-        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room",
-        "Shreyas": "living_room"
+        "Agrim": "agrim_room", "Naman": "naman_room", "Kamakshi": "kamakshi_room"
     }
     room = body.room or MEMBER_ROOM_MAP.get(member["name"], "living_room")
 
@@ -1574,6 +2005,13 @@ async def toggle_device(body: DeviceToggle, request: Request, user: Optional[dic
         db.save_device_state(body.room, body.device, dev)
         actor = user["username"] if user else "anonymous"
         db.add_audit_entry(actor, "device_toggle", detail=f"{body.room}.{body.device} -> {body.value}", ip_address=_client_ip(request))
+        # Re-check rules immediately instead of waiting for the next tick —
+        # device_state rules (e.g. AC + window) react right away. Safe to
+        # call often: each rule's cooldown makes repeat calls a no-op.
+        try:
+            automation.evaluate_rules(devices, sensors, family_members, state_lock)
+        except Exception as e:
+            logger.error("Immediate automation re-check failed: %s", e, exc_info=True)
         return {"ok": True, "device": dev, "energy_watts": calculate_energy()}
 
 @app.get("/api/family")
@@ -1634,6 +2072,13 @@ async def log_intruder(request: Request):
         status="unauthorized",
     )
     security_logs.insert(0, entry)
+    # Automated lockdown — runs under state_lock (RLock, safe to re-enter)
+    with state_lock:
+        try:
+            changes = alert_responses.respond_to_intruder(devices)
+            entry["auto_actions"] = changes
+        except Exception as e:
+            logger.error("intruder response error: %s", e, exc_info=True)
     return entry
 
 @app.post("/api/security/member-detected")
@@ -1655,6 +2100,222 @@ async def log_member_detected(body: dict, request: Request):
         if m["name"].lower() == name.lower():
             m["status"] = "home"
     return entry
+
+@app.post("/api/simulate/alert")
+@limiter.limit("10/minute")
+async def simulate_alert(body: dict, request: Request):
+    """Lets the frontend Simulations tab trigger a real alert pipeline
+    (including auto-responses) without waiting for the sensor tick loop."""
+    alert_type = body.get("type", "").upper()
+    if alert_type not in ("SMOKE", "GAS", "FIRE", "INTRUDER"):
+        raise HTTPException(status_code=400, detail="Unknown alert type")
+    with state_lock:
+        if alert_type == "INTRUDER":
+            changes = alert_responses.respond_to_intruder(devices)
+        else:
+            changes = alert_responses.respond_to_environmental_alert(alert_type, devices)
+    alert_entry = {
+        "type": alert_type.lower(), "level": "CRITICAL",
+        "message": f"[SIM] {alert_type} alert triggered",
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "auto_actions": changes,
+    }
+    alert_history.append(alert_entry)
+    if len(alert_history) > 50:
+        alert_history.pop(0)
+    return {"ok": True, "changes": changes}
+
+@app.post("/api/emergency/reset")
+@limiter.limit("10/minute")
+async def emergency_reset(request: Request):
+    """Manual all-clear: turns off sprinklers + siren, closes windows,
+    restores mains power and re-locks doors."""
+    with state_lock:
+        changes = alert_responses.reset_to_normal(devices)
+    return {"ok": True, "changes": changes}
+
+@app.get("/api/emergency/status")
+async def emergency_status():
+    """Live state of all emergency-related devices for the UI banner."""
+    with state_lock:
+        sec = devices.get("security", {})
+        sprinklers_on = any(devs.get("sprinkler", {}).get("on", False) for devs in devices.values())
+        windows_open = any(devs.get("window", {}).get("on", False) for devs in devices.values())
+        return {
+            "siren": sec.get("siren", {}).get("on", False),
+            "door_locked": sec.get("door_lock", {}).get("on", True),
+            "mains_on": sec.get("mains_power", {}).get("on", True),
+            "sprinklers_on": sprinklers_on,
+            "windows_open": windows_open,
+        }
+
+# ── AQI-MONITOR integration: LSTM forecast ──────────────────────────────────
+# Optional — install AQI-MONITOR/requirements.txt (torch + scikit-learn) to
+# enable. Degrades gracefully with a clear message otherwise; never crashes
+# the main app.
+_aqi_predict_fn = None
+_aqi_predict_load_failed = False
+_last_aqi_forecast_fetch = [0.0]  # mutable single-element list so the tick
+                                   # loop closure can update it without `global`
+_aqi_forecast_cache = {"forecast": None, "at": 0.0}  # avoid recomputing on
+                                                        # every /api/aqi/forecast hit
+
+def _get_aqi_predictor():
+    global _aqi_predict_fn, _aqi_predict_load_failed
+    if _aqi_predict_fn is not None or _aqi_predict_load_failed:
+        return _aqi_predict_fn
+    try:
+        import sys as _sys
+        ml_dir = os.path.join(os.path.dirname(__file__), "AQI-MONITOR", "ml")
+        if ml_dir not in _sys.path:
+            _sys.path.insert(0, ml_dir)
+        from predict import predict_next_7_days
+        _aqi_predict_fn = predict_next_7_days
+        logger.info("AQI-MONITOR LSTM forecaster loaded")
+    except Exception as e:
+        _aqi_predict_load_failed = True
+        logger.warning("AQI forecast unavailable (%s) — install AQI-MONITOR/requirements.txt to enable", e)
+    return _aqi_predict_fn
+
+
+def _compute_aqi_forecast(predict_fn, current_sensors: dict):
+    """Used by both /api/aqi/forecast and the hourly predictive-automation
+    refresh. Returns 7 rounded AQI values or None on failure. Cached 55min
+    so repeated calls don't re-run LSTM inference each time."""
+    now = time.time()
+    if _aqi_forecast_cache["forecast"] is not None and (now - _aqi_forecast_cache["at"]) < 3300:
+        return _aqi_forecast_cache["forecast"]
+    pm25 = current_sensors.get("pm25") or 90.0
+    pm10 = current_sensors.get("pm10") or 140.0
+    aqi  = current_sensors.get("aqi") or 150
+    def synth_day(pm25_v, pm10_v, aqi_v):
+        return {"pm25": pm25_v, "pm10": pm10_v,
+                "no2": round(pm25_v * 0.35, 1), "co": round(pm25_v * 0.018, 2),
+                "o3": round(pm10_v * 0.15, 1), "aqi": aqi_v}
+    import random as _random
+    history = []
+    p25, p10, a = pm25, pm10, aqi
+    for _ in range(7):
+        history.insert(0, synth_day(round(p25,1), round(p10,1), round(a)))
+        p25 = max(10, p25 + _random.uniform(-8, 8))
+        p10 = max(15, p10 + _random.uniform(-10, 10))
+        a   = max(10, a + _random.uniform(-15, 15))
+    try:
+        forecast = [round(v) for v in predict_fn(history)]
+        _aqi_forecast_cache["forecast"] = forecast
+        _aqi_forecast_cache["at"] = now
+        return forecast
+    except Exception as e:
+        logger.error("AQI forecast prediction failed: %s", e, exc_info=True)
+        return None
+
+
+@app.get("/api/aqi/forecast")
+@limiter.limit("20/minute")
+async def aqi_forecast(request: Request, user: dict = Depends(get_current_user)):
+    """7-day AQI forecast using the AQI-MONITOR project's trained LSTM."""
+    predict_fn = _get_aqi_predictor()
+    if predict_fn is None:
+        return {"available": False,
+                "reason": "ML dependencies not installed — run: pip install -r AQI-MONITOR/requirements.txt"}
+    with state_lock:
+        snapshot = dict(sensors)
+    forecast = _compute_aqi_forecast(predict_fn, snapshot)
+    if forecast is None:
+        return {"available": False, "reason": "Prediction failed — check server logs"}
+    return {"available": True, "forecast": forecast,
+            "note": "Approximate — based on synthesized pollutant history, not persisted real sensor logs."}
+
+
+# ── Smart Suggestions engine ─────────────────────────────────────────────────
+# Scans the audit log for repeated manual device_toggle patterns (same
+# room+device+state around the same hour on 3+ different days) and proposes
+# turning them into automation rules.
+import ast as _ast_module
+import re as _re_module
+
+def _parse_toggle_detail(detail: str):
+    """Parses 'living_room.ac -> {'on': True, 'temp': 22}' into
+    (room, device, value_dict). Returns None if it doesn't match the
+    expected device_toggle detail format."""
+    m = _re_module.match(r"^([a-z_]+)\.([a-z_]+) -> (.+)$", detail or "")
+    if not m:
+        return None
+    room, device, value_str = m.groups()
+    try:
+        value = _ast_module.literal_eval(value_str)
+    except Exception:
+        return None
+    if not isinstance(value, dict) or "on" not in value:
+        return None
+    return room, device, value
+
+
+@app.get("/api/automation/suggestions")
+@limiter.limit("15/minute")
+async def automation_suggestions(request: Request, user: dict = Depends(get_current_user)):
+    """Looks for repeated manual toggle habits and suggests rules for them."""
+    entries = db.get_audit_log(limit=500)
+    existing_rules = db.get_automation_rules()
+    # Skip suggesting anything that overlaps an existing time_of_day rule for
+    # the same room+device — no point suggesting what's already automated.
+    already_automated = set()
+    for r in existing_rules:
+        cond = r.get("condition", {})
+        act = r.get("action", {})
+        if cond.get("type") == "time_of_day" and isinstance(act, dict):
+            already_automated.add((act.get("room"), act.get("device")))
+
+    # Bucket: (room, device, on_state, hour) -> set of distinct calendar dates
+    from collections import defaultdict
+    buckets = defaultdict(set)
+    bucket_values = {}  # keep one example "value" dict per bucket for the action payload
+
+    for entry in entries:
+        if entry.get("action") != "device_toggle":
+            continue
+        parsed = _parse_toggle_detail(entry.get("detail", ""))
+        if not parsed:
+            continue
+        room, device, value = parsed
+        created_at = entry.get("created_at", "")
+        if not created_at or "T" not in created_at and " " not in created_at:
+            continue
+        try:
+            # created_at is 'YYYY-MM-DD HH:MM:SS' (SQLite datetime('now'))
+            date_part, time_part = created_at.split(" ", 1) if " " in created_at else created_at.split("T", 1)
+            hour = int(time_part.split(":")[0])
+        except Exception:
+            continue
+        key = (room, device, bool(value.get("on")), hour)
+        buckets[key].add(date_part)
+        bucket_values[key] = value
+
+    suggestions = []
+    for (room, device, on_state, hour), dates in buckets.items():
+        if len(dates) < 3:  # need to see the habit on 3+ distinct days to trust it
+            continue
+        if (room, device) in already_automated:
+            continue
+        value = bucket_values[(room, device, on_state, hour)]
+        room_label = room.replace("_", " ").title()
+        suggestions.append({
+            "room": room, "device": device, "hour": hour, "on": on_state,
+            "days_observed": len(dates),
+            "title": f"{room_label} {device} — {'on' if on_state else 'off'} around {hour:02d}:00",
+            "description": f"You've manually turned {device} {'on' if on_state else 'off'} in {room_label} around {hour:02d}:00 on {len(dates)} different days. Automate it?",
+            "proposed_rule": {
+                "name": f"[Suggested] {room_label} {device} {'on' if on_state else 'off'} at {hour:02d}:00",
+                "description": f"Auto-created from a detected habit ({len(dates)} occurrences).",
+                "condition": {"type": "time_of_day", "hour": hour, "minute": 0, "window_minutes": 5},
+                "action": {"room": room, "device": device, "set": value},
+                "cooldown_seconds": 82800,
+            },
+        })
+
+    suggestions.sort(key=lambda s: -s["days_observed"])
+    return suggestions[:5]
+
 
 @app.get("/api/alerts")
 @limiter.limit("30/minute")
