@@ -1933,6 +1933,110 @@ async def mark_payment(payment_id: int, body: MarkPaymentRequest,
     return updated
 
 
+# Room-to-member mapping — mirrors the frontend MEMBER_ROOM constant.
+# Any room not listed is treated as shared and split equally among all members.
+_ROOM_OWNER: dict[str, str] = {
+    "aditya_room":   "Aditya",
+    "diksha_room":   "Diksha",
+    "agrim_room":    "Agrim",
+    "naman_room":    "Naman",
+    "kamakshi_room": "Kamakshi",
+    "shreyas_room":  "Shreyas",
+}
+
+
+@app.get("/api/payments/electricity")
+@limiter.limit("30/minute")
+async def get_electricity_split(request: Request, user: dict = Depends(get_current_user)):
+    """
+    Calculate each member's share of the projected monthly electricity bill.
+    Approach:
+      1. Compute per-room energy usage (units/kWh, same 8-hr/day × 30 days projection).
+      2. Personal rooms → charged to their owner.
+         Shared rooms (living_room, kitchen, bathroom, security) → split equally.
+      3. Apply DHBVN slab tariff to the household total to get the monetary bill,
+         then assign each member a proportional cost share.
+    """
+    with state_lock:
+        watts = calculate_energy()
+        # Per-room watt calculation (same logic as /api/energy)
+        room_watts: dict[str, int] = {}
+        for room, devs in devices.items():
+            rw = 0
+            for dev_name, dev in devs.items():
+                if dev.get("on", False):
+                    w = dev.get("watts", 0)
+                    if dev_name == "fan":
+                        speed = dev.get("speed", 0)
+                        w = int(w * (speed / 5)) if speed > 0 else 0
+                    elif dev_name == "light":
+                        w = int(w * (dev.get("brightness", 100) / 100))
+                    rw += w
+            room_watts[room] = rw
+
+    # Convert watts → projected monthly units (kWh)
+    room_units = {room: round(w * 8 * 30 / 1000, 2) for room, w in room_watts.items()}
+    total_units = round(sum(room_units.values()), 2)
+
+    # Bill for the full household
+    bill = calculate_dhbvn_bill(total_units)
+    total_cost = bill["total"]
+
+    # Build member usage map
+    members = [m["name"] for m in family_members]
+    n = len(members) or 1
+    member_units: dict[str, float] = {name: 0.0 for name in members}
+    member_room_units: dict[str, float] = {name: 0.0 for name in members}
+    member_shared_units: dict[str, float] = {name: 0.0 for name in members}
+
+    shared_total = 0.0
+    for room, units in room_units.items():
+        owner = _ROOM_OWNER.get(room)
+        if owner and owner in member_units:
+            member_units[owner] += units
+            member_room_units[owner] += units
+        else:
+            # Shared room — split equally
+            share = round(units / n, 3)
+            shared_total += units
+            for name in members:
+                member_units[name] += share
+                member_shared_units[name] += share
+
+    shared_per_member = round(shared_total / n, 2) if n else 0
+
+    # Proportional cost split
+    per_member = []
+    for name in members:
+        u = round(member_units[name], 2)
+        pct = round((u / total_units * 100) if total_units else 0, 1)
+        cost = round((u / total_units * total_cost) if total_units else 0, 2)
+        fm = next((m for m in family_members if m["name"] == name), {})
+        per_member.append({
+            "name": name,
+            "member_id": fm.get("id"),
+            "avatar": fm.get("avatar", name[0]),
+            "color": fm.get("color", "#6c8bef"),
+            "units": u,
+            "room_units": round(member_room_units[name], 2),
+            "shared_units": round(member_shared_units[name], 2),
+            "percentage": pct,
+            "cost": cost,
+        })
+
+    # Sort by units descending (heaviest user first)
+    per_member.sort(key=lambda x: x["units"], reverse=True)
+
+    return {
+        "total_units": total_units,
+        "total_cost": total_cost,
+        "bill_breakdown": bill["breakdown"],
+        "shared_units_per_member": shared_per_member,
+        "per_member": per_member,
+        "projection_basis": "current draw × 8 hrs/day × 30 days",
+    }
+
+
 @app.get("/")
 @limiter.limit("30/minute")
 async def root(request: Request):

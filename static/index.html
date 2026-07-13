@@ -1734,15 +1734,16 @@
 
   <!-- PAYMENTS -->
   <div class="content page" id="page-payments">
+    <!-- ═══ Rent banner + summary cards (always at top) ═══ -->
     <div style="background:linear-gradient(135deg,rgba(251,191,36,.1),rgba(245,158,11,.07));border:1px solid rgba(251,191,36,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
       <span style="font-size:26px">💰</span>
       <div>
-        <div style="font-weight:700;font-size:14px">Rent & payments</div>
+        <div style="font-weight:700;font-size:14px">Rent &amp; payments</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px">Track monthly rent shares. Once someone pays (via GPay, cash, bank transfer), mark it here to keep the ledger accurate. No actual payment processing happens inside the app.</div>
       </div>
     </div>
 
-    <!-- Month navigation + summary -->
+    <!-- Rent summary cards -->
     <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
       <div class="sensor-card"><div class="sensor-label">Total rent</div><div class="sensor-value" id="pay-total" style="color:var(--accent)">₹--</div><div class="sensor-sub" id="pay-dueday">due --th</div></div>
       <div class="sensor-card"><div class="sensor-label">Per person</div><div class="sensor-value" id="pay-share" style="color:var(--cyan)">₹--</div><div class="sensor-sub" id="pay-members">-- members</div></div>
@@ -1757,6 +1758,24 @@
       <button class="btn" onclick="changePaymentMonth(1)">Next ›</button>
       <div style="flex:1"></div>
       <button class="btn btn-sm" onclick="showRentConfigModal()" id="rentConfigBtn" style="display:none">⚙ Configure rent</button>
+    </div>
+
+    <!-- ═══ Electricity Overview ═══ -->
+    <div id="elec-overview" style="background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(16,185,129,.05));border:1px solid rgba(34,197,94,.18);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span id="elec-total-units" style="font-size:28px;font-weight:800;color:var(--green)">--</span>
+        <span style="font-size:13px;color:var(--text2);font-weight:500">units projected this month</span>
+      </div>
+      <div style="height:24px;width:1px;background:var(--border);margin:0 4px"></div>
+      <span id="elec-projection-basis" style="font-size:12px;color:var(--text3)">current draw × 8 hrs/day × 30 days</span>
+    </div>
+
+    <!-- ═══ Usage breakdown by member ═══ -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">⚡ Usage breakdown by member</span></div>
+      <div class="card-body" id="elecMemberList" style="padding:0">
+        <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading electricity data…</div>
+      </div>
     </div>
 
     <!-- Payment cards per member -->
@@ -4622,21 +4641,64 @@ async function renderPaymentsPage(){
   const label = new Date(y, m-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
   setText('pay-month-label', label);
 
-  const data = await apiFetch(`/api/payments?month=${currentPaymentMonth}`);
-  if(!data){ document.getElementById('paymentMemberList').innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load payments</div>'; return; }
-  currentPaymentData = data;
+  // Fetch rent + electricity in parallel
+  const [data, elec] = await Promise.all([
+    apiFetch(`/api/payments?month=${currentPaymentMonth}`),
+    apiFetch('/api/payments/electricity')
+  ]);
 
-  // Summary cards
-  setText('pay-total', `₹${data.total_rent.toLocaleString('en-IN')}`);
-  setText('pay-dueday', `due ${data.due_day}${['th','st','nd','rd'][data.due_day<=3?data.due_day:0]} of month`);
-  setText('pay-share', `₹${data.per_share.toLocaleString('en-IN')}`);
-  setText('pay-members', `${data.payments.length} members`);
-  setText('pay-collected', `₹${data.total_collected.toLocaleString('en-IN')}`);
-  setText('pay-paid-count', `${data.paid_count} paid`);
-  setText('pay-outstanding', `₹${data.total_outstanding.toLocaleString('en-IN')}`);
-  setText('pay-pending-count', `${data.pending_count} pending`);
+  // ── Rent summary cards (rendered first — top of page) ────
+  if(!data){
+    document.getElementById('paymentMemberList').innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load payments</div>';
+  } else {
+    currentPaymentData = data;
+    setText('pay-total', `₹${data.total_rent.toLocaleString('en-IN')}`);
+    setText('pay-dueday', `due ${data.due_day}${['th','st','nd','rd'][data.due_day<=3?data.due_day:0]} of month`);
+    setText('pay-share', `₹${data.per_share.toLocaleString('en-IN')}`);
+    setText('pay-members', `${data.payments.length} members`);
+    setText('pay-collected', `₹${data.total_collected.toLocaleString('en-IN')}`);
+    setText('pay-paid-count', `${data.paid_count} paid`);
+    setText('pay-outstanding', `₹${data.total_outstanding.toLocaleString('en-IN')}`);
+    setText('pay-pending-count', `${data.pending_count} pending`);
+  }
 
-  // Member payment cards
+  // ── Electricity section ──────────────────────────────────
+  const elecListEl = document.getElementById('elecMemberList');
+  if(elec && elecListEl){
+    setText('elec-total-units', elec.total_units.toLocaleString('en-IN'));
+    setText('elec-projection-basis', elec.projection_basis);
+
+    const maxUnits = Math.max(...elec.per_member.map(m=>m.units), 1);
+    elecListEl.innerHTML = elec.per_member.map(mem => {
+      const barPct = Math.max((mem.units / maxUnits) * 100, 0.5);
+      const roomLabel = mem.room_units > 0 ? `${mem.name}'s Room: ${mem.room_units} units` : `${mem.name}'s Room: 0.0 units`;
+      const sharedLabel = `Shared: ${mem.shared_units} units`;
+      return `
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+          <div style="width:38px;height:38px;border-radius:50%;background:${mem.color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${mem.avatar}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700">${mem.name}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:1px">${mem.units} units · ${mem.percentage}% of total</div>
+          </div>
+          <div style="font-size:15px;font-weight:700;color:var(--green);flex-shrink:0">₹${mem.cost.toLocaleString('en-IN')}</div>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${barPct}%;background:${mem.color};border-radius:3px;transition:width .4s ease"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);display:flex;gap:12px">
+          <span>${roomLabel}</span>
+          <span>🏠 ${sharedLabel}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } else if(elecListEl){
+    elecListEl.innerHTML = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load electricity data</div>';
+  }
+
+  // ── Member payment list & history ────────────────────────
+  if(!data) return;
+
   const listEl = document.getElementById('paymentMemberList');
   if(!listEl) return;
 
@@ -4645,7 +4707,7 @@ async function renderPaymentsPage(){
       <div style="font-size:13px;color:var(--text3);margin-bottom:12px">Rent not configured yet.</div>
       ${currentUser?.role==='owner'?'<button class="btn btn-primary" onclick="showRentConfigModal()">Set up rent now</button>':'<div style="font-size:12px;color:var(--text3)">Ask the owner (Aditya) to configure the monthly rent amount.</div>'}
     </div>`;
-    return;
+    return; // Summary cards above are already set; only skip the member list logic
   }
 
   const statusIcon={paid:'✅',pending:'⏳',waived:'🤝'};
