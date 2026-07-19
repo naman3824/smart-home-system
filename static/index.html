@@ -127,6 +127,24 @@
   .sparkline{display:flex;align-items:flex-end;gap:2px;height:24px;margin-top:8px}
   .spark-bar{flex:1;border-radius:1px 1px 0 0;min-height:2px;transition:height .4s ease}
 
+  /* INCIDENT TIMELINE */
+  .tl-legend{display:flex;align-items:center;gap:12px;font-size:10.5px;color:var(--text3);font-weight:600}
+  .tl-legend-item{display:flex;align-items:center;gap:5px}
+  .tl-legend-dot{width:7px;height:7px;border-radius:50%;display:inline-block;box-shadow:0 0 6px currentColor}
+  .tl-wrap{position:relative;height:96px;margin-top:2px}
+  .tl-gridline{position:absolute;top:4px;bottom:22px;width:1px;background:var(--border);opacity:.6}
+  .tl-axis{position:absolute;left:0;right:0;bottom:20px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--border),var(--border2) 92%,var(--accent) 100%)}
+  .tl-now-dot{position:absolute;bottom:14px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(108,139,239,.18);animation:tl-pulse 2s ease-in-out infinite}
+  @keyframes tl-pulse{0%,100%{box-shadow:0 0 0 4px rgba(108,139,239,.18)}50%{box-shadow:0 0 0 7px rgba(108,139,239,.05)}}
+  .tl-marker{position:absolute;bottom:20px;width:13px;height:13px;border-radius:50%;transform:translate(-50%,50%);border:2px solid var(--surface);cursor:pointer;transition:transform .15s ease,box-shadow .15s ease;z-index:2}
+  .tl-marker:hover{transform:translate(-50%,50%) scale(1.4);z-index:6}
+  .tl-marker .tl-tip{position:absolute;left:50%;bottom:calc(100% + 9px);transform:translateX(-50%) translateY(4px);background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;font-size:11px;line-height:1.4;white-space:nowrap;color:var(--text);opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease;box-shadow:0 8px 20px rgba(0,0,0,.4);z-index:10}
+  .tl-marker .tl-tip b{color:var(--text)}
+  .tl-marker .tl-tip span{color:var(--text3);font-weight:400}
+  .tl-marker .tl-tip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--surface3)}
+  .tl-marker:hover .tl-tip{opacity:1;transform:translateX(-50%) translateY(0)}
+  .tl-axis-labels{display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:4px;font-weight:500}
+
   /* LAYOUT */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
   .three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
@@ -1317,12 +1335,21 @@
     </div>
 
     <div class="card" style="margin-bottom:18px">
-      <div class="card-header"><span class="card-title">📈 24h Incident Timeline</span><span style="font-size:11px;color:var(--text3)" id="ctrl-timeline-count"></span></div>
-      <div class="card-body">
-        <div id="ctrl-timeline" style="position:relative;height:44px">
-          <div style="color:var(--text3);font-size:13px;text-align:center;padding:12px">Loading…</div>
+      <div class="card-header">
+        <span class="card-title">📈 24h Incident Timeline</span>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="tl-legend">
+            <span class="tl-legend-item"><span class="tl-legend-dot" style="background:var(--red);color:var(--red)"></span>Alert</span>
+            <span class="tl-legend-item"><span class="tl-legend-dot" style="background:var(--accent);color:var(--accent)"></span>Automation</span>
+          </div>
+          <span style="font-size:11px;color:var(--text3)" id="ctrl-timeline-count"></span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:4px">
+      </div>
+      <div class="card-body">
+        <div id="ctrl-timeline" class="tl-wrap">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:30px 12px">Loading…</div>
+        </div>
+        <div class="tl-axis-labels">
           <span>24h ago</span><span>18h</span><span>12h</span><span>6h</span><span>Now</span>
         </div>
       </div>
@@ -6377,6 +6404,9 @@ async function renderSystemStatusBar(){
 }
 setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderSystemStatusBar();},10000);
 
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 async function renderCtrlTimeline(){
   const el=document.getElementById('ctrl-timeline'),countEl=document.getElementById('ctrl-timeline-count');
   if(!el)return;
@@ -6410,15 +6440,36 @@ async function renderCtrlTimeline(){
 
   if(countEl)countEl.textContent=events.length?`${events.length} event${events.length===1?'':'s'} in 24h`:'';
   if(!events.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;text-align:center;padding:14px">Quiet — nothing logged in the last 24 hours.</div>';
+    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;text-align:center;padding:30px 12px">✅ Quiet — nothing logged in the last 24 hours.</div>';
     return;
   }
   const colors={alert:'var(--red)',automation:'var(--accent)'};
+  const icons={alert:'⚠',automation:'⚙'};
+
+  // Sort oldest→newest, then stack markers that land too close together
+  // onto alternating rows so they don't visually merge into one blob.
+  const sorted=events.slice().sort((a,b)=>b.hoursAgo-a.hoursAgo)
+    .map(e=>({...e,pct:Math.max(0,Math.min(100,(24-e.hoursAgo)/24*100))}));
+  const rows=[];       // rows[i] = pct of last marker placed on row i
+  const minGapPct=6;   // markers closer than this (as % of width) stack
+  const maxRows=3;
+  sorted.forEach(e=>{
+    let row=0;
+    while(row<maxRows-1 && rows[row]!==undefined && (e.pct-rows[row])<minGapPct)row++;
+    rows[row]=e.pct;
+    e.row=row;
+  });
+  const rowLift=[0,20,40]; // px lifted above the axis per stack row
+
   el.innerHTML=`
-    <div style="position:absolute;left:0;right:0;top:20px;height:2px;background:var(--border)"></div>
-    ${events.map(e=>{
-      const pct=Math.max(0,Math.min(100,(24-e.hoursAgo)/24*100));
-      return`<div title="${e.label} · ${e.time||''}" style="position:absolute;left:${pct}%;top:14px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:${colors[e.type]};border:2px solid var(--surface);cursor:default"></div>`;
+    ${[0,25,50,75,100].map(p=>`<div class="tl-gridline" style="left:${p}%"></div>`).join('')}
+    <div class="tl-axis"></div>
+    <div class="tl-now-dot" style="right:-1px"></div>
+    ${sorted.map(e=>{
+      const lift=rowLift[e.row]||0;
+      return`<div class="tl-marker" style="left:${e.pct}%;margin-bottom:${lift}px;background:${colors[e.type]};box-shadow:0 0 8px ${colors[e.type]}">
+        <div class="tl-tip"><b>${icons[e.type]} ${escapeHtml(e.label||'')}</b><br><span>${e.time||''} · ${e.hoursAgo<1?'<1h ago':Math.round(e.hoursAgo)+'h ago'}</span></div>
+      </div>`;
     }).join('')}`;
 }
 setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderCtrlTimeline();},60000);
