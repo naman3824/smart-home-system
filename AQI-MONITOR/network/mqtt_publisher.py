@@ -35,11 +35,12 @@ client.connect(BROKER, PORT)
 client.loop_start()
 time.sleep(2)
 
-print("Sending sensor data every 5 seconds. Press Ctrl+C to stop.\n")
+print("Sending sensor data every 1 minute. Press Ctrl+C to stop.\n")
 
 while True:
     reading = read_all_sensors()
     payload = json.dumps(reading)
     client.publish(TOPIC, payload, qos=1)
-    print(f"Sent → AQI: {reading['aqi']} ({reading['category']})")
-    time.sleep(5)
+    print(f"Sent → AQI: {reading['aqi']} ({reading['category']}) "
+          f"| Station: {reading.get('nearest_station', 'Unknown')}")
+    time.sleep(60)  # har 1 minute mein reading
