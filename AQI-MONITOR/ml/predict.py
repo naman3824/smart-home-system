@@ -58,7 +58,9 @@ def predict_next_7_days(last_7_days: list) -> list:
     raw = np.array([[d.get(f, 0) for f in features] for d in last_7_days])
 
     # Step 2: scale using same scaler used during training
-    scaled = scaler.transform(raw)
+    import pandas as pd
+    raw_df = pd.DataFrame(raw, columns=["PM2.5", "PM10", "NO2", "CO", "O3", "AQI"])
+    scaled = scaler.transform(raw_df)
 
     predictions = []
     window = scaled.copy()  # start with the last 7 real days
