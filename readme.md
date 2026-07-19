@@ -10,6 +10,7 @@ Built with FastAPI · Vanilla JS · face-api.js · SVG Floor Plan · WebSocket
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
+### 🔴 [Live Demo](https://smart-home-system-url.duckdns.org/)
 
 </div>
 
@@ -46,7 +47,7 @@ Smart Home Dashboard is a real-time home automation system that integrates five 
 ### 📊 Monitoring Tabs
 - **Climate** — temperature, humidity, HVAC mode, history charts
 - **Air Quality** — AQI gauge, PM2.5/PM10/CO₂, health advisory, 7-day forecast
-- **Energy** — live watts, daily kWh, ₹ cost, per-room breakdown, device list
+- **Energy** — live watts, daily kWh, ₹ cost, per-room breakdown, week-over-week usage comparison, phantom-load detection (devices left on), per-device runtime/maintenance tracking
 - **Safety** — smoke %, gas %, temperature gauges with threshold alerts and chart history
 
 ### 🔒 Security
@@ -61,13 +62,31 @@ Smart Home Dashboard is a real-time home automation system that integrates five 
 - Face recognition simulations (all 5 members + unknown intruder)
 - Scene activations — all logged with timestamps
 
+### ⚡ Automation Engine
+- Rule builder: sensor thresholds (above/below/between), time-of-day schedules, occupancy triggers, device-state triggers, AQI category
+- **Compound conditions** — combine two conditions with AND/OR (e.g. "AQI high AND nobody home")
+- Invert any condition ("fire when NOT true")
+- Per-rule cooldowns, with automatic safety clamping on daily rules so a short cooldown can't cause a rule to double-fire in the same minute
+- Conflict detection — flags when two enabled rules target the same device
+- Global pause switch — stop every rule and routine without touching individual enabled states
+- Live fire-count stats per rule (today / all-time) and a rule test button that shows exactly what would happen, without actually acting
+- Per-member **Routines** — recurring scheduled actions by day/time, independent of sensor-driven rules
+- 🎙️ **Voice control** — tap-to-talk mic (Web Speech API) for device commands, scene activation, and spoken status queries ("what's the AQI")
+
+### 🏠 Household Management
+- **Family** — manage members, home/away status, per-member device rooms
+- **Guest Access** — scheduled visitor windows (day/time), with a generated **QR access pass** per guest
+- **Payments** — monthly rent split across members, payment status/method tracking
+- **Audit Log** — every login, toggle, and automation action, with CSV export
+- **Control Room** — a live command-center view: system health status bar, all-rooms status matrix, live activity feed, and a full household summary in one screen
+
 ---
 
 ## Quick Start
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/smart-home-dashboard.git
+git clone https://github.com/naman3824/smart-home-system.git
 cd smart-home-dashboard
 ```
 
@@ -111,6 +130,11 @@ Open **http://localhost:8000** in Chrome or Edge.
 smart-home-dashboard/
 │
 ├── server.py                    ← Main FastAPI server — run this
+├── db.py                        ← SQLite persistence layer
+├── automation.py                ← Automation rules & routines engine
+├── auth.py                      ← Session-based auth
+├── applog.py                    ← App-wide logger
+├── backfill_energy_history.py   ← One-time energy history backfill (auto-runs on startup)
 ├── requirements.txt             ← Core dependencies
 ├── requirements-full.txt        ← All modules (optional)
 ├── .env.example                 ← Environment variable template

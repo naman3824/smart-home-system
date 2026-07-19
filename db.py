@@ -15,8 +15,36 @@ import os
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "smarthome.db"))
+
+# The house this dashboard runs for is fixed in Gurugram, Haryana — always
+# IST (UTC+5:30), no DST. The container itself runs on UTC system time (the
+# default for python:3.11-slim on AWS unless a TZ is explicitly set), so
+# every "now" used for a timestamp that gets stored or shown to a person
+# needs to go through this helper — otherwise audit logs, "last on since",
+# routine fire times etc. all read ~5.5 hours behind real local time.
+# Purely-internal duration math (e.g. "seconds since last tick") doesn't
+# need this — it's fine in any consistent timezone since it's a difference.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_ist() -> datetime:
+    """Current time as a naive datetime already shifted to IST — safe to
+    strftime/compare against strings stored via now_ist_str()/SQL defaults
+    below, which all use the same +5:30 offset."""
+    return datetime.now(timezone.utc).astimezone(IST).replace(tzinfo=None)
+
+
+def now_ist_str() -> str:
+    return now_ist().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# SQLite's own `datetime('now', '+5 hours', '+30 minutes')` is always UTC with no server-side timezone
+# setting — this modifier string shifts it to IST at the SQL level, for use
+# in CREATE TABLE ... DEFAULT clauses and other in-SQL "now" references.
+SQL_NOW_IST = "datetime('now', '+5 hours', '+30 minutes')"
 
 # SQLite connections aren't thread-safe by default; the dashboard reads/writes
 # from the sensor simulation thread AND the FastAPI request threads, so every
@@ -56,7 +84,7 @@ def init_db():
                 date        TEXT NOT NULL,
                 status      TEXT NOT NULL,
                 estimated   TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS family_members (
@@ -72,7 +100,7 @@ def init_db():
                 room        TEXT NOT NULL,
                 device      TEXT NOT NULL,
                 state_json  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes')),
                 PRIMARY KEY (room, device)
             );
 
@@ -89,7 +117,7 @@ def init_db():
                 display_name    TEXT NOT NULL,
                 role            TEXT NOT NULL DEFAULT 'member',
                 member_id       INTEGER,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes')),
                 last_login_at   TEXT,
                 FOREIGN KEY (member_id) REFERENCES family_members(id) ON DELETE SET NULL
             );
@@ -97,7 +125,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS sessions (
                 token       TEXT PRIMARY KEY,
                 user_id     INTEGER NOT NULL,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes')),
                 expires_at  TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
@@ -108,7 +136,7 @@ def init_db():
                 action      TEXT NOT NULL,
                 detail      TEXT,
                 ip_address  TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS automation_rules (
@@ -119,7 +147,7 @@ def init_db():
                 action_json        TEXT NOT NULL,
                 enabled            INTEGER NOT NULL DEFAULT 1,
                 cooldown_seconds   INTEGER NOT NULL DEFAULT 300,
-                created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at         TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS automation_runs (
@@ -127,7 +155,7 @@ def init_db():
                 rule_id     INTEGER,
                 rule_name   TEXT NOT NULL,
                 detail      TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS routines (
@@ -142,7 +170,7 @@ def init_db():
                 device      TEXT NOT NULL,
                 action_json TEXT NOT NULL,
                 enabled     INTEGER NOT NULL DEFAULT 1,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS scheduled_guests (
@@ -156,7 +184,7 @@ def init_db():
                 end_min     INTEGER NOT NULL DEFAULT 59,
                 enabled     INTEGER NOT NULL DEFAULT 1,
                 notes       TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS rent_config (
@@ -165,7 +193,7 @@ def init_db():
                 due_day         INTEGER NOT NULL DEFAULT 1,
                 auto_pay        INTEGER NOT NULL DEFAULT 0,
                 notes           TEXT,
-                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS payments (
@@ -179,7 +207,18 @@ def init_db():
                 payment_method  TEXT,
                 notes           TEXT,
                 recorded_by     TEXT,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+            );
+
+            -- One row per calendar date, kwh is a running total for that date
+            -- (overwritten throughout the day as usage accrues, not appended).
+            -- Powers the Energy tab's "this week vs last week" insight — see
+            -- server.py's simulate_sensors() tick loop for the writer side.
+            CREATE TABLE IF NOT EXISTS energy_daily (
+                date        TEXT PRIMARY KEY,
+                kwh         REAL NOT NULL DEFAULT 0,
+                cost        REAL NOT NULL DEFAULT 0,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
             """
         )
@@ -263,7 +302,7 @@ def save_device_state(room, device, state_dict):
     with _db_lock, get_conn() as conn:
         conn.execute(
             """INSERT INTO device_state (room, device, state_json, updated_at)
-               VALUES (?, ?, ?, datetime('now'))
+               VALUES (?, ?, ?, datetime('now', '+5 hours', '+30 minutes'))
                ON CONFLICT(room, device) DO UPDATE SET
                  state_json = excluded.state_json,
                  updated_at = excluded.updated_at""",
@@ -337,7 +376,7 @@ def get_all_users():
 def update_last_login(user_id):
     with _db_lock, get_conn() as conn:
         conn.execute(
-            "UPDATE users SET last_login_at = datetime('now') WHERE id = ?", (user_id,)
+            "UPDATE users SET last_login_at = datetime('now', '+5 hours', '+30 minutes') WHERE id = ?", (user_id,)
         )
 
 
@@ -374,7 +413,7 @@ def delete_session(token):
 
 def delete_expired_sessions():
     with _db_lock, get_conn() as conn:
-        conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+        conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now', '+5 hours', '+30 minutes')")
 
 
 # ── Audit log ───────────────────────────────────────────────────────────
@@ -448,6 +487,21 @@ def update_automation_rule_enabled(rule_id, enabled):
         )
 
 
+def update_automation_rule(rule_id, name, description, condition, action, cooldown_seconds):
+    """Full edit of an existing rule's definition (enabled state is left
+    alone — use update_automation_rule_enabled for that toggle)."""
+    import json
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            """UPDATE automation_rules
+               SET name=?, description=?, condition_json=?, action_json=?, cooldown_seconds=?
+               WHERE id=?""",
+            (name, description, json.dumps(condition), json.dumps(action), cooldown_seconds, rule_id),
+        )
+        row = conn.execute("SELECT * FROM automation_rules WHERE id = ?", (rule_id,)).fetchone()
+        return _row_to_rule(row) if row else None
+
+
 def delete_automation_rule(rule_id):
     with _db_lock, get_conn() as conn:
         conn.execute("DELETE FROM automation_rules WHERE id = ?", (rule_id,))
@@ -481,6 +535,28 @@ def get_automation_runs(limit: int = 100):
             "SELECT * FROM automation_runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_automation_run_stats():
+    """Per-rule fire counts (today + all-time), plus the overall total fired
+    today — powers the Automation page's stats header and per-rule badges.
+    Cheap enough to compute on every status poll: automation_runs is small
+    relative to a household's actual usage volume."""
+    today_str = now_ist_str()[:10]
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT rule_id, created_at FROM automation_runs WHERE rule_id IS NOT NULL"
+        ).fetchall()
+    per_rule = {}
+    total_today = 0
+    for r in rows:
+        rid = r["rule_id"]
+        entry = per_rule.setdefault(rid, {"total": 0, "today": 0})
+        entry["total"] += 1
+        if r["created_at"][:10] == today_str:
+            entry["today"] += 1
+            total_today += 1
+    return {"per_rule": per_rule, "total_today": total_today, "total_all_time": len(rows)}
 
 
 # ── Routines ─────────────────────────────────────────────────────────────
@@ -620,7 +696,7 @@ def upsert_rent_config(total_rent, due_day, auto_pay=False, notes=None):
         existing = conn.execute("SELECT id FROM rent_config LIMIT 1").fetchone()
         if existing:
             conn.execute(
-                """UPDATE rent_config SET total_rent=?, due_day=?, auto_pay=?, notes=?, updated_at=datetime('now')
+                """UPDATE rent_config SET total_rent=?, due_day=?, auto_pay=?, notes=?, updated_at=datetime('now', '+5 hours', '+30 minutes')
                    WHERE id=?""",
                 (total_rent, due_day, 1 if auto_pay else 0, notes, existing["id"])
             )
@@ -690,3 +766,27 @@ def get_payment(payment_id):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM payments WHERE id=?", (payment_id,)).fetchone()
         return dict(row) if row else None
+
+
+# ── Energy daily log (for week-over-week insights) ─────────────────────────
+
+def upsert_energy_daily(date_str, kwh, cost):
+    """Overwrites today's running total — called periodically from the sensor
+    tick loop, not appended per-sample, so this stays a cheap upsert."""
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            """INSERT INTO energy_daily (date, kwh, cost, updated_at) VALUES (?, ?, ?, datetime('now', '+5 hours', '+30 minutes'))
+               ON CONFLICT(date) DO UPDATE SET kwh=excluded.kwh, cost=excluded.cost, updated_at=excluded.updated_at""",
+            (date_str, kwh, cost),
+        )
+
+
+def get_energy_daily_range(days: int = 21):
+    """Last `days` calendar dates of energy_daily, oldest first. Only returns
+    rows that actually exist (no zero-filling) — callers decide how to handle
+    gaps/missing history."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM energy_daily ORDER BY date DESC LIMIT ?", (days,)
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]

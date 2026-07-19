@@ -4,6 +4,10 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Smart Home — Gurugram</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png"/>
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="/static/favicon-180.png"/>
+<link rel="shortcut icon" href="/static/favicon.ico"/>
 <style>
   :root {
     --bg:#0d0f18;--surface:#161928;--surface2:#1e2236;--surface3:#262c42;
@@ -18,13 +22,17 @@
   /* SIDEBAR */
   .sidebar{position:fixed;left:0;top:0;bottom:0;width:224px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100}
   .logo{padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+  .logo-row{display:flex;align-items:center;gap:9px}
+  .logo-mark{width:24px;height:24px;flex-shrink:0;filter:drop-shadow(0 0 8px rgba(108,139,239,.35))}
   .logo h1{font-size:18px;font-weight:800;letter-spacing:-0.5px;background:linear-gradient(135deg,#a5b8ff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
   .logo span{font-size:10px;color:var(--text3);display:block;margin-top:3px;letter-spacing:0.3px}
+  .login-logo{width:44px;height:44px;display:block;margin:0 auto 12px;filter:drop-shadow(0 0 14px rgba(108,139,239,.4))}
   .nav{flex:1;padding:8px 0;overflow-y:auto}
   .nav-section{font-size:9.5px;color:var(--text3);letter-spacing:.9px;text-transform:uppercase;padding:14px 18px 5px}
-  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;transition:all .15s;border-left:3px solid transparent;border-radius:0 8px 8px 0;margin:1px 6px 1px 0}
-  .nav-item:hover{color:var(--text);background:var(--surface2)}
-  .nav-item.active{color:var(--accent);background:rgba(108,139,239,.1);border-left-color:var(--accent)}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;transition:color .15s,background-color .15s,border-color .15s,transform .15s;border-left:3px solid transparent;border-radius:0 8px 8px 0;margin:1px 6px 1px 0}
+  .nav-item:hover{color:var(--text);background:var(--surface2);transform:translateX(2px)}
+  .nav-item.active{color:var(--accent);background:rgba(108,139,239,.1);border-left-color:var(--accent);box-shadow:inset 0 0 0 1px rgba(108,139,239,.08)}
+  .nav-item.active:hover{transform:none}
   .nav-item svg{width:15px;height:15px;flex-shrink:0}
   .nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;display:none}
   .nav-badge.show{display:inline}
@@ -94,9 +102,17 @@
   .scene-btn:hover{border-color:var(--accent);color:var(--text);background:var(--surface3);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.25)}
   .scene-btn.active-scene{border-color:var(--accent);color:var(--accent);background:rgba(108,139,239,.12);box-shadow:0 0 0 1px rgba(108,139,239,.2) inset}
 
+  /* EMPTY STATES — shared across Guest Access / Payments / Audit Log / etc. */
+  .empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:36px 20px;gap:4px}
+  .empty-state .es-icon{width:52px;height:52px;border-radius:14px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:10px}
+  .empty-state .es-title{font-size:14px;font-weight:700;color:var(--text)}
+  .empty-state .es-sub{font-size:12.5px;color:var(--text3);max-width:340px;line-height:1.6;margin-top:3px}
+  .empty-state .btn{margin-top:14px}
+
   /* SENSOR GRID */
   .sensor-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-  .sensor-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden}
+  .sensor-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+  .sensor-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.3);border-color:var(--border2)}
   .sensor-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:2px 2px 0 0}
   .temp-card::before{background:linear-gradient(90deg,#f59e0b,#ef4444)}
   .hum-card::before{background:linear-gradient(90deg,#06b6d4,#3b82f6)}
@@ -187,6 +203,8 @@
   .bar-fill{height:100%;border-radius:5px;transition:width .6s ease}
   .alert-chip{display:flex;align-items:center;gap:10px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:9px;padding:11px 13px;margin-top:10px;animation:pulseRed 2s infinite}
   @keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @keyframes voicePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
 
   /* LOGS */
   .log-entry{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid var(--border);animation:fadeSlideIn .3s ease}
@@ -253,17 +271,112 @@
   .btn-primary:hover{background:#5a7de6}
   .btn-danger{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:var(--red)}
   .btn-sm{padding:3px 9px;font-size:11px}
+  .btn-acc-orange.btn-primary{background:var(--orange);border-color:var(--orange)}
+  .btn-acc-orange.btn-primary:hover{background:#fb9d1f;box-shadow:0 4px 14px -4px rgba(245,158,11,.55)}
+  .btn-acc-purple.btn-primary{background:#a78bfa;border-color:#a78bfa}
+  .btn-acc-purple.btn-primary:hover{background:#bda6fc;box-shadow:0 4px 14px -4px rgba(167,139,250,.55)}
+  .btn-acc-cyan.btn-primary{background:var(--cyan);border-color:var(--cyan)}
+  .btn-acc-cyan.btn-primary:hover{background:#22d3ee;box-shadow:0 4px 14px -4px rgba(6,182,212,.55)}
+  .btn-acc-pink.btn-primary{background:var(--pink);border-color:var(--pink)}
+  .btn-acc-pink.btn-primary:hover{background:#f472b6;box-shadow:0 4px 14px -4px rgba(236,72,153,.55)}
+  .btn-acc-amber{border-color:rgba(245,197,24,.4);color:#f5c518}
+  .btn-acc-amber:hover{background:rgba(245,197,24,.12);border-color:#f5c518;box-shadow:0 4px 14px -4px rgba(245,197,24,.4)}
+  .btn-acc-amber.btn-primary{background:#f5c518;border-color:#f5c518;color:#1a1400}
+  .btn-acc-amber.btn-primary:hover{background:#fde047;box-shadow:0 4px 14px -4px rgba(245,197,24,.55)}
+  .btn-acc-blue.btn-primary:hover{box-shadow:0 4px 14px -4px rgba(108,139,239,.55)}
 
   /* MODAL */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
-  .modal-backdrop.open{display:flex}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s ease,visibility 0s linear .18s}
+  .modal-backdrop.open{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .18s ease}
+  .mv2-scroll{scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+  .mv2-scroll::-webkit-scrollbar{width:7px}
+  .mv2-scroll::-webkit-scrollbar-track{background:transparent}
+  .mv2-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
+  .mv2-scroll::-webkit-scrollbar-thumb:hover{background:var(--mv2-solid,var(--accent))}
+
   .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:390px;max-width:92vw;box-shadow:var(--shadow)}
   .modal-title{font-size:15px;font-weight:700;margin-bottom:16px}
   .form-group{margin-bottom:12px}
   .form-group label{font-size:10.5px;color:var(--text3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
   .form-group input,.form-group select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;transition:border-color .15s}
+  .form-group select option{background:var(--surface2);color:var(--text)}
   .form-group input:focus,.form-group select:focus{border-color:var(--accent)}
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+  /* MODAL V2 — glass, gradient-accent modals (family/log/rules/routine/visitor/rent) */
+  .mv2-backdrop .mv2-modal{--mv2-g1:rgba(108,139,239,.32);--mv2-g2:rgba(167,139,250,.26);--mv2-solid:#6c8bef;--mv2-solid2:#a78bfa;
+    background:linear-gradient(180deg,rgba(31,35,56,.94),rgba(20,23,37,.97));border:1px solid var(--border2);border-radius:20px;width:460px;max-width:94vw;max-height:88vh;box-shadow:0 30px 80px -18px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.03) inset;position:relative;overflow:hidden;backdrop-filter:blur(22px);display:flex;flex-direction:column;
+    transform:scale(.94) translateY(6px);opacity:0;transition:transform .28s cubic-bezier(.16,1,.3,1),opacity .2s ease}
+  .mv2-modal.mv2-acc-orange{--mv2-g1:rgba(245,158,11,.30);--mv2-g2:rgba(245,158,11,.15);--mv2-solid:#f59e0b;--mv2-solid2:#fbbf24}
+  .mv2-modal.mv2-acc-purple{--mv2-g1:rgba(167,139,250,.34);--mv2-g2:rgba(139,92,246,.18);--mv2-solid:#a78bfa;--mv2-solid2:#c4b5fd}
+  .mv2-modal.mv2-acc-cyan{--mv2-g1:rgba(6,182,212,.30);--mv2-g2:rgba(6,182,212,.15);--mv2-solid:#06b6d4;--mv2-solid2:#22d3ee}
+  .mv2-modal.mv2-acc-pink{--mv2-g1:rgba(236,72,153,.30);--mv2-g2:rgba(236,72,153,.15);--mv2-solid:#ec4899;--mv2-solid2:#f472b6}
+  .mv2-modal.mv2-acc-amber{--mv2-g1:rgba(245,197,24,.30);--mv2-g2:rgba(245,197,24,.15);--mv2-solid:#f5c518;--mv2-solid2:#fde047}
+  .mv2-backdrop.open .mv2-modal{transform:scale(1) translateY(0);opacity:1}
+  .mv2-modal::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:0;background:radial-gradient(60% 55% at 12% -15%,var(--mv2-g1),transparent 60%),radial-gradient(55% 45% at 112% 8%,var(--mv2-g2),transparent 60%)}
+  .mv2-scroll{overflow-y:auto;padding:22px 24px 8px;position:relative;z-index:1;flex:1 1 auto}
+  .mv2-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}
+  .mv2-avatar{width:44px;height:44px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:19px;background:linear-gradient(135deg,var(--mv2-g1),var(--mv2-g2));border:1px solid var(--mv2-g1);box-shadow:0 4px 16px -4px var(--mv2-g1)}
+  .mv2-eyebrow{font-size:9.5px;text-transform:uppercase;letter-spacing:.16em;color:var(--text3);display:flex;align-items:center;gap:6px;margin-bottom:3px;font-weight:700}
+  .mv2-eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--mv2-solid);box-shadow:0 0 8px var(--mv2-solid)}
+  .mv2-title{font-size:16.5px;font-weight:700;color:var(--text);letter-spacing:-.3px;line-height:1.3}
+  .mv2-sub{font-size:12px;color:var(--text3);margin-top:3px;line-height:1.45}
+  .mv2-field{margin-bottom:16px}
+  .mv2-field-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+  .mv2-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--text3)}
+  .mv2-badge{font-size:10px;color:var(--mv2-solid2);background:var(--mv2-g2);padding:3px 8px;border-radius:20px;white-space:nowrap;font-weight:600}
+  .mv2-input-wrap{position:relative}
+  .mv2-input-icon{position:absolute;left:12px;top:13px;font-size:13px;opacity:.65;pointer-events:none;line-height:1}
+  .mv2-input{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:11px 12px;color:var(--text);font-size:13.5px;outline:none;transition:.15s;font-family:inherit}
+  .mv2-input.with-icon{padding-left:34px}
+  .mv2-input:hover{border-color:var(--border2)}
+  .mv2-input:focus{border-color:var(--mv2-solid);box-shadow:0 0 0 3px var(--mv2-g2);background:rgba(255,255,255,.045)}
+  textarea.mv2-input{resize:none}
+  .mv2-charcount{position:absolute;right:10px;bottom:8px;font-size:9.5px;color:var(--text3)}
+  select.mv2-select{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:11px 32px 11px 12px;color:var(--text);font-size:13.5px;outline:none;appearance:none;-webkit-appearance:none;cursor:pointer;transition:.15s;background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%),linear-gradient(135deg,var(--text3) 50%,transparent 50%);background-position:calc(100% - 17px) center,calc(100% - 12px) center;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+  select.mv2-select option{background:var(--surface2);color:var(--text)}
+  select.mv2-select option:checked,select.mv2-select option:hover{background:var(--surface3)}
+  select.mv2-select:hover{border-color:var(--border2)}
+  select.mv2-select:focus{border-color:var(--mv2-solid);box-shadow:0 0 0 3px var(--mv2-g2)}
+  .mv2-grid{display:grid;gap:8px}
+  .mv2-grid.cols-3{grid-template-columns:repeat(3,1fr)}
+  .mv2-grid.cols-4{grid-template-columns:repeat(4,1fr)}
+  .mv2-pill{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.02);color:var(--text2);font-size:10.5px;font-weight:500;cursor:pointer;transition:.15s;text-align:center;user-select:none}
+  .mv2-pill .ic{font-size:16px;transition:transform .15s}
+  .mv2-pill:hover{background:rgba(255,255,255,.06);color:var(--text);border-color:var(--border2)}
+  .mv2-pill:hover .ic{transform:scale(1.12)}
+  .mv2-pill.active{border-color:var(--mv2-solid);background:var(--mv2-g2);color:var(--text);box-shadow:0 0 0 3px var(--mv2-g2),0 4px 12px -4px var(--mv2-g1)}
+  .mv2-row-pills{display:flex;gap:6px;flex-wrap:wrap}
+  .mv2-row-pills .mv2-pill{flex-direction:row;padding:8px 12px;gap:6px;flex:1 1 auto}
+  .mv2-time{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:9px 11px;transition:.15s}
+  .mv2-time:hover{border-color:var(--border2)}
+  .mv2-time:focus-within{border-color:var(--mv2-solid);box-shadow:0 0 0 3px var(--mv2-g2)}
+  .mv2-time .ic{font-size:13px;opacity:.7;margin-right:3px}
+  .mv2-time input{width:38px;background:transparent;border:none;color:var(--text);font-size:15px;font-weight:700;text-align:center;outline:none;font-variant-numeric:tabular-nums;padding:0}
+  .mv2-time span.sep{color:var(--text3);font-weight:700}
+  .mv2-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.02);transition:.15s}
+  .mv2-toggle-row:has(input:checked){border-color:var(--mv2-g1);background:var(--mv2-g2)}
+  .mv2-toggle-row .lbl{font-size:12.5px;color:var(--text);font-weight:500}
+  .mv2-toggle-row .hint{font-size:10.5px;color:var(--text3);margin-top:1px}
+  .mv2-switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0}
+  .mv2-switch input{opacity:0;width:0;height:0;position:absolute}
+  .mv2-switch .track{position:absolute;inset:0;background:var(--surface3);border:1px solid var(--border2);border-radius:20px;transition:.15s;cursor:pointer}
+  .mv2-switch .track::before{content:'';position:absolute;left:2px;top:1px;width:15px;height:15px;border-radius:50%;background:var(--text2);transition:.15s}
+  .mv2-switch input:checked+.track{background:var(--mv2-solid);border-color:var(--mv2-solid)}
+  .mv2-switch input:checked+.track::before{transform:translateX(16px);background:#fff}
+  .mv2-section{margin:18px 0 14px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--text2);font-weight:700}
+  .mv2-section .step{width:18px;height:18px;border-radius:6px;background:var(--mv2-g2);color:var(--mv2-solid2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0}
+  .mv2-foot{border-top:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:flex-end;gap:8px;position:relative;z-index:1;flex-shrink:0;background:rgba(255,255,255,.015)}
+  .mv2-foot .mv2-summary{font-size:11.5px;color:var(--text2);margin-right:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .mv2-btn{padding:9px 16px;border-radius:11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s}
+  .mv2-btn:hover{background:var(--surface3);border-color:var(--border2)}
+  .mv2-btn-primary{background:linear-gradient(135deg,var(--mv2-solid),var(--mv2-solid2));border-color:transparent;color:#0b0d16;font-weight:700;box-shadow:0 8px 20px -6px var(--mv2-g1)}
+  .mv2-btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 10px 24px -6px var(--mv2-g1)}
+  .mv2-btn-primary:disabled{opacity:.5;cursor:not-allowed;filter:none;transform:none}
+  .mv2-timeline{position:relative;height:24px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);overflow:hidden;margin-top:8px}
+  .mv2-timeline .bar{position:absolute;top:2px;bottom:2px;border-radius:6px;background:linear-gradient(90deg,var(--mv2-solid),var(--mv2-solid2));box-shadow:0 0 14px var(--mv2-g1);transition:.15s}
+  .mv2-timeline-labels{display:flex;justify-content:space-between;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-top:4px}
+  @media(max-width:480px){.mv2-grid.cols-4{grid-template-columns:repeat(3,1fr)}}
 
   /* TOAST */
   #alertToast{position:fixed;top:14px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:7px;pointer-events:none}
@@ -312,6 +425,14 @@
     .sensor-grid{grid-template-columns:repeat(2,1fr)}
     .two-col,.three-col{grid-template-columns:1fr}
   }
+  /* Ambient state tinting — a barely-there wash across the whole Control
+     Room page reinforcing system state peripherally, not just via the
+     status dot. Border glow only (no full-page background tint) so it
+     stays subtle rather than gimmicky. */
+  #page-control{transition:box-shadow .6s ease}
+  #page-control.ctrl-tint-warn{box-shadow:inset 0 0 0 1px rgba(245,158,11,.06),inset 0 120px 200px -100px rgba(245,158,11,.08)}
+  #page-control.ctrl-tint-alert{box-shadow:inset 0 0 0 1px rgba(239,68,68,.08),inset 0 120px 200px -100px rgba(239,68,68,.12)}
+
   .ctrl-master-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px 10px;border-radius:12px;border:1.5px solid rgba(255,255,255,.08);background:var(--surface2);cursor:pointer;color:var(--text);font-size:12px;font-weight:600;transition:all .15s;min-height:80px}
   .ctrl-master-btn:hover{background:rgba(var(--mc,108,139,239),.15);border-color:color-mix(in srgb,var(--mc,#6b8bef) 60%,transparent);transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.2)}
   .ctrl-master-btn:active{transform:translateY(0)}
@@ -332,6 +453,7 @@
 <!-- LOGIN SCREEN — shown until a valid session is confirmed -->
 <div id="loginOverlay">
   <div class="login-card">
+    <img src="/static/logo-mark.png" alt="" class="login-logo"/>
     <h1>Smart Home</h1>
     <div class="login-sub">Gurugram, Haryana — sign in to continue</div>
     <div class="login-error" id="loginError"></div>
@@ -352,7 +474,10 @@
 
 <nav class="sidebar">
   <div class="logo">
-    <h1>Smart Home</h1>
+    <div class="logo-row">
+      <img src="/static/logo-mark.png" alt="" class="logo-mark"/>
+      <h1>Smart Home</h1>
+    </div>
     <span>Gurugram, Haryana</span>
   </div>
   <div class="nav">
@@ -1074,6 +1199,14 @@
       </div>
       <div class="card-body"><div class="device-grid" id="deviceGrid"></div></div>
     </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-header">
+        <span class="card-title">🩺 Device health</span>
+        <span style="font-size:10.5px;color:var(--text3)">Cumulative runtime since logging began</span>
+      </div>
+      <div class="card-body" id="deviceHealthList"></div>
+    </div>
   </div>
 
   <!-- CLIMATE -->
@@ -1146,6 +1279,23 @@
 
   <!-- CONTROL ROOM -->
   <div class="content page" id="page-control">
+    <div id="ctrl-status-bar" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span id="ctrl-status-dot" style="width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0"></span>
+        <span id="ctrl-status-label" style="font-weight:800;font-size:12.5px;letter-spacing:.3px">SYSTEMS NOMINAL</span>
+      </div>
+      <div style="width:1px;height:16px;background:var(--border);flex-shrink:0"></div>
+      <div style="font-family:'SF Mono',Consolas,monospace;font-size:13px;font-weight:700;color:var(--text2)" id="ctrl-clock">--:--:--</div>
+      <div style="width:1px;height:16px;background:var(--border);flex-shrink:0"></div>
+      <div style="font-size:11.5px;color:var(--text3);display:flex;align-items:center;gap:14px;flex-wrap:wrap" id="ctrl-status-diagnostics">
+        <span>⏱ Uptime --</span>
+        <span>🌐 Climate API --</span>
+        <span>⚡ Automation --</span>
+        <span>🔗 -- clients</span>
+      </div>
+      <button class="btn btn-sm" style="margin-left:auto" onclick="renderSystemStatusBar()" title="Refresh diagnostics">↻</button>
+    </div>
+
     <div id="ctrl-emergency-banner" style="display:none;border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;background:rgba(239,68,68,.1);border:1.5px solid rgba(239,68,68,.5);align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:12px">
         <span style="font-size:28px;animation:pulse 1s ease-in-out infinite">🚨</span>
@@ -1164,6 +1314,75 @@
       <div class="sensor-card"><div class="sensor-label">💨 CO₂</div><div class="sensor-value" id="ctrl-co2" style="color:var(--accent)">--</div><div class="sensor-sub">ppm</div></div>
       <div class="sensor-card"><div class="sensor-label">🔥 Smoke</div><div class="sensor-value" id="ctrl-smoke" style="color:var(--text)">--</div><div class="sensor-sub">%</div></div>
       <div class="sensor-card"><div class="sensor-label">⚡ Power</div><div class="sensor-value" id="ctrl-watts" style="color:var(--yellow)">--</div><div class="sensor-sub">W live</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">📈 24h Incident Timeline</span><span style="font-size:11px;color:var(--text3)" id="ctrl-timeline-count"></span></div>
+      <div class="card-body">
+        <div id="ctrl-timeline" style="position:relative;height:44px">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:12px">Loading…</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:4px">
+          <span>24h ago</span><span>18h</span><span>12h</span><span>6h</span><span>Now</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">🗺 All Rooms</span><span style="font-size:11px;color:var(--text3)">One glance, whole house</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:10px" id="ctrl-rooms-matrix">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;grid-column:1/-1">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">📐 Floor Plan</span><span style="font-size:11px;color:var(--text3)">Live room states, spatially</span></div>
+      <div class="card-body" style="padding:10px">
+        <div id="ctrl-mini-floorplan" style="width:100%;max-width:560px;margin:0 auto">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col mb-18">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🪪 Expected Today</span><span style="font-size:11px;color:var(--text3)">Scheduled visitors</span></div>
+        <div class="card-body" id="ctrl-expected-visitors">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">⏰ Next Routine</span><span style="font-size:11px;color:var(--text3)">Upcoming scheduled action</span></div>
+        <div class="card-body" id="ctrl-next-routine">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col mb-18">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📡 Live Activity</span><span style="font-size:11px;color:var(--text3)" id="ctrl-activity-count"></span></div>
+        <div class="card-body" id="ctrl-activity-feed" style="max-height:280px;overflow-y:auto">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🪪 Security & Access</span><span style="font-size:11px;color:var(--text3)">Camera, door, recent events</span></div>
+        <div class="card-body" id="ctrl-access-strip">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header"><span class="card-title">📊 Detailed Summary</span><span style="font-size:11px;color:var(--text3)">Everything at a glance, in one place</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px" id="ctrl-summary-grid">
+          <div style="color:var(--text3);font-size:13px;text-align:center;padding:20px;grid-column:1/-1">Loading…</div>
+        </div>
+      </div>
     </div>
 
     <div class="card" style="margin-bottom:18px">
@@ -1399,6 +1618,18 @@
       <div class="sensor-card temp-card"><div class="sensor-label">Devices on</div><div class="sensor-value" id="en-count" style="color:var(--green)">--</div><div class="sensor-sub" id="en-total-sub">out of --</div></div>
       <div class="sensor-card aqi-card"><div class="sensor-label">Monthly projection</div><div class="sensor-value" id="en-monthly" style="color:var(--orange)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-monthly-cost">₹-- est.</div></div>
     </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📆 This week vs last week</span></div>
+        <div class="card-body" id="en-week-compare"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">👻 Phantom load</span><span style="font-size:10.5px;color:var(--text3)">On a while — worth checking</span></div>
+        <div class="card-body" id="en-phantom"></div>
+      </div>
+    </div>
+
     <div class="two-col">
       <div class="card"><div class="card-header"><span class="card-title">⚡ Per room</span></div><div class="card-body" id="en-rooms"></div></div>
       <div class="card"><div class="card-header"><span class="card-title">📈 Usage over time</span></div>
@@ -1653,11 +1884,16 @@
   <div class="content page" id="page-automation">
     <div style="background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(108,139,239,.07));border:1px solid rgba(34,197,94,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
       <span style="font-size:26px">⚡</span>
-      <div>
+      <div style="flex:1">
         <div style="font-weight:700;font-size:14px">Automation rules</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px">If a condition becomes true (AQI too high, nobody home, etc.), the matching action runs automatically. Checked every few seconds — each rule has its own cooldown so it won't spam-fire.</div>
       </div>
+      <button class="btn btn-sm" onclick="toggleAutomationPause(true)" title="Stop every rule and routine from firing without changing their individual enabled state">⏸ Pause all</button>
     </div>
+
+    <div id="automationPauseBanner" style="display:none;align-items:center;gap:12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:var(--radius);padding:12px 16px;margin-bottom:18px"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:18px" id="automationStatsRow"></div>
 
     <!-- Smart Suggestions -->
     <div class="card" style="margin-bottom:18px" id="smartSuggestionsCard">
@@ -1684,7 +1920,7 @@
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <span class="card-title">📜 Active rules</span>
-        <button class="btn btn-sm btn-primary" onclick="showAddAutomationModal()">+ New rule</button>
+        <button class="btn btn-sm btn-primary btn-acc-purple" onclick="showAddAutomationModal()">+ New rule</button>
       </div>
       <div class="card-body" id="automationRulesList">
         <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
@@ -1712,7 +1948,7 @@
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <span class="card-title">👥 Scheduled visitors</span>
-        <button class="btn btn-sm btn-primary" onclick="showAddGuestModal()">+ Add visitor</button>
+        <button class="btn btn-sm btn-primary btn-acc-pink" onclick="showAddGuestModal()">+ Add visitor</button>
       </div>
       <div class="card-body" id="guestScheduleList">
         <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
@@ -1757,7 +1993,7 @@
       <div style="font-size:14px;font-weight:600;min-width:110px;text-align:center" id="pay-month-label">--</div>
       <button class="btn" onclick="changePaymentMonth(1)">Next ›</button>
       <div style="flex:1"></div>
-      <button class="btn btn-sm" onclick="showRentConfigModal()" id="rentConfigBtn" style="display:none">⚙ Configure rent</button>
+      <button class="btn btn-sm btn-acc-amber" onclick="showRentConfigModal()" id="rentConfigBtn" style="display:none">⚙ Configure rent</button>
     </div>
 
     <!-- ═══ Electricity Overview ═══ -->
@@ -1900,7 +2136,7 @@
             <option value="delivery">Deliveries</option>
             <option value="intruder">Intruders</option>
           </select>
-          <button class="btn btn-sm btn-primary" onclick="showAddLogModal()">+ Add entry</button>
+          <button class="btn btn-sm btn-primary btn-acc-orange" onclick="showAddLogModal()">+ Add entry</button>
         </div>
       </div>
       <div class="card-body" id="securityLogList" style="max-height:480px;overflow-y:auto"></div>
@@ -1911,7 +2147,7 @@
   <div class="content page" id="page-family">
     <div class="two-col">
       <div class="card">
-        <div class="card-header"><span class="card-title">👥 Family members</span><button class="btn btn-sm btn-primary" onclick="showAddMemberModal()">+ Add</button></div>
+        <div class="card-header"><span class="card-title">👥 Family members</span><button class="btn btn-sm btn-primary btn-acc-blue" onclick="showAddMemberModal()">+ Add</button></div>
         <div class="card-body" id="familyList"></div>
       </div>
       <div class="card">
@@ -1954,7 +2190,7 @@
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <span class="card-title" id="myRoutinesTitle">⭐ My routines</span>
-        <button class="btn btn-sm btn-primary" onclick="showAddRoutineModal()">+ Add routine</button>
+        <button class="btn btn-sm btn-primary btn-acc-cyan" onclick="showAddRoutineModal()">+ Add routine</button>
       </div>
       <div class="card-body" id="myRoutinesList">
         <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
@@ -1982,7 +2218,10 @@
     <div class="card">
       <div class="card-header">
         <span class="card-title">🧾 Recent activity</span>
-        <button class="btn btn-sm" onclick="renderAuditLog()">↻ Refresh</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="downloadAuditLog()">⬇ Download CSV</button>
+          <button class="btn btn-sm" onclick="renderAuditLog()">↻ Refresh</button>
+        </div>
       </div>
       <div class="card-body" id="auditLogList" style="max-height:600px;overflow-y:auto">
         <div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Loading…</div>
@@ -2033,244 +2272,613 @@
 </div>
 
 <!-- MODALS -->
-<div class="modal-backdrop" id="addMemberModal">
-  <div class="modal">
-    <div class="modal-title">Add family member</div>
-    <div class="form-group"><label>Full name</label><input type="text" id="newMemberName" placeholder="e.g. Riya"/></div>
-    <div class="form-group"><label>Role</label><select id="newMemberRole"><option value="Member">Member</option><option value="Owner">Owner</option><option value="Guest">Frequent Guest</option></select></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal('addMemberModal')">Cancel</button><button class="btn btn-primary" onclick="addMember()">Add</button></div>
-  </div>
-</div>
-<div class="modal-backdrop" id="addLogModal">
-  <div class="modal">
-    <div class="modal-title">Add security log entry</div>
-    <div class="form-group"><label>Person / name</label><input type="text" id="logPersonName" placeholder="e.g. Rohit (guest)"/></div>
-    <div class="form-group"><label>Type</label><select id="logPersonType" onchange="toggleEstimated()"><option value="guest">Guest</option><option value="delivery">Delivery</option><option value="member">Member</option><option value="intruder">Intruder alert</option></select></div>
-    <div class="form-group"><label>What happened</label><input type="text" id="logEvent" placeholder="e.g. visited, dropped off package"/></div>
-    <div class="form-group" id="estimatedGroup"><label>Estimated arrival (deliveries)</label><input type="text" id="logEstimated" placeholder="HH:MM"/></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal('addLogModal')">Cancel</button><button class="btn btn-primary" onclick="submitLog()">Save</button></div>
-  </div>
-</div>
-<div class="modal-backdrop" id="addAutomationModal">
-  <div class="modal">
-    <div class="modal-title">New automation rule</div>    <div class="form-group">
-      <label>Template</label>
-      <select id="autoTemplate" onchange="applyAutomationTemplate()">
-        <option value="sensor_above">Sensor above threshold (e.g. AQI &gt; 200)</option>
-        <option value="sensor_below">Sensor below threshold (e.g. temp &lt; 24°C)</option>
-        <option value="nobody_home">Nobody home for N minutes</option>
-        <option value="someone_arrived_home">Someone just arrived home</option>
-        <option value="time_of_day">Time of day (daily schedule)</option>
-        <option value="aqi_category">AQI category equals (Good / Poor / etc.)</option>
-        <option value="device_state">A device is ON or OFF</option>
-      </select>
-    </div>
-    <div class="form-group"><label>Rule name</label><input type="text" id="autoName" placeholder="e.g. High AQI -> air purifier on"/></div>
-    <div class="form-group"><label>Description (optional)</label><input type="text" id="autoDescription" placeholder="What this rule does, in plain words"/></div>
-
-    <div id="autoConditionFields">
-      <div class="form-group">
-        <label>Sensor</label>
-        <select id="autoConditionKey">
-          <option value="aqi">AQI</option>
-          <option value="temperature">Temperature (°C)</option>
-          <option value="humidity">Humidity (%)</option>
-          <option value="smoke">Smoke (%)</option>
-          <option value="gas">Gas (%)</option>
-          <option value="co2_ppm">CO₂ (ppm)</option>
+<div class="modal-backdrop mv2-backdrop" id="addMemberModal">
+  <div class="mv2-modal">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">👤</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Household</div>
+          <div class="mv2-title">Add family member</div>
+          <div class="mv2-sub">Give them a profile, a role, and access to the dashboard.</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Full name</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">👤</span>
+          <input type="text" id="newMemberName" class="mv2-input with-icon" placeholder="e.g. Riya"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Role</span></div>
+        <select id="newMemberRole" class="mv2-select">
+          <option value="Member">Member</option>
+          <option value="Owner">Owner</option>
+          <option value="Guest">Frequent Guest</option>
         </select>
       </div>
-      <div class="form-group"><label>Threshold</label><input type="number" id="autoConditionThreshold" placeholder="e.g. 200"/></div>
     </div>
-    <div class="form-group" id="autoMinutesField" style="display:none">
-      <label>Minutes nobody's been home</label><input type="number" id="autoConditionMinutes" placeholder="30" value="30"/>
+    <div class="mv2-foot">
+      <button class="mv2-btn" onclick="closeModal('addMemberModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="addMember()">Add member</button>
     </div>
-    <div class="form-group" id="autoTimeFields" style="display:none">
-      <label>Time (hour : minute)</label>
-      <div style="display:flex;gap:8px">
-        <input type="number" id="autoCondHour" placeholder="Hour (0-23)" min="0" max="23" value="8" style="flex:1"/>
-        <input type="number" id="autoCondMinute" placeholder="Min (0-59)" min="0" max="59" value="0" style="flex:1"/>
+  </div>
+</div>
+<div class="modal-backdrop mv2-backdrop" id="addLogModal">
+  <div class="mv2-modal mv2-acc-orange">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">🔐</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Security log</div>
+          <div class="mv2-title">Add log entry</div>
+          <div class="mv2-sub">Record who came by and what happened, for the household record.</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Person / name</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">👤</span>
+          <input type="text" id="logPersonName" class="mv2-input with-icon" placeholder="e.g. Rohit (guest)"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Type</span></div>
+        <select id="logPersonType" class="mv2-select" style="display:none" onchange="toggleEstimated();mv2SyncPills('logPersonType')">
+          <option value="guest">🙋 Guest</option>
+          <option value="delivery">📦 Delivery</option>
+          <option value="member">👤 Member</option>
+          <option value="intruder">🚨 Intruder alert</option>
+        </select>
+        <div class="mv2-grid cols-4" id="logTypePills" data-mv2-group="logPersonType">
+          <div class="mv2-pill active" data-value="guest" onclick="mv2Pick('logPersonType','guest',this)"><span class="ic">🙋</span>Guest</div>
+          <div class="mv2-pill" data-value="delivery" onclick="mv2Pick('logPersonType','delivery',this)"><span class="ic">📦</span>Delivery</div>
+          <div class="mv2-pill" data-value="member" onclick="mv2Pick('logPersonType','member',this)"><span class="ic">👤</span>Member</div>
+          <div class="mv2-pill" data-value="intruder" onclick="mv2Pick('logPersonType','intruder',this)"><span class="ic">🚨</span>Intruder</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">What happened</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">📝</span>
+          <input type="text" id="logEvent" class="mv2-input with-icon" placeholder="e.g. visited, dropped off package"/>
+        </div>
+      </div>
+      <div class="mv2-field" id="estimatedGroup">
+        <div class="mv2-field-head"><span class="mv2-label">Estimated arrival</span><span class="mv2-badge">Deliveries</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">🕐</span>
+          <input type="text" id="logEstimated" class="mv2-input with-icon" placeholder="HH:MM"/>
+        </div>
       </div>
     </div>
-    <div class="form-group" id="autoAqiCatField" style="display:none">
-      <label>AQI category</label>
-      <select id="autoCondAqiCat">
-        <option value="Good">Good</option><option value="Satisfactory">Satisfactory</option>
-        <option value="Moderate">Moderate</option><option value="Poor" selected>Poor</option>
-        <option value="Very Poor">Very Poor</option><option value="Severe">Severe</option>
-      </select>
+    <div class="mv2-foot">
+      <button class="mv2-btn" onclick="closeModal('addLogModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="submitLog()">Save entry</button>
     </div>
-    <div id="autoDevStateFields" style="display:none">
-      <div class="form-group"><label>Room (for device-state condition)</label>
-        <select id="autoCondDevRoom" onchange="updateCondDevOptions()"></select>
+  </div>
+</div>
+<div class="modal-backdrop mv2-backdrop" id="addAutomationModal">
+  <div class="mv2-modal mv2-acc-purple" style="width:480px">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">⚡</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Automation</div>
+          <div class="mv2-title" id="autoModalTitle">New automation rule</div>
+          <div class="mv2-sub">If a condition is met, automatically set a device.</div>
+        </div>
       </div>
-      <div class="form-group"><label>Device</label><select id="autoCondDevDevice"></select></div>
-      <div class="form-group"><label>State</label>
-        <select id="autoCondDevOn"><option value="true">ON</option><option value="false">OFF</option></select>
-      </div>
-    </div>
 
-    <div class="form-group"><label>Then — room</label>
-      <select id="autoActionRoom" onchange="updateAutomationDeviceOptions()"></select>
-    </div>
-    <div class="form-group"><label>Device</label>
-      <select id="autoActionDevice"></select>
-    </div>
-    <div class="form-group"><label>Set to</label>
-      <select id="autoActionOn"><option value="true">On</option><option value="false">Off</option></select>
-    </div>
-    <div class="form-group"><label>Cooldown (seconds before it can fire again)</label><input type="number" id="autoCooldown" value="300"/></div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Template</span></div>
+        <select id="autoTemplate" class="mv2-select" onchange="applyAutomationTemplate('')">
+          <option value="sensor_above">Sensor above threshold (e.g. AQI &gt; 200)</option>
+          <option value="sensor_below">Sensor below threshold (e.g. temp &lt; 24°C)</option>
+          <option value="sensor_between">Sensor within a range (e.g. temp 20-26°C)</option>
+          <option value="nobody_home">Nobody home for N minutes</option>
+          <option value="someone_arrived_home">Someone just arrived home</option>
+          <option value="time_of_day">Time of day (daily schedule)</option>
+          <option value="aqi_category">AQI category equals (Good / Poor / etc.)</option>
+          <option value="device_state">A device is ON or OFF</option>
+        </select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Rule name</span></div>
+        <div class="mv2-input-wrap"><span class="mv2-input-icon">✏️</span><input type="text" id="autoName" class="mv2-input with-icon" placeholder="e.g. High AQI -> air purifier on" oninput="mv2AutoUpdateSummary()"/></div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Description</span><span class="mv2-badge">Optional</span></div>
+        <div class="mv2-input-wrap"><span class="mv2-input-icon">📝</span><input type="text" id="autoDescription" class="mv2-input with-icon" placeholder="What this rule does, in plain words"/></div>
+      </div>
 
-    <div class="modal-actions"><button class="btn" onclick="closeModal('addAutomationModal')">Cancel</button><button class="btn btn-primary" onclick="submitAutomationRule()">Create rule</button></div>
+      <div class="mv2-section"><span class="step">1</span>If</div>
+      <div id="autoConditionFields">
+        <div class="mv2-field">
+          <div class="mv2-field-head"><span class="mv2-label">Sensor</span></div>
+          <select id="autoConditionKey" class="mv2-select">
+            <option value="aqi">AQI</option>
+            <option value="temperature">Temperature (°C)</option>
+            <option value="humidity">Humidity (%)</option>
+            <option value="smoke">Smoke (%)</option>
+            <option value="gas">Gas (%)</option>
+            <option value="co2_ppm">CO₂ (ppm)</option>
+          </select>
+        </div>
+        <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Threshold</span></div><div class="mv2-input-wrap"><span class="mv2-input-icon">🎚️</span><input type="number" id="autoConditionThreshold" class="mv2-input with-icon" placeholder="e.g. 200"/></div></div>
+      </div>
+      <div class="mv2-field" id="autoBetweenField" style="display:none">
+        <div class="mv2-field-head"><span class="mv2-label">Range</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="autoConditionMin" class="mv2-input" placeholder="Min" style="flex:1"/>
+          <span style="color:var(--text3);font-size:12px">to</span>
+          <input type="number" id="autoConditionMax" class="mv2-input" placeholder="Max" style="flex:1"/>
+        </div>
+      </div>
+      <div class="mv2-field" id="autoMinutesField" style="display:none">
+        <div class="mv2-field-head"><span class="mv2-label">Minutes nobody's been home</span></div>
+        <input type="number" id="autoConditionMinutes" class="mv2-input" placeholder="30" value="30"/>
+      </div>
+      <div class="mv2-field" id="autoTimeFields" style="display:none">
+        <div class="mv2-field-head"><span class="mv2-label">Time</span></div>
+        <div class="mv2-time" style="width:fit-content">
+          <span class="ic">🕐</span>
+          <input type="number" id="autoCondHour" placeholder="HH" min="0" max="23" value="8"/><span class="sep">:</span><input type="number" id="autoCondMinute" placeholder="MM" min="0" max="59" value="0"/>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:7px">Daily rules always keep at least a ~21h cooldown, so this can't accidentally re-fire minutes later.</div>
+      </div>
+      <div class="mv2-field" id="autoAqiCatField" style="display:none">
+        <div class="mv2-field-head"><span class="mv2-label">AQI category</span></div>
+        <select id="autoCondAqiCat" class="mv2-select">
+          <option value="Good">Good</option><option value="Satisfactory">Satisfactory</option>
+          <option value="Moderate">Moderate</option><option value="Poor" selected>Poor</option>
+          <option value="Very Poor">Very Poor</option><option value="Severe">Severe</option>
+        </select>
+      </div>
+      <div id="autoDevStateFields" style="display:none">
+        <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Room</span><span class="mv2-badge">Device condition</span></div>
+          <select id="autoCondDevRoom" class="mv2-select" onchange="updateCondDevOptions('')"></select>
+        </div>
+        <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Device</span></div><select id="autoCondDevDevice" class="mv2-select"></select></div>
+        <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">State</span></div>
+          <select id="autoCondDevOn" class="mv2-select"><option value="true">ON</option><option value="false">OFF</option></select>
+        </div>
+      </div>
+      <div class="mv2-field" id="autoNegateField" style="display:none">
+        <div class="mv2-toggle-row">
+          <div><div class="lbl">Invert condition</div><div class="hint">Fire when this is NOT true instead</div></div>
+          <label class="mv2-switch"><input type="checkbox" id="autoNegate"/><span class="track"></span></label>
+        </div>
+      </div>
+
+      <div id="autoCombinatorRow" style="display:none;margin:14px 0 2px">
+        <div class="mv2-row-pills">
+          <div class="mv2-pill active" data-value="and" onclick="mv2PickCombinator('and',this)">AND — both must be true</div>
+          <div class="mv2-pill" data-value="or" onclick="mv2PickCombinator('or',this)">OR — either can be true</div>
+        </div>
+        <select id="autoCombinator" style="display:none"><option value="and">AND</option><option value="or">OR</option></select>
+      </div>
+
+      <div id="condBoxB" style="display:none;border:1px solid var(--border);border-radius:12px;padding:14px;margin:10px 0 4px;background:rgba(255,255,255,.02);position:relative">
+        <button type="button" onclick="removeSecondCondition()" title="Remove this condition" style="position:absolute;top:12px;right:12px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1">✕</button>
+        <div class="mv2-eyebrow" style="margin-bottom:10px"><span class="dot"></span>Condition 2</div>
+        <div class="mv2-field">
+          <div class="mv2-field-head"><span class="mv2-label">Type</span></div>
+          <select id="autoTemplateB" class="mv2-select" onchange="applyAutomationTemplate('B')">
+            <option value="sensor_above">Sensor above threshold</option>
+            <option value="sensor_below">Sensor below threshold</option>
+            <option value="sensor_between">Sensor within a range</option>
+            <option value="nobody_home">Nobody home for N minutes</option>
+            <option value="someone_arrived_home">Someone just arrived home</option>
+            <option value="time_of_day">Time of day (daily schedule)</option>
+            <option value="aqi_category">AQI category equals</option>
+            <option value="device_state">A device is ON or OFF</option>
+          </select>
+        </div>
+        <div id="autoConditionFieldsB">
+          <div class="mv2-field">
+            <div class="mv2-field-head"><span class="mv2-label">Sensor</span></div>
+            <select id="autoConditionKeyB" class="mv2-select">
+              <option value="aqi">AQI</option><option value="temperature">Temperature (°C)</option>
+              <option value="humidity">Humidity (%)</option><option value="smoke">Smoke (%)</option>
+              <option value="gas">Gas (%)</option><option value="co2_ppm">CO₂ (ppm)</option>
+            </select>
+          </div>
+          <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Threshold</span></div><div class="mv2-input-wrap"><span class="mv2-input-icon">🎚️</span><input type="number" id="autoConditionThresholdB" class="mv2-input with-icon" placeholder="e.g. 200"/></div></div>
+        </div>
+        <div class="mv2-field" id="autoBetweenFieldB" style="display:none">
+          <div class="mv2-field-head"><span class="mv2-label">Range</span></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="autoConditionMinB" class="mv2-input" placeholder="Min" style="flex:1"/>
+            <span style="color:var(--text3);font-size:12px">to</span>
+            <input type="number" id="autoConditionMaxB" class="mv2-input" placeholder="Max" style="flex:1"/>
+          </div>
+        </div>
+        <div class="mv2-field" id="autoMinutesFieldB" style="display:none">
+          <div class="mv2-field-head"><span class="mv2-label">Minutes nobody's been home</span></div>
+          <input type="number" id="autoConditionMinutesB" class="mv2-input" placeholder="30" value="30"/>
+        </div>
+        <div class="mv2-field" id="autoTimeFieldsB" style="display:none">
+          <div class="mv2-field-head"><span class="mv2-label">Time</span></div>
+          <div class="mv2-time" style="width:fit-content">
+            <span class="ic">🕐</span>
+            <input type="number" id="autoCondHourB" placeholder="HH" min="0" max="23" value="8"/><span class="sep">:</span><input type="number" id="autoCondMinuteB" placeholder="MM" min="0" max="59" value="0"/>
+          </div>
+        </div>
+        <div class="mv2-field" id="autoAqiCatFieldB" style="display:none">
+          <div class="mv2-field-head"><span class="mv2-label">AQI category</span></div>
+          <select id="autoCondAqiCatB" class="mv2-select">
+            <option value="Good">Good</option><option value="Satisfactory">Satisfactory</option>
+            <option value="Moderate">Moderate</option><option value="Poor" selected>Poor</option>
+            <option value="Very Poor">Very Poor</option><option value="Severe">Severe</option>
+          </select>
+        </div>
+        <div id="autoDevStateFieldsB" style="display:none">
+          <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Room</span></div>
+            <select id="autoCondDevRoomB" class="mv2-select" onchange="updateCondDevOptions('B')"></select>
+          </div>
+          <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">Device</span></div><select id="autoCondDevDeviceB" class="mv2-select"></select></div>
+          <div class="mv2-field"><div class="mv2-field-head"><span class="mv2-label">State</span></div>
+            <select id="autoCondDevOnB" class="mv2-select"><option value="true">ON</option><option value="false">OFF</option></select>
+          </div>
+        </div>
+        <div class="mv2-field" id="autoNegateFieldB" style="display:none;margin-bottom:0">
+          <div class="mv2-toggle-row">
+            <div><div class="lbl">Invert condition</div><div class="hint">Fire when this is NOT true instead</div></div>
+            <label class="mv2-switch"><input type="checkbox" id="autoNegateB"/><span class="track"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="mv2-btn" id="autoAddCondBtn" onclick="addSecondCondition()" style="width:100%;margin:6px 0 4px">+ Add another condition (AND / OR)</button>
+
+      <div class="mv2-section"><span class="step">2</span>Then</div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Room</span></div>
+        <select id="autoActionRoom" class="mv2-select" onchange="updateAutomationDeviceOptions()"></select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Device</span></div>
+        <select id="autoActionDevice" class="mv2-select"></select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Set to</span></div>
+        <select id="autoActionOn" class="mv2-select"><option value="true">On</option><option value="false">Off</option></select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Cooldown</span><span class="mv2-badge">Seconds before it can fire again</span></div>
+        <input type="number" id="autoCooldown" class="mv2-input" value="300"/>
+      </div>
+    </div>
+    <div class="mv2-foot">
+      <span class="mv2-summary" id="autoSummary">⚡ New rule</span>
+      <button class="mv2-btn" onclick="closeModal('addAutomationModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" id="autoModalSubmitBtn" onclick="submitAutomationRule()">Create rule</button>
+    </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="addRoutineModal">
-  <div class="modal">
-    <div class="modal-title">Add routine</div>
-    <div class="form-group"><label>Routine name</label><input type="text" id="routineName" placeholder="e.g. Morning lights off"/></div>
-    <div class="form-group">
-      <label>Time</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="number" id="routineHour" min="0" max="23" placeholder="HH" style="width:70px"/>
-        <span style="color:var(--text2)">:</span>
-        <input type="number" id="routineMinute" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+<div class="modal-backdrop mv2-backdrop" id="addRoutineModal">
+  <div class="mv2-modal mv2-acc-cyan">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">🔁</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Automation</div>
+          <div class="mv2-title">Add routine</div>
+          <div class="mv2-sub">Run a device action automatically at a set time, on chosen days.</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Routine name</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">✏️</span>
+          <input type="text" id="routineName" class="mv2-input with-icon" placeholder="e.g. Morning lights off"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Time</span></div>
+        <div class="mv2-time" style="width:fit-content">
+          <span class="ic">🕐</span>
+          <input type="number" id="routineHour" min="0" max="23" placeholder="HH" oninput="mv2RoutineUpdateSummary()"/>
+          <span class="sep">:</span>
+          <input type="number" id="routineMinute" min="0" max="59" placeholder="MM" value="0" oninput="mv2RoutineUpdateSummary()"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Days</span></div>
+        <select id="routineDays" class="mv2-select" style="display:none" onchange="mv2SyncPills('routineDays')">
+          <option value="everyday">Every day</option>
+          <option value="monday,tuesday,wednesday,thursday,friday">Weekdays (Mon–Fri)</option>
+          <option value="saturday,sunday">Weekends only</option>
+          <option value="monday">Monday</option>
+          <option value="tuesday">Tuesday</option>
+          <option value="wednesday">Wednesday</option>
+          <option value="thursday">Thursday</option>
+          <option value="friday">Friday</option>
+          <option value="saturday">Saturday</option>
+          <option value="sunday">Sunday</option>
+        </select>
+        <div class="mv2-row-pills" id="routineDaysPills" data-mv2-group="routineDays">
+          <div class="mv2-pill active" data-value="everyday" onclick="mv2Pick('routineDays','everyday',this)">Every day</div>
+          <div class="mv2-pill" data-value="monday,tuesday,wednesday,thursday,friday" onclick="mv2Pick('routineDays','monday,tuesday,wednesday,thursday,friday',this)">Weekdays</div>
+          <div class="mv2-pill" data-value="saturday,sunday" onclick="mv2Pick('routineDays','saturday,sunday',this)">Weekends</div>
+        </div>
+        <div class="mv2-row-pills" id="routineDaysPills2" data-mv2-group="routineDays" style="margin-top:6px">
+          <div class="mv2-pill" data-value="monday" onclick="mv2Pick('routineDays','monday',this)">Mon</div>
+          <div class="mv2-pill" data-value="tuesday" onclick="mv2Pick('routineDays','tuesday',this)">Tue</div>
+          <div class="mv2-pill" data-value="wednesday" onclick="mv2Pick('routineDays','wednesday',this)">Wed</div>
+          <div class="mv2-pill" data-value="thursday" onclick="mv2Pick('routineDays','thursday',this)">Thu</div>
+          <div class="mv2-pill" data-value="friday" onclick="mv2Pick('routineDays','friday',this)">Fri</div>
+          <div class="mv2-pill" data-value="saturday" onclick="mv2Pick('routineDays','saturday',this)">Sat</div>
+          <div class="mv2-pill" data-value="sunday" onclick="mv2Pick('routineDays','sunday',this)">Sun</div>
+        </div>
+      </div>
+      <div class="mv2-section"><span class="step">2</span>Then</div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Room</span></div>
+        <select id="routineRoom" class="mv2-select" onchange="updateRoutineDeviceOptions()"></select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Device</span></div>
+        <select id="routineDevice" class="mv2-select" onchange="updateRoutineActionOptions()"></select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Action</span></div>
+        <select id="routineAction" class="mv2-select" onchange="mv2RoutineUpdateSummary()">
+          <option value="off">Turn off</option>
+          <option value="on">Turn on</option>
+          <option value="dim">Dim to 30%</option>
+          <option value="bright">Full brightness</option>
+          <option value="speed1">Fan speed 1 (low)</option>
+          <option value="speed3">Fan speed 3 (medium)</option>
+          <option value="speed5">Fan speed 5 (max)</option>
+          <option value="fan_off">Fan off</option>
+        </select>
       </div>
     </div>
-    <div class="form-group">
-      <label>Days</label>
-      <select id="routineDays">
-        <option value="everyday">Every day</option>
-        <option value="monday,tuesday,wednesday,thursday,friday">Weekdays (Mon–Fri)</option>
-        <option value="saturday,sunday">Weekends only</option>
-        <option value="monday">Monday</option>
-        <option value="tuesday">Tuesday</option>
-        <option value="wednesday">Wednesday</option>
-        <option value="thursday">Thursday</option>
-        <option value="friday">Friday</option>
-        <option value="saturday">Saturday</option>
-        <option value="sunday">Sunday</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Room</label>
-      <select id="routineRoom" onchange="updateRoutineDeviceOptions()"></select>
-    </div>
-    <div class="form-group">
-      <label>Device</label>
-      <select id="routineDevice" onchange="updateRoutineActionOptions()"></select>
-    </div>
-    <div class="form-group">
-      <label>Action</label>
-      <select id="routineAction">
-        <option value="off">Turn off</option>
-        <option value="on">Turn on</option>
-        <option value="dim">Dim to 30%</option>
-        <option value="bright">Full brightness</option>
-        <option value="speed1">Fan speed 1 (low)</option>
-        <option value="speed3">Fan speed 3 (medium)</option>
-        <option value="speed5">Fan speed 5 (max)</option>
-        <option value="fan_off">Fan off</option>
-      </select>
-    </div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('addRoutineModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitRoutine()">Save routine</button>
+    <div class="mv2-foot">
+      <span class="mv2-summary" id="routineSummary">🔁 --:-- · Every day</span>
+      <button class="mv2-btn" onclick="closeModal('addRoutineModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="submitRoutine()">Save routine</button>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="addGuestModal">
-  <div class="modal">
-    <div class="modal-title">Add scheduled visitor</div>
-    <div class="form-group"><label>Name</label><input type="text" id="guestName" placeholder="e.g. Sunita (maid)"/></div>
-    <div class="form-group">
-      <label>Role</label>
-      <select id="guestRole">
-        <option value="maid">Maid / housekeeping</option>
-        <option value="cook">Cook</option>
-        <option value="driver">Driver</option>
-        <option value="guard">Security guard</option>
-        <option value="delivery">Regular delivery agent</option>
-        <option value="guest">Guest</option>
-        <option value="worker">Worker / repair</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Allowed days</label>
-      <select id="guestDays">
-        <option value="everyday">Every day</option>
-        <option value="monday,tuesday,wednesday,thursday,friday,saturday">Monday – Saturday</option>
-        <option value="monday,tuesday,wednesday,thursday,friday">Weekdays only (Mon–Fri)</option>
-        <option value="saturday,sunday">Weekends only</option>
-        <option value="monday,wednesday,friday">Mon, Wed, Fri</option>
-        <option value="tuesday,thursday,saturday">Tue, Thu, Sat</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Allowed from</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="number" id="guestStartHour" min="0" max="23" placeholder="HH" style="width:70px" value="7"/>
-        <span style="color:var(--text2)">:</span>
-        <input type="number" id="guestStartMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
+<div class="modal-backdrop mv2-backdrop" id="addGuestModal">
+  <div class="mv2-modal mv2-acc-pink">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar" id="guestAvatarIc">🧹</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Access control</div>
+          <div class="mv2-title">Add scheduled visitor</div>
+          <div class="mv2-sub" id="guestRoleSub">Housekeeping · auto-unlock the entrance during their window.</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Name</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">👤</span>
+          <input type="text" id="guestName" class="mv2-input with-icon" placeholder="e.g. Sunita" oninput="mv2GuestUpdateSummary()"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Role</span></div>
+        <select id="guestRole" class="mv2-select" style="display:none" onchange="mv2SyncPills('guestRole');mv2GuestUpdateSummary()">
+          <option value="maid">Maid / housekeeping</option>
+          <option value="cook">Cook</option>
+          <option value="delivery">Regular delivery agent</option>
+          <option value="worker">Worker / repair</option>
+          <option value="driver">Driver</option>
+          <option value="guard">Security guard</option>
+          <option value="guest">Guest</option>
+        </select>
+        <div class="mv2-grid cols-4" data-mv2-group="guestRole">
+          <div class="mv2-pill active" data-value="maid" data-ic="🧹" data-label="Housekeeping" onclick="mv2Pick('guestRole','maid',this);mv2GuestRoleMeta('🧹','Housekeeping')"><span class="ic">🧹</span>Housekeeping</div>
+          <div class="mv2-pill" data-value="cook" data-ic="🍳" data-label="Cook" onclick="mv2Pick('guestRole','cook',this);mv2GuestRoleMeta('🍳','Cook')"><span class="ic">🍳</span>Cook</div>
+          <div class="mv2-pill" data-value="delivery" data-ic="📦" data-label="Delivery" onclick="mv2Pick('guestRole','delivery',this);mv2GuestRoleMeta('📦','Delivery')"><span class="ic">📦</span>Delivery</div>
+          <div class="mv2-pill" data-value="worker" data-ic="🔧" data-label="Maintenance" onclick="mv2Pick('guestRole','worker',this);mv2GuestRoleMeta('🔧','Maintenance')"><span class="ic">🔧</span>Maintenance</div>
+          <div class="mv2-pill" data-value="driver" data-ic="🚗" data-label="Driver" onclick="mv2Pick('guestRole','driver',this);mv2GuestRoleMeta('🚗','Driver')"><span class="ic">🚗</span>Driver</div>
+          <div class="mv2-pill" data-value="guard" data-ic="🛡️" data-label="Security" onclick="mv2Pick('guestRole','guard',this);mv2GuestRoleMeta('🛡️','Security')"><span class="ic">🛡️</span>Security</div>
+          <div class="mv2-pill" data-value="guest" data-ic="🙋" data-label="Guest" onclick="mv2Pick('guestRole','guest',this);mv2GuestRoleMeta('🙋','Guest')"><span class="ic">🙋</span>Guest</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Allowed days</span></div>
+        <select id="guestDays" class="mv2-select" style="display:none" onchange="mv2SyncPills('guestDays')">
+          <option value="everyday">Every day</option>
+          <option value="monday,tuesday,wednesday,thursday,friday,saturday">Monday – Saturday</option>
+          <option value="monday,tuesday,wednesday,thursday,friday">Weekdays only (Mon–Fri)</option>
+          <option value="saturday,sunday">Weekends only</option>
+          <option value="monday,wednesday,friday">Mon, Wed, Fri</option>
+          <option value="tuesday,thursday,saturday">Tue, Thu, Sat</option>
+        </select>
+        <div class="mv2-row-pills" data-mv2-group="guestDays">
+          <div class="mv2-pill active" data-value="everyday" onclick="mv2Pick('guestDays','everyday',this)">Every day</div>
+          <div class="mv2-pill" data-value="monday,tuesday,wednesday,thursday,friday,saturday" onclick="mv2Pick('guestDays','monday,tuesday,wednesday,thursday,friday,saturday',this)">Mon–Sat</div>
+          <div class="mv2-pill" data-value="monday,tuesday,wednesday,thursday,friday" onclick="mv2Pick('guestDays','monday,tuesday,wednesday,thursday,friday',this)">Weekdays</div>
+          <div class="mv2-pill" data-value="saturday,sunday" onclick="mv2Pick('guestDays','saturday,sunday',this)">Weekends</div>
+          <div class="mv2-pill" data-value="monday,wednesday,friday" onclick="mv2Pick('guestDays','monday,wednesday,friday',this)">Mon/Wed/Fri</div>
+          <div class="mv2-pill" data-value="tuesday,thursday,saturday" onclick="mv2Pick('guestDays','tuesday,thursday,saturday',this)">Tue/Thu/Sat</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Allowed window</span></div>
+        <div style="display:flex;gap:8px">
+          <div class="mv2-time" style="flex:1" oninput="mv2GuestUpdateSummary()">
+            <span class="ic">🌅</span>
+            <input type="number" id="guestStartHour" min="0" max="23" placeholder="HH" value="7"/><span class="sep">:</span><input type="number" id="guestStartMin" min="0" max="59" placeholder="MM" value="0"/>
+          </div>
+          <div class="mv2-time" style="flex:1" oninput="mv2GuestUpdateSummary()">
+            <span class="ic">🌙</span>
+            <input type="number" id="guestEndHour" min="0" max="23" placeholder="HH" value="9"/><span class="sep">:</span><input type="number" id="guestEndMin" min="0" max="59" placeholder="MM" value="0"/>
+          </div>
+        </div>
+        <div class="mv2-timeline"><div class="bar" id="guestTimelineBar" style="left:29.2%;width:8.3%"></div></div>
+        <div class="mv2-timeline-labels"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Notes</span><span class="mv2-badge">Optional</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">📝</span>
+          <textarea id="guestNotes" class="mv2-input with-icon" rows="2" maxlength="200" placeholder="e.g. comes every morning to clean" oninput="document.getElementById('guestNotesCount').textContent=this.value.length"></textarea>
+          <span class="mv2-charcount"><span id="guestNotesCount">0</span>/200</span>
+        </div>
       </div>
     </div>
-    <div class="form-group">
-      <label>Allowed until</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="number" id="guestEndHour" min="0" max="23" placeholder="HH" style="width:70px" value="9"/>
-        <span style="color:var(--text2)">:</span>
-        <input type="number" id="guestEndMin" min="0" max="59" placeholder="MM" style="width:70px" value="0"/>
-      </div>
-    </div>
-    <div class="form-group"><label>Notes (optional)</label><input type="text" id="guestNotes" placeholder="e.g. comes every morning to clean"/></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('addGuestModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitGuestSchedule()">Save</button>
+    <div class="mv2-foot">
+      <span class="mv2-summary" id="guestSummary">🛡️ Unnamed · 7/7 days</span>
+      <button class="mv2-btn" onclick="closeModal('addGuestModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="submitGuestSchedule()">Save visitor</button>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="rentConfigModal">
-  <div class="modal">
-    <div class="modal-title">Configure rent</div>
-    <div class="form-group"><label>Total monthly rent (₹)</label><input type="number" id="rentTotal" placeholder="e.g. 25000" min="0"/></div>
-    <div class="form-group"><label>Due day (1–28)</label><input type="number" id="rentDueDay" placeholder="1" min="1" max="28" value="1"/></div>
-    <div class="form-group"><label>Notes (optional)</label><input type="text" id="rentNotes" placeholder="e.g. includes electricity, split 5 ways"/></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('rentConfigModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitRentConfig()">Save</button>
+<div class="modal-backdrop mv2-backdrop" id="guestQrModal">
+  <div class="mv2-modal mv2-acc-pink" style="text-align:center">
+    <div class="mv2-scroll">
+      <div class="mv2-head" style="justify-content:center;text-align:center;flex-direction:column">
+        <div class="mv2-avatar" style="margin:0 auto 10px">🪪</div>
+        <div>
+          <div class="mv2-eyebrow" style="justify-content:center"><span class="dot"></span>Access pass</div>
+          <div class="mv2-title" id="guestQrTitle">Access pass</div>
+          <div class="mv2-sub" id="guestQrSub"></div>
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:14px;padding:14px;display:inline-block;margin-top:6px">
+        <img id="guestQrImg" src="" alt="QR access pass" width="200" height="200" style="display:block"/>
+      </div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:16px;line-height:1.6">Share this with the visitor, or print it for the door — scanning it shows their name and allowed window so security staff can confirm access at a glance.</div>
+    </div>
+    <div class="mv2-foot" style="justify-content:center">
+      <button class="mv2-btn" onclick="closeModal('guestQrModal')">Close</button>
+      <a class="mv2-btn mv2-btn-primary" id="guestQrDownload" download="guest-pass.png" href="" target="_blank">Download</a>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="markPaymentModal">
-  <div class="modal">
-    <div class="modal-title">Mark payment</div>
-    <input type="hidden" id="markPaymentId"/>
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px" id="markPaymentName"></div>
-    <div class="form-group">
-      <label>Status</label>
-      <select id="markPaymentStatus">
-        <option value="paid">✅ Paid</option>
-        <option value="pending">⏳ Pending</option>
-        <option value="waived">🤝 Waived</option>
-      </select>
+<div class="modal-backdrop mv2-backdrop" id="rentConfigModal">
+  <div class="mv2-modal mv2-acc-amber">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">🏠</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Payments</div>
+          <div class="mv2-title">Configure rent</div>
+          <div class="mv2-sub">Set the monthly amount and due day everyone splits.</div>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Total monthly rent</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">₹</span>
+          <input type="number" id="rentTotal" class="mv2-input with-icon" placeholder="e.g. 25000" min="0"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Due day of month</span></div>
+        <div class="mv2-time" style="width:fit-content">
+          <span class="ic">📅</span>
+          <input type="number" id="rentDueDay" placeholder="1" min="1" max="28" value="1"/>
+        </div>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Notes</span><span class="mv2-badge">Optional</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">📝</span>
+          <input type="text" id="rentNotes" class="mv2-input with-icon" placeholder="e.g. includes electricity, split 5 ways"/>
+        </div>
+      </div>
     </div>
-    <div class="form-group" id="markPaymentMethodGroup">
-      <label>Payment method</label>
-      <select id="markPaymentMethod">
-        <option value="upi">UPI / GPay / PhonePe</option>
-        <option value="cash">Cash</option>
-        <option value="bank_transfer">Bank transfer</option>
-        <option value="other">Other</option>
-      </select>
+    <div class="mv2-foot">
+      <button class="mv2-btn" onclick="closeModal('rentConfigModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="submitRentConfig()">Save</button>
     </div>
-    <div class="form-group"><label>Notes (optional)</label><input type="text" id="markPaymentNotes" placeholder="e.g. paid via GPay ref #1234"/></div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal('markPaymentModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitMarkPayment()">Save</button>
+  </div>
+</div>
+<div class="modal-backdrop mv2-backdrop" id="markPaymentModal">
+  <div class="mv2-modal mv2-acc-amber">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar">💰</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Payments</div>
+          <div class="mv2-title">Mark payment</div>
+          <div class="mv2-sub" id="markPaymentName"></div>
+        </div>
+      </div>
+      <input type="hidden" id="markPaymentId"/>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Status</span></div>
+        <select id="markPaymentStatus" style="display:none" onchange="mv2SyncPills('markPaymentStatus')">
+          <option value="paid">✅ Paid</option>
+          <option value="pending">⏳ Pending</option>
+          <option value="waived">🤝 Waived</option>
+        </select>
+        <div class="mv2-grid cols-3" data-mv2-group="markPaymentStatus">
+          <div class="mv2-pill active" data-value="paid" onclick="mv2Pick('markPaymentStatus','paid',this)"><span class="ic">✅</span>Paid</div>
+          <div class="mv2-pill" data-value="pending" onclick="mv2Pick('markPaymentStatus','pending',this)"><span class="ic">⏳</span>Pending</div>
+          <div class="mv2-pill" data-value="waived" onclick="mv2Pick('markPaymentStatus','waived',this)"><span class="ic">🤝</span>Waived</div>
+        </div>
+      </div>
+      <div class="mv2-field" id="markPaymentMethodGroup">
+        <div class="mv2-field-head"><span class="mv2-label">Payment method</span></div>
+        <select id="markPaymentMethod" class="mv2-select">
+          <option value="upi">UPI / GPay / PhonePe</option>
+          <option value="cash">Cash</option>
+          <option value="bank_transfer">Bank transfer</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="mv2-field">
+        <div class="mv2-field-head"><span class="mv2-label">Notes (optional)</span></div>
+        <div class="mv2-input-wrap">
+          <span class="mv2-input-icon">📝</span>
+          <input type="text" id="markPaymentNotes" class="mv2-input with-icon" placeholder="e.g. paid via GPay ref #1234"/>
+        </div>
+      </div>
+    </div>
+    <div class="mv2-foot">
+      <button class="mv2-btn" onclick="closeModal('markPaymentModal')">Cancel</button>
+      <button class="mv2-btn mv2-btn-primary" onclick="submitMarkPayment()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop mv2-backdrop" id="ruleTestModal">
+  <div class="mv2-modal" id="ruleTestModalInner">
+    <div class="mv2-scroll">
+      <div class="mv2-head">
+        <div class="mv2-avatar" id="ruleTestIcon">🧪</div>
+        <div>
+          <div class="mv2-eyebrow"><span class="dot"></span>Rule test</div>
+          <div class="mv2-title" id="ruleTestTitle">Testing rule…</div>
+          <div class="mv2-sub" id="ruleTestSub"></div>
+        </div>
+      </div>
+      <div id="ruleTestBody" style="font-size:12.5px;color:var(--text2);line-height:1.7"></div>
+    </div>
+    <div class="mv2-foot" style="justify-content:center">
+      <button class="mv2-btn mv2-btn-primary" onclick="closeModal('ruleTestModal')">Got it</button>
     </div>
   </div>
 </div>
 <div id="alertToast"></div>
+
+<!-- Voice control — floating mic button, visible on every page. Hidden via
+     JS at load if the browser doesn't support SpeechRecognition (Firefox,
+     some Safari versions) rather than showing a button that silently fails. -->
+<button id="voiceMicBtn" onclick="startVoiceCommand()" title="Voice command" style="display:none;position:fixed;bottom:24px;right:24px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b7cf6);border:none;box-shadow:0 6px 20px rgba(108,139,239,.4);cursor:pointer;z-index:400;font-size:22px;color:#fff;align-items:center;justify-content:center;transition:transform .15s" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform=''">🎙️</button>
+
+<div id="voiceOverlay" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:32px;width:340px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div id="voiceMicPulse" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b7cf6);margin:0 auto 18px;display:flex;align-items:center;justify-content:center;font-size:28px;animation:voicePulse 1.4s ease-in-out infinite">🎙️</div>
+    <div id="voiceStatus" style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px">Listening…</div>
+    <div id="voiceTranscript" style="font-size:16px;font-weight:600;min-height:44px;color:var(--text)">…</div>
+    <div id="voiceResult" style="font-size:12.5px;color:var(--text3);margin-top:12px;line-height:1.6"></div>
+    <button class="btn btn-sm" style="margin-top:16px" onclick="stopVoiceCommand()">Cancel</button>
+  </div>
+</div>
+
 <script>
 // Use the current page's host so this works both on localhost and when
 // accessed from other devices on the same network (e.g. http://192.168.x.x:8000)
@@ -2309,7 +2917,7 @@ function showPage(page){
   document.getElementById('page-'+page).classList.add('active');
   document.getElementById('nav-'+page).classList.add('active');
   document.getElementById('pageTitle').textContent=PAGE_TITLES[page]||page;
-  if(page==='devices')renderDeviceGrid(currentRoom);
+  if(page==='devices'){renderDeviceGrid(currentRoom);renderDeviceHealth();}
   if(page==='family')renderFamily();
   if(page==='security'){renderLogs();updateIntruderBanner();}
   if(page==='guestaccess')renderGuestAccessPage();
@@ -2367,6 +2975,10 @@ function connectWebSocket(){
         updateSensorUI(sensors,watts);updateFloorPlan();updateCharts();updateSparklines();
         if(document.getElementById('page-energy').classList.contains('active'))renderEnergy();
         if(document.getElementById('page-safety').classList.contains('active'))renderSafety();
+        if(data.recent_activity&&document.getElementById('page-control')?.classList.contains('active')){
+          renderCtrlActivityFeed(data.recent_activity);
+          _ctrlActivityLoaded=true;
+        }
         refreshControlRoom();
       }catch(e){console.warn('WS message parse error:',e);}
     };
@@ -2854,6 +3466,31 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 // DEVICES
+async function renderDeviceHealth(){
+  const el=document.getElementById('deviceHealthList');
+  if(!el)return;
+  el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">Loading…</div>';
+  const data=await apiFetch('/api/devices/health');
+  const rows=data?.devices||[];
+  if(!rows.length){
+    el.innerHTML=emptyState('🩺','No runtime logged yet','Runtime hours build up from device toggles as the dashboard gets used day to day.');
+    return;
+  }
+  const barColor=r=>r.needs_service?'var(--red)':r.pct_of_threshold>=70?'var(--orange)':'var(--accent)';
+  el.innerHTML=`<div style="display:flex;flex-direction:column;gap:12px">
+    ${rows.map(r=>`
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+          <span style="font-size:12.5px;font-weight:600">${formatDevName(r.device)} <span style="color:var(--text3);font-weight:400">· ${ROOM_NAMES[r.room]||r.room}</span>${r.currently_on?' <span style="color:var(--green);font-size:10px">● on now</span>':''}</span>
+          <span style="font-size:12px;color:${barColor(r)};font-weight:700">${r.hours}h</span>
+        </div>
+        <div class="bar-track" style="height:6px;border-radius:3px"><div class="bar-fill" style="width:${Math.min(100,r.pct_of_threshold)}%;background:${barColor(r)}"></div></div>
+        ${r.needs_service?`<div style="font-size:11px;color:var(--red);margin-top:4px">⚠️ Past the typical ${r.threshold_hours}h service interval — consider a check-up</div>`:''}
+      </div>`).join('')}
+  </div>
+  <div style="font-size:10.5px;color:var(--text3);margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">${data.note||''}</div>`;
+}
+
 function selectRoom(roomId,el){
   currentRoom=roomId;
   document.querySelectorAll('.room-tab').forEach(t=>t.classList.remove('active'));
@@ -2959,10 +3596,16 @@ async function turnOffAllInRoom(){
 }
 
 // ENERGY
+async function turnOffPhantomDevice(room,device){
+  await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device,value:{on:false}})});
+  showToast(`${formatDevName(device)} in ${ROOM_NAMES[room]||room} turned off`,'success');
+  renderEnergy();
+}
+
 async function renderEnergy(){
   // Always recompute watts from current local device state first (fixes 0W bug)
   let localWatts=Object.entries(devices).reduce((t,[,devs])=>t+Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0),0);
-  const data=await apiFetch('/api/energy');
+  const [data,insights]=await Promise.all([apiFetch('/api/energy'),apiFetch('/api/energy/insights')]);
   const totalWatts=data?.total_watts??localWatts;
   const unitsToday=data?.units_today??(totalWatts*8/1000);
   const unitsMonth=data?.units_month_projected??(unitsToday*30);
@@ -3037,6 +3680,64 @@ async function renderEnergy(){
         <div style="${cell};text-align:right;font-weight:${r.watts>0?600:400};color:${r.watts>200?'var(--orange)':r.watts>0?'var(--text)':'var(--text3)'}">${r.watts}</div>`).join('')}
     </div>`;
   }
+  // ── This week vs last week ──────────────────────────────────────────────
+  const weekEl=document.getElementById('en-week-compare');
+  if(weekEl){
+    const week=insights?.week;
+    if(!week||!week.available){
+      const recorded=week?.days_recorded||0;
+      weekEl.innerHTML=emptyState('📆','Building up history',
+        `Come back in ${Math.max(1,7-recorded)} more day${7-recorded===1?'':'s'} — this needs a full week of usage logged to compare (${recorded}/7 days so far).`);
+    } else if(!week.has_comparison){
+      weekEl.innerHTML=`
+        <div style="text-align:center;padding:8px 0 4px">
+          <div style="font-size:26px;font-weight:800;color:var(--accent2)">${week.this_week_kwh}<span style="font-size:14px;color:var(--text3)"> units</span></div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:2px">₹${week.this_week_cost.toFixed(2)} this week so far</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text3);text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+          One more week of history unlocks a week-over-week comparison (${week.days_recorded}/14 days so far).
+        </div>`;
+    } else {
+      const up=week.pct_change!==null&&week.pct_change>0;
+      const flat=week.pct_change===null||Math.abs(week.pct_change)<1;
+      const arrow=flat?'→':(up?'↑':'↓');
+      const color=flat?'var(--text3)':(up?'var(--orange)':'var(--green)');
+      weekEl.innerHTML=`
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px">
+          <div>
+            <div style="font-size:26px;font-weight:800">${week.this_week_kwh}<span style="font-size:13px;color:var(--text3)"> units</span></div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">this week · ₹${week.this_week_cost.toFixed(2)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:16px;font-weight:700;color:${color}">${arrow} ${week.pct_change===null?'—':Math.abs(week.pct_change)+'%'}</div>
+            <div style="font-size:10.5px;color:var(--text3);margin-top:2px">vs ${week.last_week_kwh} units last week</div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text2);padding-top:10px;border-top:1px solid var(--border)">
+          ${flat?'About the same as last week.':up?'Using more than last week — check the device breakdown below for what changed.':'Nice — using less than last week.'}
+        </div>`;
+    }
+  }
+
+  // ── Phantom load ─────────────────────────────────────────────────────────
+  const phantomEl=document.getElementById('en-phantom');
+  if(phantomEl){
+    const items=insights?.phantom_load||[];
+    if(!items.length){
+      phantomEl.innerHTML=emptyState('✅','Nothing left running','Every high-draw device that\'s on was switched on recently — no long-forgotten loads right now.');
+    } else {
+      phantomEl.innerHTML=items.map(p=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="width:34px;height:34px;border-radius:9px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">⏱️</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12.5px;font-weight:700">${formatDevName(p.device)} · ${ROOM_NAMES[p.room]||p.room}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:1px">On for ${p.hours_on}h (since ${p.since}) · ${p.watts}W</div>
+          </div>
+          <button class="btn btn-sm" onclick="turnOffPhantomDevice('${p.room}','${p.device}')">Turn off</button>
+        </div>`).join('');
+    }
+  }
+
   const barsEl=document.getElementById('energyBars'),labsEl=document.getElementById('energyLabels');
   if(barsEl){
     const maxE=Math.max(1,...energyHistory);
@@ -3294,13 +3995,13 @@ async function addGuestLog(){
   if(result){securityLogs.unshift(result);renderLogs();showToast(`${person} logged as guest`,'info');}
 }
 function toggleEstimated(){document.getElementById('estimatedGroup').style.display=document.getElementById('logPersonType').value==='delivery'?'':'none';}
-function showAddLogModal(){toggleEstimated();document.getElementById('addLogModal').classList.add('open');}
+function showAddLogModal(){document.getElementById('logPersonType').value='guest';mv2SyncPills('logPersonType');toggleEstimated();document.getElementById('addLogModal').classList.add('open');}
 async function submitLog(){
   const person=document.getElementById('logPersonName').value.trim();
   const type=document.getElementById('logPersonType').value;
   const event=document.getElementById('logEvent').value.trim()||'visited';
   const estimated=document.getElementById('logEstimated').value.trim();
-  if(!person){alert('Please enter a name');return;}
+  if(!person){showToast('Please enter a name','danger');return;}
   const status=type==='intruder'?'unauthorized':type==='member'?'authorized':'visitor';
   const result=await apiFetch('/api/security/logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({person,type,event,status,estimated})});
   if(result){securityLogs.unshift(result);renderLogs();}
@@ -3941,10 +4642,85 @@ function showToast(msg,type='info'){
 
 // MODALS
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+/* ---- MODAL V2 helpers: pill pickers backed by a real (hidden) <select> ---- */
+function mv2Pick(selectId,value){
+  const sel=document.getElementById(selectId);
+  if(sel){sel.value=value;sel.dispatchEvent(new Event('change'));}
+  mv2SyncPills(selectId);
+}
+function mv2SyncPills(selectId){
+  const sel=document.getElementById(selectId);
+  if(!sel)return;
+  const val=sel.value;
+  document.querySelectorAll('[data-mv2-group="'+selectId+'"] .mv2-pill').forEach(p=>{
+    p.classList.toggle('active',p.getAttribute('data-value')===val);
+  });
+  if(selectId==='routineDays')mv2RoutineUpdateSummary();
+}
+function mv2AutoUpdateSummary(){
+  const n=document.getElementById('autoName')?.value.trim();
+  const s=document.getElementById('autoSummary');
+  if(s)s.textContent='⚡ '+(n||'Unnamed rule');
+}
+function mv2RoutineUpdateSummary(){
+  const h=parseInt(document.getElementById('routineHour')?.value);
+  const m=parseInt(document.getElementById('routineMinute')?.value)||0;
+  const daysSel=document.getElementById('routineDays');
+  const daysTxt=daysSel?daysSel.options[daysSel.selectedIndex]?.text:'';
+  const actionSel=document.getElementById('routineAction');
+  const actionTxt=actionSel?actionSel.options[actionSel.selectedIndex]?.text:'';
+  const s=document.getElementById('routineSummary');
+  if(!s)return;
+  const timeTxt=isNaN(h)?'--:--':mv2GuestTimeStr(h,m);
+  s.textContent='🔁 '+timeTxt+(daysTxt?' · '+daysTxt:'')+(actionTxt?' · '+actionTxt:'');
+}
+function mv2GuestRoleMeta(icon,label){
+  const av=document.getElementById('guestAvatarIc'),sub=document.getElementById('guestRoleSub');
+  if(av)av.textContent=icon;
+  if(sub)sub.textContent=label+' · auto-unlock the entrance during their window.';
+  mv2GuestUpdateSummary();
+}
+function mv2GuestTimeStr(h,m){
+  h=parseInt(h)||0;m=parseInt(m)||0;
+  const period=h>=12?'PM':'AM',hh=((h+11)%12)+1;
+  return hh+':'+String(m).padStart(2,'0')+' '+period;
+}
+function mv2GuestUpdateSummary(){
+  const name=document.getElementById('guestName')?.value.trim()||'Unnamed';
+  const icon=document.getElementById('guestAvatarIc')?.textContent||'🙋';
+  const sh=parseInt(document.getElementById('guestStartHour')?.value)||0;
+  const sm=parseInt(document.getElementById('guestStartMin')?.value)||0;
+  const eh=parseInt(document.getElementById('guestEndHour')?.value)||0;
+  const em=parseInt(document.getElementById('guestEndMin')?.value)||0;
+  const fromMin=sh*60+sm,untilMin=eh*60+em;
+  const bar=document.getElementById('guestTimelineBar');
+  if(bar){
+    if(untilMin>fromMin){
+      bar.style.display='';
+      bar.style.left=((fromMin/1440)*100)+'%';
+      bar.style.width=(((untilMin-fromMin)/1440)*100)+'%';
+    } else {
+      bar.style.display='none';
+    }
+  }
+  const summary=document.getElementById('guestSummary');
+  if(summary)summary.innerHTML=icon+' '+name+' &middot; '+mv2GuestTimeStr(sh,sm)+'&ndash;'+mv2GuestTimeStr(eh,em);
+}
 document.querySelectorAll('.modal-backdrop').forEach(m=>{m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');});});
 
 // HELPERS
 function setText(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
+
+// Shared friendly empty-state markup — icon + title + optional sub text + optional CTA button.
+function emptyState(icon,title,sub,ctaHtml){
+  return `<div class="empty-state">
+    <div class="es-icon">${icon}</div>
+    <div class="es-title">${title}</div>
+    ${sub?`<div class="es-sub">${sub}</div>`:''}
+    ${ctaHtml||''}
+  </div>`;
+}
 function setBar(id,pct,color){const el=document.getElementById(id);if(!el)return;el.style.width=Math.max(0,Math.min(100,pct||0))+'%';if(color)el.style.background=color;}
 function formatDevName(n){return{light:'Light',fan:'Fan',tv:'TV',ac:'AC',exhaust:'Exhaust',air_purifier:'Air Purifier',sprinkler:'Sprinkler',window:'Window',siren:'Siren',mains_power:'Mains Power',door_lock:'Door Lock'}[n]||(n.charAt(0).toUpperCase()+n.slice(1));}
 function deviceEmoji(n){return{light:'💡',fan:'🌀',tv:'📺',ac:'❄️',exhaust:'🌬️',air_purifier:'🌬️',sprinkler:'🚿',window:'🪟',siren:'🔔',mains_power:'⚡',door_lock:'🔒'}[n]||'⚙️';}
@@ -4048,6 +4824,14 @@ function showChangePasswordModal(){
   }).catch(()=>showToast('Could not reach the server','danger'));
 }
 
+function downloadAuditLog(){
+  // Cookie-based session auth means the browser sends credentials with a
+  // plain navigation — no need to fetch+blob this, the Content-Disposition
+  // header on the response handles the actual download.
+  window.open('/api/audit-log/export','_blank');
+  showToast('Downloading audit log…','info');
+}
+
 async function renderAuditLog(){
   const listEl=document.getElementById('auditLogList');
   if(!listEl)return;
@@ -4055,7 +4839,7 @@ async function renderAuditLog(){
     const r=await fetch(API+'/api/audit-log',{credentials:'include'});
     if(!r.ok){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load audit log</div>';return;}
     const entries=await r.json();
-    if(!entries.length){listEl.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No activity recorded yet</div>';return;}
+    if(!entries.length){listEl.innerHTML=emptyState('🗂️','No activity recorded yet','Logins, device toggles, and automation actions will show up here as soon as anyone uses the dashboard.');return;}
     const actionIcons={login:'🔓',login_failed:'⚠️',logout:'🚪',password_changed:'🔑',device_toggle:'💡',family_member_added:'👤',family_member_removed:'👤'};
     const actionColors={login:'var(--green)',login_failed:'var(--red)',logout:'var(--text3)',password_changed:'var(--accent)',device_toggle:'var(--cyan)',family_member_added:'var(--accent)',family_member_removed:'var(--orange)'};
     listEl.innerHTML=entries.map(en=>`
@@ -4206,23 +4990,27 @@ async function renderAutomationRules(){
   if(!el)return;
   const [rules,status]=await Promise.all([
     apiFetch('/api/automation/rules'),
-    apiFetch('/api/automation/status').catch(()=>[])
+    apiFetch('/api/automation/status').catch(()=>({paused:false,rules:[],fires_today_total:0}))
   ]);
   _autoStatus={};
-  (status||[]).forEach(s=>{_autoStatus[s.id]=s;});
+  (status?.rules||[]).forEach(s=>{_autoStatus[s.id]=s;});
+  renderAutomationPauseBanner(!!status?.paused);
+  renderAutomationStatsRow(rules||[],status);
   if(!rules){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">Could not load rules</div>';return;}
   if(!rules.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No rules yet — click "+ New rule" to create one</div>';return;}
   const condLabel=c=>{
     if(!c)return'?';
-    if(c.type==='sensor_above')return`${c.key} > ${c.threshold}`;
-    if(c.type==='sensor_below')return`${c.key} < ${c.threshold}`;
-    if(c.type==='aqi_category')return`AQI = ${c.category}`;
-    if(c.type==='nobody_home_minutes')return`nobody home ≥ ${c.minutes}m`;
+    const not=c.negate?'NOT ':'';
+    if(c.type==='sensor_above')return`${not}${c.key} > ${c.threshold}`;
+    if(c.type==='sensor_below')return`${not}${c.key} < ${c.threshold}`;
+    if(c.type==='sensor_between')return`${not}${c.key} between ${c.min}-${c.max}`;
+    if(c.type==='aqi_category')return`${not}AQI = ${c.category}`;
+    if(c.type==='nobody_home_minutes')return`${not}nobody home ≥ ${c.minutes}m`;
     if(c.type==='someone_arrived_home')return`someone arrived`;
     if(c.type==='time_of_day')return`daily at ${String(c.hour).padStart(2,'0')}:${String(c.minute||0).padStart(2,'0')}`;
-    if(c.type==='device_state')return`${c.room}.${c.device} ${c.on?'ON':'OFF'}`;
-    if(c.type==='and')return`ALL: ${(c.conditions||[]).map(condLabel).join(' + ')}`;
-    if(c.type==='or')return`ANY: ${(c.conditions||[]).map(condLabel).join(' / ')}`;
+    if(c.type==='device_state')return`${not}${c.room}.${c.device} ${c.on?'ON':'OFF'}`;
+    if(c.type==='and')return`${not}ALL: ${(c.conditions||[]).map(condLabel).join(' + ')}`;
+    if(c.type==='or')return`${not}ANY: ${(c.conditions||[]).map(condLabel).join(' / ')}`;
     return c.type;
   };
   const actLabel=a=>{
@@ -4239,6 +5027,7 @@ async function renderAutomationRules(){
     const s=_autoStatus[r.id]||{};
     const cd=cdLabel(s);
     const dc=devCount(r.action);
+    const conflicts=s.conflicts_with||[];
     return`<div style="padding:14px 0;border-bottom:1px solid var(--border);${r.enabled?'':'opacity:.5'}">
       <div style="display:flex;align-items:flex-start;gap:12px">
         <div style="flex:1;min-width:0">
@@ -4248,6 +5037,8 @@ async function renderAutomationRules(){
             ${dc>1?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(108,139,239,.15);color:var(--accent)">${dc} devices</span>`:''}
             ${cd?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(245,158,11,.12);color:var(--orange)">⏱ ${cd}</span>`:''}
             ${s.last_fired?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--text3)">↩ ${s.last_fired}</span>`:''}
+            ${conflicts.length?`<span title="Also targets a device controlled by: ${conflicts.join(', ')}" style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(239,68,68,.12);color:var(--red);cursor:help">⚠ shares a device with ${conflicts.length} rule${conflicts.length>1?'s':''}</span>`:''}
+            ${s.fires_total?`<span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--text3)">🔥 ${s.fires_today} today · ${s.fires_total} all-time</span>`:''}
           </div>
           ${r.description?`<div style="font-size:11px;color:var(--text3);margin-bottom:5px">${r.description}</div>`:''}
           <div style="font-size:11.5px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
@@ -4262,6 +5053,7 @@ async function renderAutomationRules(){
         </div>
         <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
           <button class="btn btn-sm" onclick="toggleAutomationRule(${r.id})">${r.enabled?'Disable':'Enable'}</button>
+          <button class="btn btn-sm" onclick="editAutomationRule(${r.id})">✏️ Edit</button>
           <button class="btn btn-sm" onclick="testAutomationRule(${r.id})" title="Test if condition is met right now">🧪 Test</button>
           <button class="btn btn-sm btn-danger" onclick="deleteAutomationRule(${r.id},this)">Delete</button>
         </div>
@@ -4270,14 +5062,87 @@ async function renderAutomationRules(){
   }).join('');
 }
 
+function renderAutomationPauseBanner(paused){
+  const el=document.getElementById('automationPauseBanner');
+  if(!el)return;
+  if(!paused){
+    el.innerHTML='';
+    el.style.display='none';
+    return;
+  }
+  el.style.display='flex';
+  el.innerHTML=`
+    <span style="font-size:20px">⏸️</span>
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:13px;color:var(--orange)">All automation is paused</div>
+      <div style="font-size:11.5px;color:var(--text2);margin-top:1px">No rules or routines will fire — individual rules keep their on/off state for whenever you resume.</div>
+    </div>
+    <button class="btn btn-sm btn-primary" onclick="toggleAutomationPause(false)">Resume automation</button>`;
+}
+
+function renderAutomationStatsRow(rules,status){
+  const el=document.getElementById('automationStatsRow');
+  if(!el)return;
+  const enabledCount=rules.filter(r=>r.enabled).length;
+  const conflictCount=Object.values(status?.rules||[]).filter(s=>(s.conflicts_with||[]).length).length;
+  const stat=(icon,value,label,color)=>`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;text-align:center">
+      <div style="font-size:18px">${icon}</div>
+      <div style="font-size:19px;font-weight:800;margin-top:2px;${color?`color:${color}`:''}">${value}</div>
+      <div style="font-size:10.5px;color:var(--text3);margin-top:1px">${label}</div>
+    </div>`;
+  el.innerHTML=[
+    stat('📋',rules.length,'Total rules'),
+    stat('✅',enabledCount,'Active'),
+    stat('🔥',status?.fires_today_total??0,'Fired today','var(--orange)'),
+    stat(conflictCount?'⚠️':'👍',conflictCount,'Device conflicts',conflictCount?'var(--red)':'var(--green)'),
+  ].join('');
+}
+
+async function toggleAutomationPause(pause){
+  await apiFetch(pause?'/api/automation/pause':'/api/automation/resume',{method:'POST'});
+  showToast(pause?'Automation paused':'Automation resumed', pause?'info':'success');
+  renderAutomationRules();
+}
+
+async function toggleRoomAutomationPause(room,pause){
+  await apiFetch(`/api/automation/rooms/${room}/${pause?'pause':'resume'}`,{method:'POST'});
+  showToast(`Automation ${pause?'paused':'resumed'} for ${ROOM_NAMES[room]||room}`, pause?'info':'success');
+  renderCtrlRoomsMatrix();
+}
+
 async function testAutomationRule(id){
   const r=await apiFetch(`/api/automation/rules/${id}/test`,{method:'POST'});
   if(!r){showToast('Test failed','danger');return;}
   const met=r.condition_met;
-  const cd=r.cooldown_remaining>0?`\n⏱ On cooldown: ${r.cooldown_remaining}s remaining`:'';
-  const would=met&&!r.cooldown_remaining?`\n\nWould act on:\n• ${(r.would_do||[]).join('\n• ')}`:met?'\n\nWill fire once cooldown expires':'';
-  const err=r.error?`\n\n⚠ Error: ${r.error}`:'';
-  alert(`${met?'✅':'❌'} Rule Test\n\nCondition is ${met?'MET':'NOT MET'} right now.${cd}${would}${err}`);
+  const modal=document.getElementById('ruleTestModalInner');
+  modal.classList.remove('mv2-acc-orange','mv2-acc-purple','mv2-acc-cyan','mv2-acc-pink','mv2-acc-amber');
+
+  document.getElementById('ruleTestIcon').textContent=met?'✅':'➖';
+  document.getElementById('ruleTestTitle').textContent=met?'Condition is met right now':'Condition is not met right now';
+  document.getElementById('ruleTestSub').textContent=r.paused?'Automation is globally paused':'Live test — nothing was changed';
+
+  const lines=[];
+  if(r.paused){
+    modal.classList.add('mv2-acc-amber');
+    lines.push('⏸️ Automation is paused right now, so this rule won\'t actually fire until you resume it.');
+  } else {
+    modal.classList.add(met?'mv2-acc-cyan':'mv2-acc-orange');
+  }
+  if(r.cooldown_remaining>0){
+    lines.push(`⏱ On cooldown — ${r.cooldown_remaining}s remaining before it can fire again.`);
+  }
+  if(met&&!r.cooldown_remaining&&!r.paused){
+    lines.push('<b>Would act on:</b>');
+    (r.would_do||[]).forEach(w=>lines.push(`• ${w}`));
+  } else if(met){
+    lines.push('Will fire as soon as the cooldown/pause clears.');
+  }
+  if(r.error){
+    lines.push(`<span style="color:var(--red)">⚠ Error: ${r.error}</span>`);
+  }
+  document.getElementById('ruleTestBody').innerHTML=lines.map(l=>`<div style="margin-top:6px">${l}</div>`).join('');
+  document.getElementById('ruleTestModal').classList.add('open');
 }
 
 async function renderAutomationRuns(){
@@ -4304,24 +5169,154 @@ async function deleteAutomationRule(id){
   renderAutomationRules();
 }
 
+let _editingRuleId=null;
+
 function showAddAutomationModal(){
+  _editingRuleId=null;
+  document.getElementById('autoModalTitle').textContent='New automation rule';
+  document.getElementById('autoModalSubmitBtn').textContent='Create rule';
+  document.getElementById('autoName').value='';
+  document.getElementById('autoDescription').value='';
+  document.getElementById('autoNegate').checked=false;
+  document.getElementById('autoCooldown').value=300;
+  document.getElementById('autoTemplate').value='sensor_above';
+  document.getElementById('autoCombinator').value='and';
+  mv2SyncCombinatorPills('and');
+  removeSecondCondition();
   const roomSel=document.getElementById('autoActionRoom');
   if(roomSel){
     roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
     updateAutomationDeviceOptions();
   }
-  applyAutomationTemplate();
+  applyAutomationTemplate('');
+  mv2AutoUpdateSummary();
   document.getElementById('addAutomationModal').classList.add('open');
 }
 
-function applyAutomationTemplate(){
-  const tpl=document.getElementById('autoTemplate')?.value;
-  const condFields=document.getElementById('autoConditionFields');
-  const minField=document.getElementById('autoMinutesField');
-  const timeFields=document.getElementById('autoTimeFields');
-  const aqiCatField=document.getElementById('autoAqiCatField');
-  const devStateFields=document.getElementById('autoDevStateFields');
-  [condFields,minField,timeFields,aqiCatField,devStateFields].forEach(el=>{if(el)el.style.display='none';});
+function mv2PickCombinator(value,el){
+  document.getElementById('autoCombinator').value=value;
+  document.querySelectorAll('#autoCombinatorRow .mv2-pill').forEach(p=>p.classList.toggle('active',p===el));
+  mv2AutoUpdateSummary();
+}
+function mv2SyncCombinatorPills(value){
+  document.querySelectorAll('#autoCombinatorRow .mv2-pill').forEach(p=>p.classList.toggle('active',p.getAttribute('data-value')===value));
+}
+
+function addSecondCondition(){
+  document.getElementById('condBoxB').style.display='';
+  document.getElementById('autoCombinatorRow').style.display='';
+  document.getElementById('autoAddCondBtn').style.display='none';
+  document.getElementById('autoTemplateB').value='sensor_above';
+  applyAutomationTemplate('B');
+  mv2AutoUpdateSummary();
+}
+
+function removeSecondCondition(){
+  document.getElementById('condBoxB').style.display='none';
+  document.getElementById('autoCombinatorRow').style.display='none';
+  document.getElementById('autoAddCondBtn').style.display='';
+  mv2AutoUpdateSummary();
+}
+
+async function editAutomationRule(id){
+  const rules=await apiFetch('/api/automation/rules');
+  const rule=(rules||[]).find(r=>r.id===id);
+  if(!rule){showToast('Could not load that rule','danger');return;}
+  _editingRuleId=id;
+  document.getElementById('autoModalTitle').textContent='Edit automation rule';
+  document.getElementById('autoModalSubmitBtn').textContent='Save changes';
+  document.getElementById('autoName').value=rule.name||'';
+  document.getElementById('autoDescription').value=rule.description||'';
+  document.getElementById('autoCooldown').value=rule.cooldown_seconds||300;
+  removeSecondCondition();
+
+  const roomSel=document.getElementById('autoActionRoom');
+  roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
+
+  const c=rule.condition||{};
+  if(c.type==='and'||c.type==='or'){
+    // Compound rule — populate condition 1 and 2 from the sub-conditions,
+    // gracefully falling back to condition 1 only if there are more than
+    // two (the modal supports exactly two, matching the vast majority of
+    // real rules; rules with 3+ still work fine, just edit isn't offered).
+    document.getElementById('autoCombinator').value=c.type;
+    mv2SyncCombinatorPills(c.type);
+    const subs=c.conditions||[];
+    _fillConditionFields('',subs[0]||{});
+    if(subs.length>=2){
+      addSecondCondition();
+      _fillConditionFields('B',subs[1]);
+      if(subs.length>2)showToast('This rule has more than 2 sub-conditions — only the first 2 are editable here.','info');
+    }
+  } else {
+    _fillConditionFields('',c);
+  }
+
+  // Action — the modal only edits single-device actions; multi-device rules
+  // (bundles, some hand-built ones) open with the first target shown and a
+  // heads-up, rather than silently discarding the rest on save.
+  const action=Array.isArray(rule.action)?rule.action[0]:rule.action;
+  if(Array.isArray(rule.action)&&rule.action.length>1){
+    showToast('This rule controls multiple devices — editing here will keep only the first one. Delete and recreate for a different multi-device set.','info');
+  }
+  if(action){
+    roomSel.value=action.room;
+    updateAutomationDeviceOptions();
+    document.getElementById('autoActionDevice').value=action.device;
+    document.getElementById('autoActionOn').value=String(!!(action.set&&action.set.on));
+  }
+
+  document.getElementById('addAutomationModal').classList.add('open');
+  mv2AutoUpdateSummary();
+}
+
+function _fillConditionFields(suffix,c){
+  const $=id=>document.getElementById(id+suffix);
+  $('autoNegate').checked=!!c.negate;
+  let tpl='sensor_above';
+  if(['sensor_above','sensor_below','sensor_between','someone_arrived_home','time_of_day','aqi_category','device_state'].includes(c.type))tpl=c.type;
+  else if(c.type==='nobody_home_minutes')tpl='nobody_home';
+  $('autoTemplate').value=tpl;
+  applyAutomationTemplate(suffix);
+
+  if(tpl==='sensor_above'||tpl==='sensor_below'){
+    $('autoConditionKey').value=c.key||'aqi';
+    $('autoConditionThreshold').value=c.threshold??'';
+  } else if(tpl==='sensor_between'){
+    $('autoConditionKey').value=c.key||'aqi';
+    $('autoConditionMin').value=c.min??'';
+    $('autoConditionMax').value=c.max??'';
+  } else if(tpl==='nobody_home'){
+    $('autoConditionMinutes').value=c.minutes??30;
+  } else if(tpl==='time_of_day'){
+    $('autoCondHour').value=c.hour??8;
+    $('autoCondMinute').value=c.minute??0;
+  } else if(tpl==='aqi_category'){
+    $('autoCondAqiCat').value=c.category||'Poor';
+  } else if(tpl==='device_state'){
+    $('autoCondDevRoom').value=c.room||'';
+    updateCondDevOptions(suffix);
+    $('autoCondDevDevice').value=c.device||'';
+    $('autoCondDevOn').value=c.on===false?'false':'true';
+  }
+}
+
+function applyAutomationTemplate(suffix){
+  suffix=suffix||'';
+  const $=id=>document.getElementById(id+suffix);
+  const tpl=$('autoTemplate')?.value;
+  const condFields=$('autoConditionFields');
+  const betweenField=$('autoBetweenField');
+  const minField=$('autoMinutesField');
+  const timeFields=$('autoTimeFields');
+  const aqiCatField=$('autoAqiCatField');
+  const devStateFields=$('autoDevStateFields');
+  const negateField=$('autoNegateField');
+  [condFields,betweenField,minField,timeFields,aqiCatField,devStateFields].forEach(el=>{if(el)el.style.display='none';});
+  // Negate makes sense for most condition types but not the daily-schedule
+  // or edge-triggered ones (a "NOT time_of_day" or "NOT just arrived" isn't
+  // a meaningful automation condition).
+  if(negateField)negateField.style.display=(tpl==='time_of_day'||tpl==='someone_arrived_home')?'none':'';
 
   if(tpl==='nobody_home'){
     if(minField)minField.style.display='';
@@ -4334,24 +5329,28 @@ function applyAutomationTemplate(){
   } else if(tpl==='device_state'){
     if(devStateFields){
       devStateFields.style.display='';
-      const roomSel=document.getElementById('autoCondDevRoom');
+      const roomSel=$('autoCondDevRoom');
       if(roomSel&&Object.keys(devices).length){
         roomSel.innerHTML=Object.keys(devices).map(r=>`<option value="${r}">${ROOM_NAMES[r]||r}</option>`).join('');
-        updateCondDevOptions();
+        updateCondDevOptions(suffix);
       }
     }
+  } else if(tpl==='sensor_between'){
+    if(condFields)condFields.style.display='none';
+    if(betweenField)betweenField.style.display='';
   } else {
     if(condFields)condFields.style.display='';
-    const keyEl=document.getElementById('autoConditionKey');
+    const keyEl=$('autoConditionKey');
     if(keyEl)keyEl.value=tpl==='sensor_above'?'aqi':'temperature';
-    const thEl=document.getElementById('autoConditionThreshold');
+    const thEl=$('autoConditionThreshold');
     if(thEl)thEl.value=tpl==='sensor_above'?'200':'18';
   }
 }
 
-function updateCondDevOptions(){
-  const room=document.getElementById('autoCondDevRoom')?.value;
-  const devSel=document.getElementById('autoCondDevDevice');
+function updateCondDevOptions(suffix){
+  suffix=suffix||'';
+  const room=document.getElementById('autoCondDevRoom'+suffix)?.value;
+  const devSel=document.getElementById('autoCondDevDevice'+suffix);
   if(!devSel||!room||!devices[room])return;
   devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
 }
@@ -4363,33 +5362,61 @@ function updateAutomationDeviceOptions(){
   devSel.innerHTML=Object.keys(devices[room]).map(d=>`<option value="${d}">${formatDevName(d)}</option>`).join('');
 }
 
-async function submitAutomationRule(){
-  const name=document.getElementById('autoName').value.trim();
-  if(!name){showToast('Please enter a rule name','danger');return;}
-  const tpl=document.getElementById('autoTemplate').value;
+function _buildConditionFromFields(suffix){
+  const $=id=>document.getElementById(id+suffix);
+  const tpl=$('autoTemplate').value;
   let condition;
   if(tpl==='nobody_home'){
-    condition={type:'nobody_home_minutes',minutes:parseInt(document.getElementById('autoConditionMinutes').value)||30};
+    condition={type:'nobody_home_minutes',minutes:parseInt($('autoConditionMinutes').value)||30};
   } else if(tpl==='someone_arrived_home'){
     condition={type:'someone_arrived_home'};
   } else if(tpl==='time_of_day'){
-    const hr=parseInt(document.getElementById('autoCondHour')?.value||'8');
-    const mn=parseInt(document.getElementById('autoCondMinute')?.value||'0');
+    const hr=parseInt($('autoCondHour')?.value||'8');
+    const mn=parseInt($('autoCondMinute')?.value||'0');
     condition={type:'time_of_day',hour:hr,minute:mn,window_minutes:2};
   } else if(tpl==='aqi_category'){
-    condition={type:'aqi_category',category:document.getElementById('autoCondAqiCat')?.value||'Poor'};
+    condition={type:'aqi_category',category:$('autoCondAqiCat')?.value||'Poor'};
   } else if(tpl==='device_state'){
-    const dr=document.getElementById('autoCondDevRoom')?.value;
-    const dd=document.getElementById('autoCondDevDevice')?.value;
-    const don=document.getElementById('autoCondDevOn')?.value==='true';
-    if(!dr||!dd){showToast('Pick a room and device for the condition','danger');return;}
+    const dr=$('autoCondDevRoom')?.value;
+    const dd=$('autoCondDevDevice')?.value;
+    const don=$('autoCondDevOn')?.value==='true';
+    if(!dr||!dd)return{error:'Pick a room and device for the condition'};
     condition={type:'device_state',room:dr,device:dd,on:don};
+  } else if(tpl==='sensor_between'){
+    const key=$('autoConditionKey').value;
+    const min=parseFloat($('autoConditionMin').value);
+    const max=parseFloat($('autoConditionMax').value);
+    if(isNaN(min)||isNaN(max))return{error:'Please enter both a min and max'};
+    if(min>=max)return{error:'Min must be less than max'};
+    condition={type:'sensor_between',key,min,max};
   } else {
-    const key=document.getElementById('autoConditionKey').value;
-    const threshold=parseFloat(document.getElementById('autoConditionThreshold').value);
-    if(isNaN(threshold)){showToast('Please enter a valid threshold number','danger');return;}
+    const key=$('autoConditionKey').value;
+    const threshold=parseFloat($('autoConditionThreshold').value);
+    if(isNaN(threshold))return{error:'Please enter a valid threshold number'};
     condition={type:tpl==='sensor_below'?'sensor_below':'sensor_above',key,threshold};
   }
+  if($('autoNegate')?.checked&&tpl!=='time_of_day'&&tpl!=='someone_arrived_home'){
+    condition.negate=true;
+  }
+  return condition;
+}
+
+async function submitAutomationRule(){
+  const name=document.getElementById('autoName').value.trim();
+  if(!name){showToast('Please enter a rule name','danger');return;}
+
+  const condA=_buildConditionFromFields('');
+  if(condA.error){showToast(condA.error,'danger');return;}
+
+  let condition=condA;
+  const hasSecond=document.getElementById('condBoxB').style.display!=='none';
+  if(hasSecond){
+    const condB=_buildConditionFromFields('B');
+    if(condB.error){showToast(condB.error,'danger');return;}
+    const combinator=document.getElementById('autoCombinator').value;
+    condition={type:combinator,conditions:[condA,condB]};
+  }
+
   const room=document.getElementById('autoActionRoom').value;
   const device=document.getElementById('autoActionDevice').value;
   const on=document.getElementById('autoActionOn').value==='true';
@@ -4401,14 +5428,17 @@ async function submitAutomationRule(){
     action:{room,device,set:{on}},
     cooldown_seconds:cooldown
   };
-  const r=await fetch(API+'/api/automation/rules',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const isEdit=_editingRuleId!==null;
+  const url=isEdit?`${API}/api/automation/rules/${_editingRuleId}`:`${API}/api/automation/rules`;
+  const method=isEdit?'PUT':'POST';
+  const r=await fetch(url,{method,credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.ok){
     closeModal('addAutomationModal');
-    showToast(`Rule "${name}" created`,'success');
+    showToast(isEdit?`Rule "${name}" updated`:`Rule "${name}" created`,'success');
     renderAutomationRules();
   } else {
     const err=await r.json();
-    showToast(err.detail||'Could not create rule','danger');
+    showToast(err.detail||'Could not save rule','danger');
   }
 }
 
@@ -4488,6 +5518,8 @@ function showAddRoutineModal(){
   document.getElementById('routineName').value='';
   document.getElementById('routineHour').value='';
   document.getElementById('routineMinute').value='0';
+  document.getElementById('routineDays').value='everyday';
+  mv2SyncPills('routineDays');
   document.getElementById('addRoutineModal').classList.add('open');
 }
 
@@ -4540,8 +5572,11 @@ async function renderGuestAccessPage(){
   const el=document.getElementById('guestScheduleList');
   if(!el)return;
   const guests=await apiFetch('/api/guests');
+  guestListCache=guests||[];
   if(!guests||!guests.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:24px">No scheduled visitors yet — click "+ Add visitor" to add one</div>';
+    el.innerHTML=emptyState('🪪','No scheduled visitors yet',
+      'Add a maid, cook, driver, or delivery agent with an allowed day/time window — face matches outside it get flagged instead of trusted automatically.',
+      '<button class="btn btn-primary btn-acc-pink" onclick="showAddGuestModal()">+ Add your first visitor</button>');
     return;
   }
   const dayLabel=d=>{
@@ -4562,12 +5597,33 @@ async function renderGuestAccessPage(){
         </div>
         ${g.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px;font-style:italic">${g.notes}</div>`:''}
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;max-width:280px">
         <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:${g.enabled?'rgba(34,197,94,.15)':'rgba(255,255,255,.06)'};color:${g.enabled?'var(--green)':'var(--text3)'}">${g.enabled?'Active':'Paused'}</span>
+        <button class="btn btn-sm" onclick="showGuestQr(${g.id})">🪪 QR pass</button>
         <button class="btn btn-sm" onclick="toggleGuestSchedule(${g.id})">${g.enabled?'Pause':'Resume'}</button>
         <button class="btn btn-sm btn-danger" onclick="deleteGuestSchedule(${g.id})">Remove</button>
       </div>
     </div>`).join('');
+}
+
+let guestListCache=[];
+
+function showGuestQr(guestId){
+  const g=guestListCache.find(x=>x.id===guestId);
+  if(!g)return;
+  const dayLabel=g.days==='everyday'?'Every day':g.days.replace(/,/g,', ');
+  const window_=`${String(g.start_hour).padStart(2,'0')}:${String(g.start_min).padStart(2,'0')}–${String(g.end_hour).padStart(2,'0')}:${String(g.end_min).padStart(2,'0')}`;
+  // Compact payload a door-side scanner or security app could read — name,
+  // role and the exact allowed window, so it's self-contained on the pass
+  // itself rather than requiring a lookup.
+  const payload=`SMARTHOME-GUEST|${g.name}|${g.role}|${dayLabel}|${window_}|id:${g.id}`;
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(payload)}`;
+  document.getElementById('guestQrTitle').textContent=g.name;
+  document.getElementById('guestQrSub').textContent=`${g.role} · ${dayLabel} · ${window_}`;
+  document.getElementById('guestQrImg').src=qrUrl;
+  document.getElementById('guestQrDownload').href=qrUrl;
+  document.getElementById('guestQrDownload').download=`${g.name.replace(/\s+/g,'-').toLowerCase()}-pass.png`;
+  document.getElementById('guestQrModal').classList.add('open');
 }
 
 function showAddGuestModal(){
@@ -4576,6 +5632,11 @@ function showAddGuestModal(){
   document.getElementById('guestStartMin').value='0';
   document.getElementById('guestEndHour').value='9';
   document.getElementById('guestEndMin').value='0';
+  document.getElementById('guestRole').value='maid';
+  document.getElementById('guestDays').value='everyday';
+  mv2SyncPills('guestRole');mv2SyncPills('guestDays');
+  mv2GuestRoleMeta('🧹','Housekeeping');
+  const cnt=document.getElementById('guestNotesCount');if(cnt)cnt.textContent='0';
   document.getElementById('addGuestModal').classList.add('open');
 }
 
@@ -4711,10 +5772,11 @@ async function renderPaymentsPage(){
   if(!listEl) return;
 
   if(data.total_rent === 0){
-    listEl.innerHTML = `<div style="text-align:center;padding:24px">
-      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">Rent not configured yet.</div>
-      ${currentUser?.role==='owner'?'<button class="btn btn-primary" onclick="showRentConfigModal()">Set up rent now</button>':'<div style="font-size:12px;color:var(--text3)">Ask the owner (Aditya) to configure the monthly rent amount.</div>'}
-    </div>`;
+    listEl.innerHTML = emptyState('💰','Rent not configured yet',
+      currentUser?.role==='owner'
+        ? 'Set the monthly rent amount and due day — it\'ll split evenly across family members automatically.'
+        : 'Ask the owner (Aditya) to configure the monthly rent amount.',
+      currentUser?.role==='owner' ? '<button class="btn btn-primary btn-acc-amber" onclick="showRentConfigModal()">Set up rent now</button>' : '');
     return; // Summary cards above are already set; only skip the member list logic
   }
 
@@ -4784,6 +5846,7 @@ function openMarkPaymentModal(id, name, currentStatus){
   document.getElementById('markPaymentId').value = id;
   setText('markPaymentName', `${name}'s payment`);
   document.getElementById('markPaymentStatus').value = currentStatus;
+  mv2SyncPills('markPaymentStatus');
   document.getElementById('markPaymentNotes').value = '';
   document.getElementById('markPaymentModal').classList.add('open');
 }
@@ -4960,7 +6023,6 @@ async function climSetModalFilter(range,el){
 }
 function climRenderModal(){
   const metric=climModalMetric, u=CLIM_UNITS[metric], col=CLIM_COLORS[metric];
-  console.log('climRenderModal:',metric,climModalFilter,'points=',(climModalData.data||[]).length,climModalData);
   const line=document.getElementById('clim-modal-line'),area=document.getElementById('clim-modal-area'),grid=document.getElementById('clim-modal-grid');
   const stats=document.getElementById('clim-modal-stats'),empty=document.getElementById('clim-modal-empty');
   const mylabels=document.getElementById('clim-modal-ylabels'),mxlabels=document.getElementById('clim-modal-xlabels');
@@ -5191,7 +6253,374 @@ async function renderControlRoom(){
   renderCtrlAlerts();
   renderCtrlSecurityStatus();
   renderCtrlEmergencyBanner();
+  renderCtrlSummary();
+  renderSystemStatusBar();
+  renderCtrlRoomsMatrix();
+  renderCtrlAccessStrip();
+  renderCtrlTimeline();
+  renderCtrlExpectedVisitors();
+  renderCtrlNextRoutine();
+  if(!_ctrlActivityLoaded){
+    const log=await apiFetch('/api/audit-log');
+    if(log)renderCtrlActivityFeed(log.slice(0,8));
+    _ctrlActivityLoaded=true;
+  }
   await pollEmergencyStatus();
+}
+let _ctrlActivityLoaded=false;
+
+async function renderCtrlSummary(){
+  const el=document.getElementById('ctrl-summary-grid');
+  if(!el)return;
+  const [energy,autoStatus,alerts]=await Promise.all([
+    apiFetch('/api/energy').catch(()=>null),
+    apiFetch('/api/automation/status').catch(()=>null),
+    apiFetch('/api/alerts').catch(()=>[])
+  ]);
+
+  // Occupancy
+  const home=familyMembers.filter(m=>m.status==='home');
+  const occupancyHtml=familyMembers.length?`
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+      ${familyMembers.map(m=>`<span style="font-size:10.5px;padding:3px 8px;border-radius:10px;background:${m.status==='home'?'rgba(34,197,94,.12)':'var(--surface2)'};color:${m.status==='home'?'var(--green)':'var(--text3)'}">${m.status==='home'?'●':'○'} ${m.name}</span>`).join('')}
+    </div>`:'';
+
+  // Devices on + top power consumers
+  let onCount=0,totalCount=0;
+  const consumers=[];
+  for(const [room,devs] of Object.entries(devices)){
+    for(const [dn,d] of Object.entries(devs)){
+      totalCount++;
+      if(d.on){
+        onCount++;
+        let w=d.watts||0;
+        if(dn==='fan')w=Math.round(w*((d.speed||0)/5));
+        if(dn==='light')w=Math.round(w*((d.brightness||100)/100));
+        if(w>0)consumers.push({room,dn,w});
+      }
+    }
+  }
+  consumers.sort((a,b)=>b.w-a.w);
+  const topConsumers=consumers.slice(0,3);
+
+  // Automation
+  const rules=autoStatus?.rules||[];
+  const enabledCount=rules.filter(r=>r.enabled).length;
+  const lastFiredRule=rules.filter(r=>r.last_fired).sort((a,b)=>(b.last_fired||'').localeCompare(a.last_fired||''))[0];
+
+  const stat=(icon,label,value,sub)=>`
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;color:var(--text3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">
+        <span style="font-size:15px">${icon}</span>${label}
+      </div>
+      <div style="font-size:20px;font-weight:800;margin-top:5px">${value}</div>
+      ${sub?`<div style="font-size:11.5px;color:var(--text3);margin-top:2px">${sub}</div>`:''}
+    </div>`;
+
+  el.innerHTML=[
+    stat('🏠','Occupancy',`${home.length}/${familyMembers.length} home`,'')+occupancyHtml,
+    stat('🔌','Devices on',`${onCount}/${totalCount}`,
+      topConsumers.length?topConsumers.map(c=>`${deviceEmoji(c.dn)} ${ROOM_NAMES[c.room]||c.room} ${formatDevName(c.dn)} · ${c.w}W`).join('<br>'):'Nothing drawing power right now'),
+    stat('⚡','Power draw',energy?`${energy.total_watts}W`:'--',energy?`₹${energy.cost_today.toFixed(2)} spent today so far`:''),
+    stat('🌫','Air quality',sensors.aqi!=null?`${sensors.aqi} · ${sensors.aqi_category||''}`:'--',
+      sensors.temperature!=null?`${sensors.temperature}°C indoor${sensors.outdoor_temp!=null?` · ${sensors.outdoor_temp}°C outdoor`:''}`:''),
+    stat('🔐','Security',(devices.security?.door_lock?.on)?'Locked':'Unlocked',
+      `Siren ${devices.security?.siren?.on?'sounding 🚨':'silent'} · Sprinklers ${Object.values(devices).some(r=>r.sprinkler?.on)?'active 💦':'standby'}`),
+    stat('⚡','Automation',autoStatus?.paused?'Paused':`${enabledCount}/${rules.length} active`,
+      autoStatus?.paused?'Resume from the Automation tab when ready':
+      lastFiredRule?`Last fired: ${lastFiredRule.name} at ${lastFiredRule.last_fired}`:'No rules have fired yet'),
+    stat('🔔','Active alerts',String((alerts||[]).length),
+      (alerts&&alerts.length)?`Most recent: ${alerts[alerts.length-1].message||alerts[alerts.length-1].type}`:'All clear'),
+  ].join('');
+}
+
+async function renderSystemStatusBar(){
+  const dot=document.getElementById('ctrl-status-dot'),lbl=document.getElementById('ctrl-status-label'),
+        diag=document.getElementById('ctrl-status-diagnostics'),clock=document.getElementById('ctrl-clock');
+  if(clock)clock.textContent=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const s=await apiFetch('/api/system/status');
+  if(!s||!dot||!lbl||!diag)return;
+
+  const fmtUptime=sec=>{
+    const d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60);
+    if(d>0)return`${d}d ${h}h`;
+    if(h>0)return`${h}h ${m}m`;
+    return`${m}m`;
+  };
+
+  // Aggregate state: RED if the sensor thread died (nothing else matters more —
+  // the whole dashboard is stale), AMBER for degraded-but-functioning conditions,
+  // GREEN otherwise.
+  let state='ok',label='SYSTEMS NOMINAL';
+  if(!s.sensor_thread_healthy){state='alert';label='SENSOR THREAD UNRESPONSIVE';}
+  else if(s.active_alert_count>0){state='alert';label=`${s.active_alert_count} ACTIVE ALERT${s.active_alert_count>1?'S':''}`;}
+  else if(!s.climate_api_available){state='warn';label='CLIMATE API DOWN — USING FALLBACK';}
+  else if(s.automation_paused){state='warn';label='AUTOMATION PAUSED';}
+
+  const colors={ok:'var(--green)',warn:'var(--orange)',alert:'var(--red)'};
+  const c=colors[state];
+  dot.style.background=c;dot.style.boxShadow=`0 0 6px ${c}`;
+  if(state==='alert')dot.style.animation='pulse 1s ease-in-out infinite';else dot.style.animation='';
+  lbl.textContent=label;lbl.style.color=state==='ok'?'':c;
+
+  diag.innerHTML=`
+    <span>⏱ Uptime ${fmtUptime(s.uptime_seconds)}</span>
+    <span>🌐 Climate API ${s.climate_api_available?'live':'fallback'}</span>
+    <span>⚡ Automation ${s.automation_paused?'paused':'active'}</span>
+    <span>🔗 ${s.ws_clients_connected} client${s.ws_clients_connected===1?'':'s'}</span>`;
+
+  const page=document.getElementById('page-control');
+  if(page){
+    page.classList.remove('ctrl-tint-warn','ctrl-tint-alert');
+    if(state!=='ok')page.classList.add(`ctrl-tint-${state}`);
+  }
+}
+setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderSystemStatusBar();},10000);
+
+async function renderCtrlTimeline(){
+  const el=document.getElementById('ctrl-timeline'),countEl=document.getElementById('ctrl-timeline-count');
+  if(!el)return;
+  const [alerts,runs]=await Promise.all([
+    apiFetch('/api/alerts').catch(()=>[]),
+    apiFetch('/api/automation/runs').catch(()=>[])
+  ]);
+  const now=new Date();
+  const events=[];
+
+  // Alerts only carry a time-of-day (HH:MM:SS), not a date — alert_history
+  // is a capped in-memory list that resets on server restart, so in
+  // practice everything in it is recent; treated as "today" here rather
+  // than pretending we have date precision the data doesn't carry.
+  (alerts||[]).forEach(a=>{
+    const [h,m,s]=(a.time||'0:0:0').split(':').map(Number);
+    const t=new Date(now);
+    t.setHours(h,m,s||0,0);
+    if(t>now)t.setDate(t.getDate()-1);  // rolled past midnight
+    const hoursAgo=(now-t)/3600000;
+    if(hoursAgo<=24)events.push({hoursAgo,type:'alert',label:a.message||a.type,time:a.time});
+  });
+
+  // automation_runs has a full IST datetime, so this one's exact.
+  (runs||[]).forEach(r=>{
+    const t=new Date((r.created_at||'').replace(' ','T'));
+    if(isNaN(t))return;
+    const hoursAgo=(now-t)/3600000;
+    if(hoursAgo>=0&&hoursAgo<=24)events.push({hoursAgo,type:'automation',label:r.rule_name,time:r.created_at?.slice(11,16)});
+  });
+
+  if(countEl)countEl.textContent=events.length?`${events.length} event${events.length===1?'':'s'} in 24h`:'';
+  if(!events.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;text-align:center;padding:14px">Quiet — nothing logged in the last 24 hours.</div>';
+    return;
+  }
+  const colors={alert:'var(--red)',automation:'var(--accent)'};
+  el.innerHTML=`
+    <div style="position:absolute;left:0;right:0;top:20px;height:2px;background:var(--border)"></div>
+    ${events.map(e=>{
+      const pct=Math.max(0,Math.min(100,(24-e.hoursAgo)/24*100));
+      return`<div title="${e.label} · ${e.time||''}" style="position:absolute;left:${pct}%;top:14px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:${colors[e.type]};border:2px solid var(--surface);cursor:default"></div>`;
+    }).join('')}`;
+}
+setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderCtrlTimeline();},60000);
+
+async function renderCtrlExpectedVisitors(){
+  const el=document.getElementById('ctrl-expected-visitors');
+  if(!el)return;
+  const guests=await apiFetch('/api/guests').catch(()=>[]);
+  const now=new Date();
+  const todayName=CTRL_DAY_NAMES[now.getDay()];
+  const today=(guests||[]).filter(g=>g.enabled&&(g.days==='everyday'||g.days.split(',').includes(todayName)));
+  if(!today.length){
+    el.innerHTML=emptyState('📭','No visitors expected today','Scheduled guests with today in their allowed days will show up here.');
+    return;
+  }
+  const roleIcon={maid:'🧹',cook:'👨‍🍳',driver:'🚗',guard:'💂',delivery:'📦',guest:'👤',worker:'🔧'};
+  const nowMin=now.getHours()*60+now.getMinutes();
+  el.innerHTML=today.map(g=>{
+    const startMin=g.start_hour*60+g.start_min,endMin=g.end_hour*60+g.end_min;
+    const state=nowMin<startMin?'upcoming':nowMin<=endMin?'now':'passed';
+    const stateLabel={upcoming:'Upcoming',now:'Window open',passed:'Window passed'}[state];
+    const stateColor={upcoming:'var(--text3)',now:'var(--green)',passed:'var(--text3)'}[state];
+    return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);${state==='passed'?'opacity:.5':''}">
+      <span style="font-size:18px">${roleIcon[g.role]||'👤'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px;font-weight:700">${g.name}</div>
+        <div style="font-size:11px;color:var(--text3)">${String(g.start_hour).padStart(2,'0')}:${String(g.start_min).padStart(2,'0')}–${String(g.end_hour).padStart(2,'0')}:${String(g.end_min).padStart(2,'0')}</div>
+      </div>
+      <span style="font-size:10px;font-weight:700;color:${stateColor}">${state==='now'?'● ':''}${stateLabel}</span>
+    </div>`;
+  }).join('');
+}
+
+const CTRL_DAY_NAMES=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+function nextRoutineOccurrence(r,now){
+  const days=r.days==='everyday'?CTRL_DAY_NAMES:r.days.split(',');
+  for(let addDays=0;addDays<8;addDays++){
+    const cand=new Date(now);
+    cand.setDate(cand.getDate()+addDays);
+    cand.setHours(r.hour,r.minute,0,0);
+    if(cand<=now)continue;
+    if(days.includes(CTRL_DAY_NAMES[cand.getDay()]))return cand;
+  }
+  return null;
+}
+
+async function renderCtrlNextRoutine(){
+  const el=document.getElementById('ctrl-next-routine');
+  if(!el)return;
+  const routines=(await apiFetch('/api/routines').catch(()=>[]))||[];
+  const now=new Date();
+  const enabled=routines.filter(r=>r.enabled);
+  const withNext=enabled.map(r=>({r,next:nextRoutineOccurrence(r,now)})).filter(x=>x.next);
+  if(!withNext.length){
+    el.innerHTML=emptyState('⏰','No routines scheduled','Add a routine from the Routines tab to see it counted down here.');
+    return;
+  }
+  withNext.sort((a,b)=>a.next-b.next);
+  const {r,next}=withNext[0];
+  const msLeft=next-now;
+  const hrs=Math.floor(msLeft/3600000),mins=Math.floor((msLeft%3600000)/60000);
+  const countdown=hrs>0?`${hrs}h ${mins}m`:`${mins}m`;
+  el.innerHTML=`
+    <div style="text-align:center;padding:6px 0">
+      <div style="font-size:26px;font-weight:800;color:var(--accent2)">${countdown}</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:2px">until next routine fires</div>
+    </div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:700">${r.name}</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+        ${String(r.hour).padStart(2,'0')}:${String(r.minute).padStart(2,'0')} · ${formatDevName(r.device)} · 👤 ${r.member_name}
+      </div>
+    </div>
+    ${withNext.length>1?`<div style="font-size:10.5px;color:var(--text3);margin-top:10px;text-align:center">+${withNext.length-1} more routine${withNext.length>2?'s':''} scheduled</div>`:''}`;
+}
+setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active')){renderCtrlNextRoutine();renderCtrlExpectedVisitors();}},60000);
+
+async function renderCtrlRoomsMatrix(){
+  const el=document.getElementById('ctrl-rooms-matrix');
+  if(!el)return;
+  const [alerts,insights,autoStatus]=await Promise.all([
+    apiFetch('/api/alerts').catch(()=>[]),
+    apiFetch('/api/energy/insights').catch(()=>null),
+    apiFetch('/api/automation/status').catch(()=>null)
+  ]);
+  _lastPhantomLoad=insights?.phantom_load||[];
+  const pausedRooms=new Set(autoStatus?.paused_rooms||[]);
+  // "Whole-house" alert: the sensor system here is single/shared, not
+  // per-room, so a live alert (smoke/gas/fire) genuinely applies to the
+  // whole house rather than one tile — pretending otherwise would be
+  // fabricating precision the underlying sensors don't have.
+  const latest=alerts&&alerts.length?alerts[alerts.length-1]:null;
+  const wholeHouseAlert=!!latest;
+
+  el.innerHTML=Object.keys(devices).map(room=>{
+    const devs=devices[room]||{};
+    const entries=Object.entries(devs);
+    const onCount=entries.filter(([,d])=>d.on).length;
+    const isPhantom=_lastPhantomLoad.some(p=>p.room===room);
+    const roomPaused=pausedRooms.has(room);
+    let status='ok',icon='●';
+    if(wholeHouseAlert){status='alert';icon='⚠';}
+    else if(room==='security'&&!devs.door_lock?.on){status='warn';icon='🔓';}
+    else if(isPhantom){status='warn';icon='⏱';}
+    const colors={ok:'var(--green)',warn:'var(--orange)',alert:'var(--red)'};
+    const c=colors[status];
+    return`<div onclick="showPage('devices');document.querySelector(\`[onclick*=\\"selectRoom('${room}'\\"]\`)?.click()" style="cursor:pointer;position:relative;background:var(--surface2);border:1px solid ${status==='ok'?'var(--border)':c};border-radius:10px;padding:10px;text-align:center;transition:transform .15s;${roomPaused?'opacity:.6':''}" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+      <button onclick="event.stopPropagation();toggleRoomAutomationPause('${room}',${!roomPaused})" title="${roomPaused?'Resume':'Pause'} automation for this room" style="position:absolute;top:4px;right:4px;background:none;border:none;cursor:pointer;font-size:10px;padding:2px;opacity:.6;line-height:1" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.6'">${roomPaused?'▶️':'⏸️'}</button>
+      <div style="font-size:10px;color:${c}">${icon}</div>
+      <div style="font-size:12px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ROOM_NAMES[room]||room}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${roomPaused?'Automation paused':`${onCount}/${entries.length} on`}</div>
+    </div>`;
+  }).join('');
+
+  renderCtrlMiniFloorPlan(wholeHouseAlert,pausedRooms);
+}
+
+// Same room rects/coordinates as the real Floor Plan page (viewBox 0 0 980
+// 560) — a genuinely spatial layout, not just a re-skinned grid, but
+// deliberately simplified (no walls/furniture detail) since this is a
+// glanceable mini-map, not a replacement for the full Floor Plan tab.
+const CTRL_FLOORPLAN_RECTS={
+  living_room:{x:26,y:26,w:252,h:262}, kitchen:{x:290,y:26,w:190,h:134},
+  bathroom:{x:492,y:26,w:148,h:134}, aditya_room:{x:652,y:26,w:156,h:134},
+  diksha_room:{x:820,y:26,w:154,h:134}, agrim_room:{x:290,y:250,w:160,h:206},
+  naman_room:{x:462,y:250,w:178,h:206}, kamakshi_room:{x:652,y:250,w:156,h:206},
+};
+
+function renderCtrlMiniFloorPlan(wholeHouseAlert,pausedRooms){
+  const el=document.getElementById('ctrl-mini-floorplan');
+  if(!el)return;
+  const colors={ok:'rgba(34,197,94,.16)',warn:'rgba(245,158,11,.18)',alert:'rgba(239,68,68,.2)'};
+  const strokeColors={ok:'var(--border)',warn:'var(--orange)',alert:'var(--red)'};
+  const rects=Object.entries(CTRL_FLOORPLAN_RECTS).map(([room,r])=>{
+    const devs=devices[room]||{};
+    const onCount=Object.values(devs).filter(d=>d.on).length;
+    const isPhantom=_lastPhantomLoad.some(p=>p.room===room);
+    const roomPaused=pausedRooms&&pausedRooms.has(room);
+    let status='ok';
+    if(wholeHouseAlert)status='alert';
+    else if(isPhantom)status='warn';
+    const cx=r.x+r.w/2,cy=r.y+r.h/2;
+    return`<g onclick="showPage('devices');document.querySelector(\`[onclick*=\\"selectRoom('${room}'\\"]\`)?.click()" style="cursor:pointer" opacity="${roomPaused?0.5:1}">
+      <rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="6" fill="${colors[status]}" stroke="${strokeColors[status]}" stroke-width="1.5"/>
+      <text x="${cx}" y="${cy-6}" text-anchor="middle" fill="var(--text)" font-size="15" font-weight="700" font-family="Segoe UI,sans-serif">${ROOM_NAMES[room]||room}</text>
+      <text x="${cx}" y="${cy+14}" text-anchor="middle" fill="var(--text3)" font-size="12" font-family="Segoe UI,sans-serif">${roomPaused?'paused':`${onCount} on`}</text>
+    </g>`;
+  }).join('');
+  const doorLocked=!!devices.security?.door_lock?.on;
+  el.innerHTML=`<svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
+    <rect x="4" y="4" width="972" height="552" rx="10" fill="none" stroke="var(--border)" stroke-width="2"/>
+    ${rects}
+    <g>
+      <rect x="820" y="470" width="140" height="70" rx="6" fill="${doorLocked?'rgba(34,197,94,.14)':'rgba(239,68,68,.16)'}" stroke="${doorLocked?'var(--green)':'var(--red)'}" stroke-width="1.5"/>
+      <text x="890" y="500" text-anchor="middle" fill="var(--text)" font-size="13" font-weight="700" font-family="Segoe UI,sans-serif">${doorLocked?'🔒':'🔓'} Door</text>
+      <text x="890" y="518" text-anchor="middle" fill="var(--text3)" font-size="11" font-family="Segoe UI,sans-serif">${doorLocked?'Locked':'Unlocked'}</text>
+    </g>
+  </svg>`;
+}
+let _lastPhantomLoad=[];
+
+function renderCtrlActivityFeed(entries){
+  const el=document.getElementById('ctrl-activity-feed'),countEl=document.getElementById('ctrl-activity-count');
+  if(!el)return;
+  if(!entries||!entries.length){
+    el.innerHTML=emptyState('📡','Nothing happening yet','Device toggles, logins, and automation actions will stream in here live.');
+    if(countEl)countEl.textContent='';
+    return;
+  }
+  if(countEl)countEl.textContent=`${entries.length} recent`;
+  const actionIcon={device_toggle:'🔌',login:'🔑',logout:'🚪',automation_rule_created:'⚡',automation_rule_edited:'✏️',
+    automation_paused:'⏸️',automation_resumed:'▶️',audit_log_exported:'⬇️',guest_schedule_created:'🪪',
+    payment_recorded:'💰',intruder_detected:'🚨'};
+  el.innerHTML=entries.map(e=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px;flex-shrink:0;margin-top:1px">${actionIcon[e.action]||'•'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px"><b>${e.username||'system'}</b> ${(e.action||'').replace(/_/g,' ')}${e.detail?` — ${e.detail}`:''}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:1px">${e.created_at||''}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderCtrlAccessStrip(){
+  const el=document.getElementById('ctrl-access-strip');
+  if(!el)return;
+  const camText=document.getElementById('sec-cam-summary')?.textContent||'Not started';
+  const locked=!!devices.security?.door_lock?.on;
+  const lastIntruder=(securityLogs||[]).find(l=>l.type==='intruder');
+  const todayCount=(securityLogs||[]).length;
+  const row=(icon,label,value,color)=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span>${icon} ${label}</span>
+      <span style="font-weight:700;${color?`color:${color}`:''}">${value}</span>
+    </div>`;
+  el.innerHTML=
+    row('🔒','Front door',locked?'Locked':'UNLOCKED',locked?'var(--green)':'var(--red)')+
+    row('📷','Camera',camText,camText.includes('Live')?'var(--green)':'var(--text3)')+
+    row('📋',"Today's events",todayCount,'')+
+    row('🚨','Last intruder alert',lastIntruder?`${lastIntruder.time} · ${lastIntruder.date}`:'None today',lastIntruder?'var(--red)':'var(--text2)')+
+    `<div style="text-align:center;margin-top:8px"><button class="btn btn-sm" onclick="showPage('security')">Open Security tab →</button></div>`;
 }
 
 function renderCtrlSensorStrip(){
@@ -5373,7 +6802,250 @@ function refreshControlRoom(){
     renderCtrlRoomGrid();
     renderCtrlAlerts();
     renderCtrlSecurityStatus();
+    renderCtrlAccessStrip();
+    const clock=document.getElementById('ctrl-clock');
+    if(clock)clock.textContent=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   }
+}
+setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderCtrlRoomsMatrix();},15000);
+
+// ─────────────────────────────────────────────────
+// VOICE CONTROL (Web Speech API)
+// ─────────────────────────────────────────────────
+// Tap-to-talk, not always-listening: the browser API doesn't support a
+// reliable local wake word, and always-on mic access is a real privacy/
+// battery cost for a household dashboard. One tap, one utterance, clear
+// feedback either way — never fails silently.
+
+const SpeechRecognitionAPI=window.SpeechRecognition||window.webkitSpeechRecognition;
+let _voiceRecognition=null;
+
+function initVoiceControl(){
+  const btn=document.getElementById('voiceMicBtn');
+  if(!btn)return;
+  if(!SpeechRecognitionAPI){
+    // Chrome/Edge support this; Firefox and some Safari versions don't —
+    // hide the button rather than show a feature that silently fails.
+    btn.style.display='none';
+    return;
+  }
+  btn.style.display='flex';
+}
+document.addEventListener('DOMContentLoaded',initVoiceControl);
+
+function startVoiceCommand(){
+  if(!SpeechRecognitionAPI){showToast('Voice control isn\'t supported in this browser — try Chrome or Edge','danger');return;}
+  const overlay=document.getElementById('voiceOverlay'),status=document.getElementById('voiceStatus'),
+        transcript=document.getElementById('voiceTranscript'),result=document.getElementById('voiceResult');
+  overlay.style.display='flex';
+  status.textContent='Listening…';status.style.color='';
+  transcript.textContent='…';
+  result.textContent='';
+  document.getElementById('voiceMicPulse').style.animation='voicePulse 1.4s ease-in-out infinite';
+
+  _voiceRecognition=new SpeechRecognitionAPI();
+  _voiceRecognition.lang='en-IN';
+  _voiceRecognition.interimResults=true;
+  _voiceRecognition.continuous=false;
+  _voiceRecognition.maxAlternatives=1;
+
+  _voiceRecognition.onresult=(e)=>{
+    let text='';
+    for(let i=0;i<e.results.length;i++)text+=e.results[i][0].transcript;
+    transcript.textContent=text;
+  };
+
+  _voiceRecognition.onerror=(e)=>{
+    document.getElementById('voiceMicPulse').style.animation='';
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      status.textContent='Microphone access denied';status.style.color='var(--red)';
+      result.textContent='Allow microphone access in your browser settings to use voice commands.';
+    } else if(e.error==='no-speech'){
+      status.textContent='Didn\'t hear anything';status.style.color='var(--orange)';
+      result.textContent='Tap the mic and try again.';
+    } else {
+      status.textContent='Voice recognition error';status.style.color='var(--red)';
+      result.textContent=e.error;
+    }
+  };
+
+  _voiceRecognition.onend=()=>{
+    document.getElementById('voiceMicPulse').style.animation='';
+    const heard=transcript.textContent.trim();
+    if(heard&&heard!=='…'){
+      status.textContent='Got it';
+      processVoiceCommand(heard);
+    }
+  };
+
+  try{ _voiceRecognition.start(); }
+  catch(err){ status.textContent='Could not start listening';result.textContent=String(err); }
+}
+
+function stopVoiceCommand(){
+  if(_voiceRecognition){try{_voiceRecognition.abort();}catch(e){}}
+  document.getElementById('voiceOverlay').style.display='none';
+}
+
+function voiceSpeak(text){
+  if(!window.speechSynthesis)return;
+  try{
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=1.02;u.lang='en-IN';
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+// ── Vocabulary ───────────────────────────────────────────────────────────
+const VOICE_ROOM_WORDS={
+  'living room':'living_room','livingroom':'living_room','hall':'living_room',
+  "aditya's room":'aditya_room','aditya room':'aditya_room','adityas room':'aditya_room','aditya':'aditya_room',
+  "diksha's room":'diksha_room','diksha room':'diksha_room','dikshas room':'diksha_room','diksha':'diksha_room',
+  "agrim's room":'agrim_room','agrim room':'agrim_room','agrims room':'agrim_room','agrim':'agrim_room',
+  "naman's room":'naman_room','naman room':'naman_room','namans room':'naman_room','naman':'naman_room',
+  "kamakshi's room":'kamakshi_room','kamakshi room':'kamakshi_room','kamakshis room':'kamakshi_room','kamakshi':'kamakshi_room',
+  'kitchen':'kitchen','bathroom':'bathroom','washroom':'bathroom','toilet':'bathroom',
+};
+// Ordered longest-phrase-first so "living room" matches before a shorter
+// accidental substring would.
+const VOICE_ROOM_KEYS=Object.keys(VOICE_ROOM_WORDS).sort((a,b)=>b.length-a.length);
+
+const VOICE_DEVICE_WORDS={
+  'lights':'light','light':'light',
+  'fan':'fan','fans':'fan',
+  'tv':'tv','television':'tv',
+  'air conditioner':'ac','air conditioning':'ac','a.c.':'ac','ac':'ac',
+  'air purifier':'air_purifier','purifier':'air_purifier',
+  'sprinkler':'sprinkler','sprinklers':'sprinkler',
+  'window':'window','windows':'window',
+  'exhaust fan':'exhaust','exhaust':'exhaust',
+  'door lock':'door_lock','front door':'door_lock','door':'door_lock','lock':'door_lock',
+  'siren':'siren','alarm':'siren',
+  'mains power':'mains_power','main power':'mains_power','mains':'mains_power','power':'mains_power',
+};
+const VOICE_DEVICE_KEYS=Object.keys(VOICE_DEVICE_WORDS).sort((a,b)=>b.length-a.length);
+
+const SECURITY_DEVICES=['door_lock','siren','mains_power'];  // live in the "security" pseudo-room
+
+function findFirst(text,keys,map){
+  for(const k of keys){ if(text.includes(k)) return map[k]; }
+  return null;
+}
+
+function voiceArticle(device){
+  // Only "air_purifier" and "ac" start with a vowel sound among our device
+  // list — a lookup avoids "a ac"/"a exhaust"-style grammar slips.
+  return ['ac','air_purifier'].includes(device)?'an':'a';
+}
+
+async function processVoiceCommand(rawText){
+  const status=document.getElementById('voiceStatus'),result=document.getElementById('voiceResult');
+  const text=rawText.toLowerCase().trim();
+
+  const done=(msg,ok=true)=>{
+    status.textContent=ok?'Done':'Couldn\'t do that';
+    status.style.color=ok?'var(--green)':'var(--orange)';
+    result.textContent=msg;
+    voiceSpeak(msg);
+    setTimeout(()=>{ if(document.getElementById('voiceOverlay').style.display!=='none') stopVoiceCommand(); },2600);
+  };
+  const fail=(msg)=>{
+    status.textContent='Not sure what you meant';status.style.color='var(--orange)';
+    result.textContent=msg||'Try something like "turn on the living room lights" or "activate night mode".';
+    voiceSpeak('Sorry, I didn\'t catch that.');
+  };
+
+  // ── Scenes — reuse the exact same functions the buttons on Control Room call ──
+  if(/night ?mode|good ?night/.test(text)){ await ctrlNightMode(); done('Night mode activated.'); return; }
+  if(/away ?mode|i'?m leaving|leaving home|i am leaving/.test(text)){ await ctrlAwayMode(); done('Away mode activated.'); return; }
+  if(/morning ?mode|good ?morning/.test(text)){ await ctrlMorningMode(); done('Morning mode activated.'); return; }
+  if(/lockdown/.test(text)){ await ctrlLockdown(); done('Lockdown activated.'); return; }
+
+  // ── Status queries — read a live value back rather than changing anything ──
+  if(/(what'?s|what is|how'?s) the (temp|temperature)|how hot/.test(text)){
+    done(`It's currently ${sensors.temperature}°C indoors.`); return;
+  }
+  if(/(what'?s|what is) the (aqi|air quality)/.test(text)){
+    done(`AQI is ${sensors.aqi}, ${sensors.aqi_category||''}.`); return;
+  }
+  if(/(what'?s|what is) the humidity/.test(text)){
+    done(`Humidity is ${sensors.humidity} percent.`); return;
+  }
+  if(/who'?s home|is anyone home|anybody home/.test(text)){
+    const home=familyMembers.filter(m=>m.status==='home').map(m=>m.name);
+    done(home.length?`${home.join(', ')} ${home.length===1?'is':'are'} home.`:'Nobody\'s home right now.'); return;
+  }
+  if(/(is|are) the door(s)? locked/.test(text)){
+    const locked=!!devices.security?.door_lock?.on;
+    done(locked?'Yes, the door is locked.':'No, the door is unlocked.'); return;
+  }
+
+  // ── Set AC temperature: "set <room> ac to N degrees" ──
+  const tempMatch=text.match(/(?:set|make).*?(\d{2})\s*(?:degrees?|c)?/);
+  if(tempMatch&&(text.includes('ac')||text.includes('air condition'))){
+    const temp=Math.max(16,Math.min(30,parseInt(tempMatch[1])));
+    const room=findFirst(text,VOICE_ROOM_KEYS,VOICE_ROOM_WORDS);
+    if(room){
+      if(!devices[room]?.ac){ fail(`${ROOM_NAMES[room]||room} doesn't have an AC.`); return; }
+      await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device:'ac',value:{on:true,temp}})});
+      devices[room].ac.on=true;devices[room].ac.temp=temp;
+      done(`${ROOM_NAMES[room]||room} AC set to ${temp} degrees.`); return;
+    }
+    // No room named — same "applies everywhere" fallback as every other
+    // device command here, not a silent guess at which room was meant.
+    const acRooms=Object.keys(devices).filter(r=>devices[r].ac!==undefined);
+    if(!acRooms.length){ fail('No rooms have an AC.'); return; }
+    await Promise.all(acRooms.map(r=>
+      apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:r,device:'ac',value:{on:true,temp}})})
+        .then(()=>{devices[r].ac.on=true;devices[r].ac.temp=temp;})
+    ));
+    done(`All ACs set to ${temp} degrees.`); return;
+  }
+
+  // ── Device on/off (single room, or all rooms if none mentioned) ──
+  const device=findFirst(text,VOICE_DEVICE_KEYS,VOICE_DEVICE_WORDS);
+  if(!device){ fail(); return; }
+
+  // Devices with meaningful verbs of their own, not just on/off:
+  let wantOn=null;
+  if(device==='door_lock'){
+    if(/\bunlock/.test(text))wantOn=false;
+    else if(/\block\b/.test(text))wantOn=true;
+  } else if(device==='window'){
+    if(/\bopen\b/.test(text))wantOn=true;
+    else if(/\bclose\b|\bshut\b/.test(text))wantOn=false;
+  }
+  if(wantOn===null){
+    if(/\bon\b|turn on|switch on|start|activate/.test(text))wantOn=true;
+    else if(/\boff\b|turn off|switch off|stop|deactivate/.test(text))wantOn=false;
+  }
+  if(wantOn===null){ fail(`Heard "${formatDevName(device)}" but not whether to turn it on or off.`); return; }
+
+  if(SECURITY_DEVICES.includes(device)){
+    if(!devices.security)  { fail('Security devices aren\'t available.'); return; }
+    await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:'security',device,value:{on:wantOn}})});
+    devices.security[device].on=wantOn;
+    const verbLabel=device==='door_lock'?(wantOn?'locked':'unlocked'):(wantOn?'on':'off');
+    done(`${formatDevName(device)} ${verbLabel}.`); return;
+  }
+
+  const room=findFirst(text,VOICE_ROOM_KEYS,VOICE_ROOM_WORDS);
+  if(!room){
+    // No room mentioned — same behavior as the Master Controls buttons.
+    const rooms=Object.keys(devices).filter(r=>devices[r][device]!==undefined);
+    if(!rooms.length){ fail(`No rooms have ${voiceArticle(device)} ${formatDevName(device)}.`); return; }
+    await masterToggle(device,wantOn);
+    done(`All ${formatDevName(device)}s turned ${wantOn?'on':'off'}.`); return;
+  }
+  if(!devices[room]||devices[room][device]===undefined){
+    fail(`${ROOM_NAMES[room]||room} doesn't have ${voiceArticle(device)} ${formatDevName(device)}.`); return;
+  }
+  const verbLabel=device==='window'?(wantOn?'opened':'closed'):(wantOn?'on':'off');
+  await apiFetch('/api/device/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room,device,value:{on:wantOn}})});
+  devices[room][device].on=wantOn;
+  done(`${ROOM_NAMES[room]||room} ${formatDevName(device)} ${verbLabel}.`);
+  if(document.getElementById('page-devices')?.classList.contains('active'))renderDeviceGrid(currentRoom);
+  if(document.getElementById('page-control')?.classList.contains('active')){renderCtrlRoomGrid();renderCtrlRoomsMatrix();}
 }
 
 </script>

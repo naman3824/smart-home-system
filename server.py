@@ -5,6 +5,8 @@ Integrates: Climate Control, AQI Monitor, Smoke/Fire/Gas Detector,
 """
 
 import os
+import csv
+import io
 import json
 import time
 import random
@@ -17,7 +19,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Response, Cookie, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -351,6 +353,12 @@ def _seed_climate_history():
 state_lock = threading.RLock()  # must be reentrant — automation.evaluate_rules()/
 # evaluate_routines() and alert_responses.* re-acquire this same lock from
 # inside the tick loop that already holds it; a plain Lock() deadlocks.
+
+# For the Control Room's system status bar — when the process started, and
+# when the sensor tick loop last completed an iteration. The latter is a
+# real health signal: if it stops growing, the background thread died.
+SERVER_START_TIME = time.time()
+_last_tick_time = time.time()
 
 # Device states — one room per family member + shared spaces
 devices = {
@@ -791,7 +799,7 @@ def _fetch_climate_data():
 _climate_api_available = False
 
 def simulate_sensors():
-    global sensors, _climate_api_available
+    global sensors, _climate_api_available, _last_tick_time
     aqi_base_pm25 = 95.0
     aqi_base_pm10 = 145.0
     last_aqi_update = 0.0
@@ -803,9 +811,19 @@ def simulate_sensors():
     outdoor_temp = None         # current outdoor temperature (None = API down)
     outdoor_hum = None
 
+    # ── Energy daily accumulator (for the "this week vs last week" insight) ──
+    # Integrates watts * time into a running kWh total for the current
+    # calendar date, flushed to db.energy_daily periodically. Resets when the
+    # date rolls over at midnight — that day's final total simply stays in
+    # the table as history.
+    _energy_today_date = db.now_ist().strftime("%Y-%m-%d")
+    _energy_today_kwh = 0.0
+    _last_energy_flush = 0.0
+
     while True:
         try:
             now = time.time()
+            _last_tick_time = now
             with state_lock:
                 # ── Outdoor weather from the climate API, refreshed every 60 s ──
                 if now - last_climate_fetch >= 60:
@@ -836,6 +854,25 @@ def simulate_sensors():
                 # ── Indoor climate: RC thermal model, integrated every tick ──
                 dt_real = now - last_thermal_ts
                 last_thermal_ts = now
+
+                # ── Energy daily accumulator ──────────────────────────────
+                today_str = db.now_ist().strftime("%Y-%m-%d")
+                if today_str != _energy_today_date:
+                    # Date rolled over — yesterday's total is already flushed
+                    # to db.energy_daily; start today fresh.
+                    _energy_today_date = today_str
+                    _energy_today_kwh = 0.0
+                current_watts = calculate_energy()
+                # dt_real is 0 on the very first tick (last_thermal_ts == now);
+                # clamp so we never integrate a bogus huge gap after a pause/restart.
+                _energy_today_kwh += current_watts * min(dt_real, 30) / 3600 / 1000
+                if now - _last_energy_flush >= 30:
+                    _last_energy_flush = now
+                    try:
+                        today_cost = calculate_dhbvn_bill(_energy_today_kwh)["total"]
+                        db.upsert_energy_daily(_energy_today_date, round(_energy_today_kwh, 4), today_cost)
+                    except Exception as e:
+                        logger.warning("Energy daily flush failed: %s", e)
                 if outdoor_temp is not None:
                     indoor_temp, room_temps, feels_like, room_feels = thermal_tick(dt_real, outdoor_temp, devices)
                     # Humidity keeps the instantaneous mixing model (thermal model is temp-only)
@@ -906,7 +943,7 @@ def simulate_sensors():
                                         gas=sensors["gas"], temperature=temp_for_detector)
                 for alert in detector.evaluate(reading):
                     alert_entry = {"type": alert["type"], "level": alert["level"],
-                                   "message": alert["message"], "time": datetime.now().strftime("%H:%M:%S")}
+                                   "message": alert["message"], "time": db.now_ist().strftime("%H:%M:%S")}
                     alert_history.append(alert_entry)
                     if len(alert_history) > 50:
                         alert_history.pop(0)
@@ -1161,6 +1198,33 @@ async def get_audit_log(request: Request, user: dict = Depends(get_current_user)
     return db.get_audit_log()
 
 
+@app.get("/api/audit-log/export")
+@limiter.limit("10/minute")
+async def export_audit_log(request: Request, user: dict = Depends(get_current_user)):
+    """Downloads the full audit log as a CSV — same data as the Audit Log
+    tab, just all of it (up to 5000 rows) rather than the page's default
+    view, and in a format that opens directly in Excel/Sheets."""
+    entries = db.get_audit_log(limit=5000)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Date/time (IST)", "User", "Action", "Detail", "IP address"])
+    for e in entries:  # newest-first from db.get_audit_log, kept as-is
+        writer.writerow([
+            e.get("created_at", ""), e.get("username", ""),
+            e.get("action", ""), e.get("detail", "") or "",
+            e.get("ip_address", "") or "",
+        ])
+    buffer.seek(0)
+    db.add_audit_entry(user["username"], "audit_log_exported",
+                       detail=f"{len(entries)} entries", ip_address=_client_ip(request))
+    filename = f"audit-log-{db.now_ist().strftime('%Y-%m-%d')}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/system-logs")
 @limiter.limit("30/minute")
 async def get_system_logs(request: Request, lines: int = 200, level: Optional[str] = None, user: dict = Depends(get_current_user)):
@@ -1272,10 +1336,12 @@ async def get_face_embeddings(request: Request, user: dict = Depends(get_current
 # ── Automation rules ────────────────────────────────────────────────────
 
 class AutomationConditionIn(BaseModel):
-    type: str  # sensor_above / sensor_below / nobody_home_minutes / time_of_day /
-                # aqi_category / device_state / someone_arrived_home / and / or
+    type: str  # sensor_above / sensor_below / sensor_between / nobody_home_minutes /
+                # time_of_day / aqi_category / device_state / someone_arrived_home / and / or
     key: Optional[str] = None
     threshold: Optional[float] = None
+    min: Optional[float] = None          # for sensor_between
+    max: Optional[float] = None          # for sensor_between
     minutes: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
@@ -1284,6 +1350,7 @@ class AutomationConditionIn(BaseModel):
     room: Optional[str] = None           # for device_state
     device: Optional[str] = None         # for device_state
     on: Optional[bool] = None            # for device_state
+    negate: Optional[bool] = None        # invert the (rest of the) condition
     conditions: Optional[List[dict]] = None  # for and/or — nested conditions kept
                                                # as plain dicts rather than a
                                                # recursive Pydantic model to
@@ -1324,13 +1391,45 @@ async def create_automation_rule(body: AutomationRuleCreate, request: Request, u
         if a.room not in devices or a.device not in devices[a.room]:
             raise HTTPException(status_code=400, detail=f"{a.room}.{a.device} is not a real device")
     action_payload = [a.dict() for a in actions] if isinstance(body.action, list) else body.action.dict()
+    condition_payload = body.condition.dict(exclude_none=True)
+    # A time_of_day condition is only true for a ~2 minute window once a day —
+    # too short a cooldown lets it fire repeatedly inside that same window.
+    # The engine clamps this defensively too (automation._effective_cooldown),
+    # but store the corrected value so the rules list doesn't show a
+    # misleading "300s" cooldown next to a once-a-day rule.
+    cooldown = body.cooldown_seconds
+    if automation._contains_time_of_day(condition_payload):
+        cooldown = max(cooldown, automation._MIN_TIME_OF_DAY_COOLDOWN_SECONDS)
     rule = db.create_automation_rule(
         name=body.name, description=body.description,
-        condition=body.condition.dict(exclude_none=True),
+        condition=condition_payload,
         action=action_payload,
-        enabled=body.enabled, cooldown_seconds=body.cooldown_seconds,
+        enabled=body.enabled, cooldown_seconds=cooldown,
     )
     db.add_audit_entry(user["username"], "automation_rule_created", detail=body.name, ip_address=_client_ip(request))
+    return rule
+
+
+@app.put("/api/automation/rules/{rule_id}")
+@limiter.limit("10/minute")
+async def edit_automation_rule(rule_id: int, body: AutomationRuleCreate, request: Request, user: dict = Depends(get_current_user)):
+    existing = db.get_automation_rule(rule_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    actions = body.action if isinstance(body.action, list) else [body.action]
+    for a in actions:
+        if a.room not in devices or a.device not in devices[a.room]:
+            raise HTTPException(status_code=400, detail=f"{a.room}.{a.device} is not a real device")
+    action_payload = [a.dict() for a in actions] if isinstance(body.action, list) else body.action.dict()
+    condition_payload = body.condition.dict(exclude_none=True)
+    cooldown = body.cooldown_seconds
+    if automation._contains_time_of_day(condition_payload):
+        cooldown = max(cooldown, automation._MIN_TIME_OF_DAY_COOLDOWN_SECONDS)
+    rule = db.update_automation_rule(
+        rule_id, name=body.name, description=body.description,
+        condition=condition_payload, action=action_payload, cooldown_seconds=cooldown,
+    )
+    db.add_audit_entry(user["username"], "automation_rule_edited", detail=body.name, ip_address=_client_ip(request))
     return rule
 
 
@@ -1363,21 +1462,78 @@ async def list_automation_runs(request: Request, user: dict = Depends(get_curren
 @app.get("/api/automation/status")
 @limiter.limit("30/minute")
 async def automation_status(request: Request, user: dict = Depends(get_current_user)):
-    """Live status for every rule: when it last fired, cooldown remaining."""
+    """Live status for every rule: when it last fired, cooldown remaining,
+    whether it shares a device target with another enabled rule, plus the
+    global pause switch."""
     rules = db.get_automation_rules(enabled_only=False)
+    conflicts = automation.find_rule_conflicts(rules)
+    run_stats = db.get_automation_run_stats()
     now = time.time()
     result = []
     for r in rules:
         last = automation._last_fired.get(r["id"], 0)
-        cooldown = r.get("cooldown_seconds", 300)
+        cooldown = automation._effective_cooldown(r)
         remaining = max(0, int(cooldown - (now - last)))
         last_str = datetime.fromtimestamp(last).strftime("%H:%M:%S") if last > 0 else None
+        fires = run_stats["per_rule"].get(r["id"], {"total": 0, "today": 0})
         result.append({
             "id": r["id"], "name": r["name"], "enabled": r["enabled"],
             "last_fired": last_str, "cooldown_remaining": remaining,
             "on_cooldown": remaining > 0,
+            "conflicts_with": conflicts.get(r["id"], []),
+            "fires_today": fires["today"], "fires_total": fires["total"],
         })
-    return result
+    return {
+        "paused": automation.is_paused(), "rules": result,
+        "fires_today_total": run_stats["total_today"],
+        "paused_rooms": sorted(automation.get_paused_rooms()),
+    }
+
+
+@app.post("/api/automation/pause")
+@limiter.limit("10/minute")
+async def pause_automation(request: Request, user: dict = Depends(get_current_user)):
+    """Global kill switch — stops every rule and routine from firing without
+    touching each one's enabled state, so re-enabling afterward restores
+    exactly what was on before (handy for parties, guests, maintenance)."""
+    automation.set_paused(True)
+    db.add_audit_entry(user["username"], "automation_paused", detail="All automation paused", ip_address=_client_ip(request))
+    return {"paused": True}
+
+
+@app.post("/api/automation/resume")
+@limiter.limit("10/minute")
+async def resume_automation(request: Request, user: dict = Depends(get_current_user)):
+    automation.set_paused(False)
+    db.add_audit_entry(user["username"], "automation_resumed", detail="Automation resumed", ip_address=_client_ip(request))
+    return {"paused": False}
+
+
+@app.get("/api/automation/paused-rooms")
+@limiter.limit("30/minute")
+async def get_paused_rooms(request: Request, user: dict = Depends(get_current_user)):
+    return {"paused_rooms": sorted(automation.get_paused_rooms())}
+
+
+@app.post("/api/automation/rooms/{room}/pause")
+@limiter.limit("20/minute")
+async def pause_room_automation(room: str, request: Request, user: dict = Depends(get_current_user)):
+    """Finer-grained than the global pause switch — leaves one room's
+    devices alone (e.g. 'don't auto-manage the kitchen while I'm cooking')
+    without stopping automation everywhere else."""
+    if room not in devices:
+        raise HTTPException(status_code=404, detail=f"No such room: {room}")
+    automation.set_room_paused(room, True)
+    db.add_audit_entry(user["username"], "room_automation_paused", detail=room, ip_address=_client_ip(request))
+    return {"room": room, "paused": True}
+
+
+@app.post("/api/automation/rooms/{room}/resume")
+@limiter.limit("20/minute")
+async def resume_room_automation(room: str, request: Request, user: dict = Depends(get_current_user)):
+    automation.set_room_paused(room, False)
+    db.add_audit_entry(user["username"], "room_automation_resumed", detail=room, ip_address=_client_ip(request))
+    return {"room": room, "paused": False}
 
 
 @app.post("/api/automation/rules/{rule_id}/test")
@@ -1400,8 +1556,9 @@ async def test_automation_rule(rule_id: int, request: Request, user: dict = Depe
         would_do = [f"{action['room']}.{action['device']} → {action['set']}"]
     return {
         "ok": True, "condition_met": met, "would_do": would_do,
+        "paused": automation.is_paused(),
         "cooldown_remaining": max(0, int(
-            rule.get("cooldown_seconds", 300) - (time.time() - automation._last_fired.get(rule_id, 0))
+            automation._effective_cooldown(rule) - (time.time() - automation._last_fired.get(rule_id, 0))
         )),
     }
 
@@ -1807,8 +1964,8 @@ async def log_guest_detected(body: dict, request: Request):
         entry = db.add_security_log(
             person=name, type_="intruder",
             event="unrecognized face — not in guest schedule",
-            time_str=datetime.now().strftime("%H:%M"),
-            date_str=datetime.now().strftime("%d %b"),
+            time_str=db.now_ist().strftime("%H:%M"),
+            date_str=db.now_ist().strftime("%d %b"),
             status="unauthorized"
         )
         security_logs.insert(0, entry)
@@ -1820,8 +1977,8 @@ async def log_guest_detected(body: dict, request: Request):
         entry = db.add_security_log(
             person=name, type_="guest",
             event=f"{guest['role']} — scheduled access ({reason})",
-            time_str=datetime.now().strftime("%H:%M"),
-            date_str=datetime.now().strftime("%d %b"),
+            time_str=db.now_ist().strftime("%H:%M"),
+            date_str=db.now_ist().strftime("%d %b"),
             status="authorized"
         )
         security_logs.insert(0, entry)
@@ -1831,8 +1988,8 @@ async def log_guest_detected(body: dict, request: Request):
         entry = db.add_security_log(
             person=name, type_="intruder",
             event=f"{guest['role']} — access OUTSIDE allowed schedule ({reason})",
-            time_str=datetime.now().strftime("%H:%M"),
-            date_str=datetime.now().strftime("%d %b"),
+            time_str=db.now_ist().strftime("%H:%M"),
+            date_str=db.now_ist().strftime("%d %b"),
             status="restricted"
         )
         security_logs.insert(0, entry)
@@ -1885,7 +2042,7 @@ async def get_payments(request: Request, month: Optional[str] = None, user: dict
     Auto-creates payment records for all members if none exist yet.
     """
     if not month:
-        month = datetime.now().strftime("%Y-%m")
+        month = db.now_ist().strftime("%Y-%m")
 
     config = db.get_rent_config()
     total = config["total_rent"]
@@ -2051,8 +2208,31 @@ async def get_status(request: Request):
             "devices": devices.copy(),
             "energy_watts": calculate_energy(),
             "energy_kwh_today": round(calculate_energy() * 8 / 1000, 2),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": db.now_ist().isoformat()
         }
+
+
+@app.get("/api/system/status")
+@limiter.limit("30/minute")
+async def system_status(request: Request, user: dict = Depends(get_current_user)):
+    """Health/diagnostics for the Control Room's system status bar — uptime,
+    whether the background sensor thread is still alive, whether the
+    outdoor climate API is reachable, and a couple of headline counts. Not
+    meant to be exhaustive monitoring, just enough for someone glancing at
+    the dashboard to tell 'is everything actually working?' at a glance."""
+    seconds_since_tick = time.time() - _last_tick_time
+    with state_lock:
+        active_alert_count = len(alert_history[-5:]) if alert_history else 0
+    return {
+        "uptime_seconds": int(time.time() - SERVER_START_TIME),
+        "server_time_ist": db.now_ist_str(),
+        "sensor_thread_healthy": seconds_since_tick < 15,   # ticks every ~3s; 15s of silence means it's stuck/dead
+        "seconds_since_last_tick": round(seconds_since_tick, 1),
+        "climate_api_available": _climate_api_available,
+        "automation_paused": automation.is_paused(),
+        "ws_clients_connected": len(ws_clients),
+        "active_alert_count": active_alert_count,
+    }
 
 @app.get("/api/sensors")
 @limiter.limit("60/minute")
@@ -2156,8 +2336,8 @@ async def add_security_log(body: LogAdd, request: Request):
         person=body.person,
         type_=body.type,
         event=body.event,
-        time_str=datetime.now().strftime("%H:%M"),
-        date_str=datetime.now().strftime("%d %b"),
+        time_str=db.now_ist().strftime("%H:%M"),
+        date_str=db.now_ist().strftime("%d %b"),
         status=body.status,
         estimated=body.estimated,
     )
@@ -2171,8 +2351,8 @@ async def log_intruder(request: Request):
         person="Unknown Person",
         type_="intruder",
         event="unrecognized face detected at front door",
-        time_str=datetime.now().strftime("%H:%M"),
-        date_str=datetime.now().strftime("%d %b"),
+        time_str=db.now_ist().strftime("%H:%M"),
+        date_str=db.now_ist().strftime("%d %b"),
         status="unauthorized",
     )
     security_logs.insert(0, entry)
@@ -2193,8 +2373,8 @@ async def log_member_detected(body: dict, request: Request):
         person=name,
         type_="member",
         event="face recognized — arrived home",
-        time_str=datetime.now().strftime("%H:%M"),
-        date_str=datetime.now().strftime("%d %b"),
+        time_str=db.now_ist().strftime("%H:%M"),
+        date_str=db.now_ist().strftime("%d %b"),
         status="authorized",
     )
     security_logs.insert(0, entry)
@@ -2221,7 +2401,7 @@ async def simulate_alert(body: dict, request: Request):
     alert_entry = {
         "type": alert_type.lower(), "level": "CRITICAL",
         "message": f"[SIM] {alert_type} alert triggered",
-        "time": datetime.now().strftime("%H:%M:%S"),
+        "time": db.now_ist().strftime("%H:%M:%S"),
         "auto_actions": changes,
     }
     alert_history.append(alert_entry)
@@ -2482,6 +2662,170 @@ async def get_energy(request: Request):
             "room_breakdown_watts": room_breakdown_watts  # raw watts, for live device list
         }
 
+
+# ── Energy insights: week-over-week + phantom load ─────────────────────────
+PHANTOM_LOAD_MIN_HOURS = 4       # flag a device "left on" only past this many hours
+PHANTOM_LOAD_MIN_WATTS = 40      # ...and only if it's actually drawing meaningful power
+
+@app.get("/api/energy/insights")
+@limiter.limit("20/minute")
+async def energy_insights(request: Request, user: dict = Depends(get_current_user)):
+    """Week-over-week usage comparison (needs history to build up over real
+    days of runtime — see the accumulator in simulate_sensors) plus a
+    'phantom load' callout for devices that have quietly been on a long time."""
+    history = db.get_energy_daily_range(days=21)
+    today_str = db.now_ist().strftime("%Y-%m-%d")
+    # Only count *complete* days for the comparison — today's row is still
+    # accruing, so including it would understate "this week" every time.
+    complete_days = [h for h in history if h["date"] != today_str]
+
+    week_insight = {"available": False, "days_recorded": len(complete_days)}
+    if len(complete_days) >= 7:
+        this_week = complete_days[-7:]
+        this_week_kwh = round(sum(d["kwh"] for d in this_week), 2)
+        this_week_cost = round(sum(d["cost"] for d in this_week), 2)
+        if len(complete_days) >= 14:
+            last_week = complete_days[-14:-7]
+            last_week_kwh = round(sum(d["kwh"] for d in last_week), 2)
+            last_week_cost = round(sum(d["cost"] for d in last_week), 2)
+            pct_change = (
+                round((this_week_kwh - last_week_kwh) / last_week_kwh * 100, 1)
+                if last_week_kwh > 0 else None
+            )
+            week_insight = {
+                "available": True, "has_comparison": True,
+                "this_week_kwh": this_week_kwh, "this_week_cost": this_week_cost,
+                "last_week_kwh": last_week_kwh, "last_week_cost": last_week_cost,
+                "pct_change": pct_change,
+            }
+        else:
+            # Enough for a "this week" total, not yet a full second week to compare against.
+            week_insight = {
+                "available": True, "has_comparison": False,
+                "this_week_kwh": this_week_kwh, "this_week_cost": this_week_cost,
+                "days_recorded": len(complete_days),
+            }
+
+    # ── Phantom load: devices currently on, cross-referenced against the
+    # audit log's last manual on-toggle to see how long they've actually
+    # been running. (Automation-fired toggles aren't in this log format, so
+    # this only catches habits a human left on — which is the common case.)
+    with state_lock:
+        on_devices = [
+            (room, dev_name, dev.get("watts", 0))
+            for room, devs in devices.items()
+            for dev_name, dev in devs.items()
+            if dev.get("on") and dev.get("watts", 0) >= PHANTOM_LOAD_MIN_WATTS
+        ]
+    phantom = []
+    if on_devices:
+        entries = db.get_audit_log(limit=1000)
+        last_on_ts = {}
+        for entry in entries:
+            if entry.get("action") != "device_toggle":
+                continue
+            parsed = _parse_toggle_detail(entry.get("detail", ""))
+            if not parsed:
+                continue
+            room, device, value = parsed
+            key = (room, device)
+            if key not in last_on_ts and value.get("on"):
+                try:
+                    last_on_ts[key] = datetime.strptime(entry["created_at"], "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+        now_dt = db.now_ist()
+        for room, dev_name, watts in on_devices:
+            turned_on_at = last_on_ts.get((room, dev_name))
+            if not turned_on_at:
+                continue
+            hours_on = round((now_dt - turned_on_at).total_seconds() / 3600, 1)
+            if hours_on >= PHANTOM_LOAD_MIN_HOURS:
+                phantom.append({
+                    "room": room, "device": dev_name, "watts": watts,
+                    "hours_on": hours_on,
+                    "since": turned_on_at.strftime("%H:%M"),
+                })
+        phantom.sort(key=lambda p: -p["hours_on"])
+
+    return {"week": week_insight, "phantom_load": phantom[:6]}
+
+
+# ── Device health / maintenance tracking ────────────────────────────────────
+# Cumulative "on" runtime per device, derived from the audit log's manual
+# device_toggle history (on/off pairs). No new schema needed — this is pure
+# aggregation over data already being logged.
+DEVICE_SERVICE_THRESHOLDS_HOURS = {
+    "ac": 800, "fan": 1500, "exhaust": 1500, "air_purifier": 1000,
+    "light": 3000, "tv": 2000,
+}
+DEFAULT_SERVICE_THRESHOLD_HOURS = 1200
+
+@app.get("/api/devices/health")
+@limiter.limit("20/minute")
+async def devices_health(request: Request, user: dict = Depends(get_current_user)):
+    """Runtime hours per device since audit logging began, flagging anything
+    past a sensible service interval. Best-effort: only reflects manually
+    logged toggles, so treat totals as a floor, not an exact figure."""
+    entries = db.get_audit_log(limit=5000)
+    toggle_events = []  # (timestamp, room, device, on)
+    for entry in entries:
+        if entry.get("action") != "device_toggle":
+            continue
+        parsed = _parse_toggle_detail(entry.get("detail", ""))
+        if not parsed:
+            continue
+        room, device, value = parsed
+        if "on" not in value:
+            continue
+        try:
+            ts = datetime.strptime(entry["created_at"], "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        toggle_events.append((ts, room, device, bool(value["on"])))
+    toggle_events.sort(key=lambda e: e[0])  # oldest first, to pair on->off chronologically
+
+    runtime_seconds = {}
+    open_since = {}
+    for ts, room, device, on in toggle_events:
+        key = (room, device)
+        if on:
+            open_since[key] = ts
+        else:
+            started = open_since.pop(key, None)
+            if started:
+                runtime_seconds[key] = runtime_seconds.get(key, 0) + (ts - started).total_seconds()
+
+    now_dt = db.now_ist()
+    with state_lock:
+        for (room, device), started in open_since.items():
+            # Still on right now — count up to this moment.
+            if devices.get(room, {}).get(device, {}).get("on"):
+                runtime_seconds[(room, device)] = runtime_seconds.get((room, device), 0) + (now_dt - started).total_seconds()
+
+        results = []
+        for room, devs in devices.items():
+            for device in devs:
+                key = (room, device)
+                seconds = runtime_seconds.get(key, 0)
+                hours = round(seconds / 3600, 1)
+                if hours <= 0:
+                    continue
+                threshold = DEVICE_SERVICE_THRESHOLDS_HOURS.get(device, DEFAULT_SERVICE_THRESHOLD_HOURS)
+                results.append({
+                    "room": room, "device": device, "hours": hours,
+                    "threshold_hours": threshold,
+                    "pct_of_threshold": round(min(999, hours / threshold * 100)),
+                    "needs_service": hours >= threshold,
+                    "currently_on": bool(devices.get(room, {}).get(device, {}).get("on")),
+                })
+    results.sort(key=lambda r: -r["hours"])
+    return {
+        "devices": results,
+        "note": "Based on logged manual toggles — automation-fired changes aren't counted, so totals are a floor estimate.",
+    }
+
+
 # ──────────────────────────────────────────────
 # WEBSOCKET for real-time updates
 # ──────────────────────────────────────────────
@@ -2533,6 +2877,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     "energy_watts": calculate_energy(),
                     "alerts": alert_history[-5:] if alert_history else []
                 }
+            # Recent activity for the Control Room's live feed — outside the
+            # state_lock since it's a separate SQLite read, not shared
+            # in-memory state. Cheap enough (indexed PK scan, tiny limit) to
+            # do on every client's own 3s tick, same cost profile as the
+            # calculate_energy() call above.
+            try:
+                data["recent_activity"] = db.get_audit_log(limit=8)
+            except Exception:
+                data["recent_activity"] = []
             await websocket.send_json(data)
             await __import__('asyncio').sleep(3)
     except WebSocketDisconnect:
@@ -2551,11 +2904,92 @@ async def websocket_endpoint(websocket: WebSocket):
 # ──────────────────────────────────────────────
 # STARTUP
 # ──────────────────────────────────────────────
+_ENERGY_BACKFILL_KV_KEY = "energy_history_backfilled_v1"
+
+def _backfill_energy_history_once():
+    """Reconstructs energy_daily from existing audit_log device_toggle
+    history, so the Energy tab's 'this week vs last week' card has real
+    data right after this update deploys instead of an empty state for the
+    first 1-2 weeks. Runs automatically on startup, exactly once (tracked
+    via kv_store) — safe across restarts/redeploys since it no-ops after
+    the first successful run.
+
+    Limitations: only sees manual device_toggle entries (not
+    automation/routine-fired changes, which use a different log format),
+    and uses each device's base wattage rating rather than tracking
+    mid-session speed/brightness changes. Treat it as a reasonable
+    estimate, not an exact figure — same caveat as the live phantom-load
+    and device-health features, which share this approach.
+    """
+    if db.kv_get(_ENERGY_BACKFILL_KV_KEY):
+        return
+    try:
+        entries = [e for e in db.get_audit_log(limit=100000) if e.get("action") == "device_toggle"]
+        entries.sort(key=lambda e: e["created_at"])
+        if not entries:
+            db.kv_set(_ENERGY_BACKFILL_KV_KEY, db.now_ist().isoformat())
+            return
+
+        daily_kwh = {}
+        open_since = {}
+
+        def add_interval(room, device, start, end):
+            watts = devices.get(room, {}).get(device, {}).get("watts", 0)
+            if watts <= 0 or end <= start:
+                return
+            cur = start
+            while cur < end:
+                day_end = datetime(cur.year, cur.month, cur.day) + timedelta(days=1)
+                chunk_end = min(end, day_end)
+                hours = (chunk_end - cur).total_seconds() / 3600
+                key = cur.strftime("%Y-%m-%d")
+                daily_kwh[key] = daily_kwh.get(key, 0) + watts * hours / 1000
+                cur = chunk_end
+
+        for e in entries:
+            parsed = _parse_toggle_detail(e.get("detail", ""))
+            if not parsed:
+                continue
+            room, device, value = parsed
+            if "on" not in value:
+                continue
+            try:
+                ts = datetime.strptime(e["created_at"], "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                continue
+            key = (room, device)
+            if value["on"]:
+                open_since[key] = ts
+            else:
+                started = open_since.pop(key, None)
+                if started:
+                    add_interval(room, device, started, ts)
+
+        now = db.now_ist()
+        for (room, device), started in open_since.items():
+            add_interval(room, device, started, now)
+
+        today_str = now.strftime("%Y-%m-%d")
+        for date_str, kwh in daily_kwh.items():
+            if date_str == today_str:
+                continue  # leave today for the live tick-loop accumulator
+            cost = calculate_dhbvn_bill(round(kwh, 4))["total"]
+            db.upsert_energy_daily(date_str, round(kwh, 4), cost)
+
+        db.kv_set(_ENERGY_BACKFILL_KV_KEY, db.now_ist().isoformat())
+        logger.info(f"Energy history backfilled from audit log: {len(daily_kwh)} day(s) reconstructed.")
+    except Exception as e:
+        # Non-fatal — worst case the Energy tab just builds up history live
+        # from here instead. Don't mark as done, so it retries next restart.
+        logger.warning(f"Energy history backfill failed (will retry on next restart): {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
     t = threading.Thread(target=simulate_sensors, daemon=True)
     t.start()
     db.delete_expired_sessions()
+    _backfill_energy_history_once()
     logger.info("Server started — sensor simulation thread running")
     print("\n" + "="*55)
     print("  Smart Home Dashboard — Server Started")

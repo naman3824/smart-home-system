@@ -19,6 +19,7 @@ condition -> action(s) pair:
 """
 
 import time
+import json
 from datetime import datetime, timedelta
 
 import db
@@ -34,6 +35,15 @@ _anyone_home_last  = False   # edge-detector for "someone just arrived"
 
 def _condition_met(condition: dict, sensors: dict, family_members: list, devices: dict) -> bool:
     ctype = condition.get("type")
+
+    # ── Negate wrapper ────────────────────────────────────────────────────
+    # Any condition can carry "negate": true to fire on the opposite result
+    # (e.g. "AQI NOT above 200" instead of writing a mirror-image condition
+    # type for every existing one). Checked first so it applies uniformly.
+    if condition.get("negate"):
+        # Evaluate the same condition dict minus the negate flag, then invert.
+        inner = {k: v for k, v in condition.items() if k != "negate"}
+        return not _condition_met(inner, sensors, family_members, devices)
 
     # ── Sensor threshold ──────────────────────────────────────────────────
     if ctype == "sensor_above":
@@ -53,6 +63,19 @@ def _condition_met(condition: dict, sensors: dict, family_members: list, devices
         if value is None:
             return False
         return value < threshold
+
+    # condition: {"type":"sensor_between","key":"temperature","min":20,"max":26}
+    # Useful for "keep it in a comfortable range" style rules without two
+    # separate above/below rules fighting each other.
+    if ctype == "sensor_between":
+        key = condition.get("key")
+        lo, hi = condition.get("min"), condition.get("max")
+        if key is None or lo is None or hi is None:
+            return False
+        value = sensors.get(key)
+        if value is None:
+            return False
+        return lo <= value <= hi
 
     # ── AQI category ─────────────────────────────────────────────────────
     # condition: {"type":"aqi_category","category":"Poor"}
@@ -89,7 +112,7 @@ def _condition_met(condition: dict, sensors: dict, family_members: list, devices
         hour    = condition.get("hour",   0)
         minute  = condition.get("minute", 0)
         window  = condition.get("window_minutes", 2)
-        now     = datetime.now()
+        now     = db.now_ist()   # rules are set by a person thinking in local (IST) time
         target  = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         return target <= now < target + timedelta(minutes=window)
 
@@ -124,6 +147,37 @@ def _condition_met(condition: dict, sensors: dict, family_members: list, devices
 
 # ── Action application ─────────────────────────────────────────────────────
 
+_AUTOMATION_PAUSED_KV_KEY = "automation_paused"
+_PAUSED_ROOMS_KV_KEY = "automation_paused_rooms"
+
+
+def is_paused() -> bool:
+    return db.kv_get(_AUTOMATION_PAUSED_KV_KEY) == "1"
+
+
+def set_paused(paused: bool):
+    db.kv_set(_AUTOMATION_PAUSED_KV_KEY, "1" if paused else "0")
+
+
+def get_paused_rooms() -> set:
+    raw = db.kv_get(_PAUSED_ROOMS_KV_KEY)
+    if not raw:
+        return set()
+    try:
+        return set(json.loads(raw))
+    except Exception:
+        return set()
+
+
+def set_room_paused(room: str, paused: bool):
+    rooms = get_paused_rooms()
+    if paused:
+        rooms.add(room)
+    else:
+        rooms.discard(room)
+    db.kv_set(_PAUSED_ROOMS_KV_KEY, json.dumps(sorted(rooms)))
+
+
 def _apply_action(action, devices: dict) -> str:
     """
     `action` may be a single dict or a list of dicts.
@@ -144,9 +198,76 @@ def _apply_single_action(action: dict, devices: dict) -> str:
     if room not in devices or device not in devices[room]:
         return f"target {room}.{device} not found — skipped"
 
+    # A room paused from Control Room means "leave this room's devices
+    # alone" — the rule still evaluates and logs normally (so you can see
+    # what it *would* have done), it just doesn't touch this specific
+    # target. Other rooms in a multi-device action are unaffected.
+    if room in get_paused_rooms():
+        return f"{room}.{device} skipped — automation paused for this room"
+
     devices[room][device].update(set_fields)
     db.save_device_state(room, device, devices[room][device])
     return f"{room}.{device}→{set_fields}"
+
+
+def action_targets(action) -> set:
+    """(room, device) pairs an action writes to — used for conflict
+    detection between rules, not on the hot path."""
+    items = action if isinstance(action, list) else [action]
+    return {(a.get("room"), a.get("device")) for a in items if isinstance(a, dict) and a.get("room")}
+
+
+def find_rule_conflicts(rules: list) -> dict:
+    """Non-blocking awareness, not enforcement: two *enabled* rules that can
+    both write to the same device are flagged so whoever's editing rules can
+    see it, rather than silently wondering why a light won't stay off. This
+    intentionally doesn't try to reason about whether the conditions are
+    mutually exclusive (e.g. two time-of-day rules at different hours are
+    technically "conflicting" by this simple check even though they'd never
+    both be true at once) — better a slightly noisy hint than a missed one.
+    Returns {rule_id: [other rule names it shares a target with]}.
+    """
+    enabled = [r for r in rules if r.get("enabled")]
+    targets_by_rule = {r["id"]: action_targets(r["action"]) for r in enabled}
+    conflicts = {}
+    for r in enabled:
+        others = []
+        for other in enabled:
+            if other["id"] == r["id"]:
+                continue
+            if targets_by_rule[r["id"]] & targets_by_rule[other["id"]]:
+                others.append(other["name"])
+        if others:
+            conflicts[r["id"]] = others
+    return conflicts
+
+
+def _contains_time_of_day(condition: dict) -> bool:
+    """Recurses into and/or so a time_of_day buried inside a compound
+    condition still gets the daily-fire safety net below."""
+    if not isinstance(condition, dict):
+        return False
+    if condition.get("type") == "time_of_day":
+        return True
+    if condition.get("type") in ("and", "or"):
+        return any(_contains_time_of_day(c) for c in condition.get("conditions", []))
+    return False
+
+
+# A time_of_day condition is only "true" for a short window (2 minutes by
+# default) once a day — but nothing stops someone setting a rule's cooldown
+# to e.g. 60s, which would let it re-fire 2-3 times inside that same window.
+# Rather than trust every cooldown value at face value, clamp anything with
+# a time_of_day condition to at least this, mirroring how per-member
+# routines already protect themselves (_ROUTINE_COOLDOWN_SECONDS).
+_MIN_TIME_OF_DAY_COOLDOWN_SECONDS = 21 * 3600
+
+
+def _effective_cooldown(rule: dict) -> int:
+    cooldown = rule.get("cooldown_seconds", 300)
+    if _contains_time_of_day(rule.get("condition", {})):
+        return max(cooldown, _MIN_TIME_OF_DAY_COOLDOWN_SECONDS)
+    return cooldown
 
 
 # ── Main evaluation loop ───────────────────────────────────────────────────
@@ -157,12 +278,15 @@ def evaluate_rules(devices: dict, sensors: dict, family_members: list, state_loc
     for any whose condition is met and isn't on cooldown, applies
     the action(s) and logs everything.
     """
+    if is_paused():
+        return
+
     rules = db.get_automation_rules(enabled_only=True)
     now   = time.time()
 
     for rule in rules:
         rule_id  = rule["id"]
-        cooldown = rule.get("cooldown_seconds", 300)
+        cooldown = _effective_cooldown(rule)
 
         if now - _last_fired.get(rule_id, 0) < cooldown:
             continue
@@ -200,15 +324,18 @@ _DAY_NAMES = ["monday","tuesday","wednesday","thursday","friday","saturday","sun
 def _routine_should_run_today(days: str) -> bool:
     if days == "everyday":
         return True
-    today   = _DAY_NAMES[datetime.now().weekday()]
+    today   = _DAY_NAMES[db.now_ist().weekday()]  # IST, so the day doesn't flip near midnight UTC
     allowed = [d.strip().lower() for d in days.split(",")]
     return today in allowed
 
 
 def evaluate_routines(devices: dict, state_lock):
+    if is_paused():
+        return
+
     routines = db.get_enabled_routines_for_tick()
     now_ts   = time.time()
-    now      = datetime.now()
+    now      = db.now_ist()  # routines are scheduled by a person in local (IST) time
 
     for routine in routines:
         rid = routine["id"]
