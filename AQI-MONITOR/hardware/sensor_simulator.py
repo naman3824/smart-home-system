@@ -137,9 +137,9 @@ def read_all_sensors():
     simulating natural minute-to-minute sensor variation.
     Refreshes the real baseline every 30 minutes.
     """
-    # Refresh baseline every 30 minutes (or on very first call)
+    # Refresh baseline every 60 minutes (or on very first call)
     if (_baseline["last_fetched"] is None or
-            datetime.now() - _baseline["last_fetched"] > timedelta(minutes=30)):
+            datetime.now() - _baseline["last_fetched"] > timedelta(minutes=60)):
         fetch_real_baseline()
 
     # Add small realistic fluctuation (±8%) around real baseline
@@ -177,4 +177,4 @@ if __name__ == "__main__":
         data = read_all_sensors()
         print(data)
         print("---")
-        time.sleep(5)
+        time.sleep(60)
