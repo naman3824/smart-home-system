@@ -1,4 +1,4 @@
-#publisher
+# mqtt_publisher.py
 import time
 import json
 import random
@@ -16,7 +16,7 @@ TOPIC_TEMP = "home/livingroom/temperature"
 SMOKE_BASE = (0, 20)
 GAS_BASE = (0, 20)
 TEMP_BASE = (25, 35)
-SPIKE_PROBABILITY = 0.3  # 30% chance of an incident
+SPIKE_PROBABILITY = 0.3  # 30% chance of an incident, so we see alerts often
 READ_INTERVAL_SECONDS = 2
 
 
@@ -28,7 +28,7 @@ def generate_reading():
     gas = random.uniform(*GAS_BASE)
     temperature = random.uniform(*TEMP_BASE)
 
-    # adding spoke
+    # Occasionally inject a spike
     if random.random() < SPIKE_PROBABILITY:
         which = random.choice(["smoke", "gas", "temp"])
         if which == "smoke":
@@ -52,7 +52,7 @@ def main():
         while True:
             timestamp, smoke, gas, temperature = generate_reading()
 
-            # send JSON payloads (could also just send raw numbers but i's more flexi) 
+            # For flexibility, send JSON payloads (could also just send raw numbers)
             payload_smoke = json.dumps({"timestamp": timestamp, "value": smoke})
             payload_gas = json.dumps({"timestamp": timestamp, "value": gas})
             payload_temp = json.dumps({"timestamp": timestamp, "value": temperature})
@@ -77,3 +77,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
