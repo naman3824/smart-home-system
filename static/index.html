@@ -144,6 +144,10 @@
   .tl-marker .tl-tip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--surface3)}
   .tl-marker:hover .tl-tip{opacity:1;transform:translateX(-50%) translateY(0)}
   .tl-axis-labels{display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:4px;font-weight:500}
+  .tl-range{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap}
+  .tl-range button{background:var(--surface2);border:1px solid var(--border);color:var(--text3);font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;cursor:pointer;transition:.15s ease;font-family:inherit}
+  .tl-range button:hover{border-color:var(--border2);color:var(--text2)}
+  .tl-range button.active{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 0 10px rgba(108,139,239,.4)}
 
   /* LAYOUT */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
@@ -1336,7 +1340,7 @@
 
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
-        <span class="card-title">📈 24h Incident Timeline</span>
+        <span class="card-title" id="ctrl-timeline-title">📈 24h Incident Timeline</span>
         <div style="display:flex;align-items:center;gap:14px">
           <div class="tl-legend">
             <span class="tl-legend-item"><span class="tl-legend-dot" style="background:var(--red);color:var(--red)"></span>Alert</span>
@@ -1346,12 +1350,11 @@
         </div>
       </div>
       <div class="card-body">
+        <div class="tl-range" id="ctrl-timeline-range"></div>
         <div id="ctrl-timeline" class="tl-wrap">
           <div style="color:var(--text3);font-size:13px;text-align:center;padding:30px 12px">Loading…</div>
         </div>
-        <div class="tl-axis-labels">
-          <span>24h ago</span><span>18h</span><span>12h</span><span>6h</span><span>Now</span>
-        </div>
+        <div class="tl-axis-labels" id="ctrl-timeline-axis"></div>
       </div>
     </div>
 
@@ -6407,9 +6410,31 @@ setInterval(()=>{if(document.getElementById('page-control')?.classList.contains(
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-async function renderCtrlTimeline(){
-  const el=document.getElementById('ctrl-timeline'),countEl=document.getElementById('ctrl-timeline-count');
+const CTRL_TIMELINE_RANGES=[1,2,3,4,6,12,24];
+let ctrlTimelineRange=24;
+function tlTimeLabel(hoursAgo){
+  if(hoursAgo<=0.02)return'Now';
+  if(hoursAgo<1)return Math.round(hoursAgo*60)+'m';
+  return(Number.isInteger(hoursAgo)?hoursAgo:hoursAgo.toFixed(1))+'h';
+}
+function renderCtrlTimelineRangeChips(){
+  const el=document.getElementById('ctrl-timeline-range');
   if(!el)return;
+  el.innerHTML=CTRL_TIMELINE_RANGES.map(r=>
+    `<button class="${r===ctrlTimelineRange?'active':''}" onclick="ctrlTimelineRange=${r};renderCtrlTimelineRangeChips();renderCtrlTimeline()">${r}h</button>`
+  ).join('');
+}
+async function renderCtrlTimeline(){
+  const el=document.getElementById('ctrl-timeline'),countEl=document.getElementById('ctrl-timeline-count'),
+    titleEl=document.getElementById('ctrl-timeline-title'),axisEl=document.getElementById('ctrl-timeline-axis');
+  if(!el)return;
+  renderCtrlTimelineRangeChips();
+  const range=ctrlTimelineRange;
+  if(titleEl)titleEl.textContent=`📈 ${range}h Incident Timeline`;
+  if(axisEl)axisEl.innerHTML=[1,.75,.5,.25,0].map((f,i)=>
+    `<span>${i===0?tlTimeLabel(range)+' ago':tlTimeLabel(range*f)}</span>`
+  ).join('');
+
   const [alerts,runs]=await Promise.all([
     apiFetch('/api/alerts').catch(()=>[]),
     apiFetch('/api/automation/runs').catch(()=>[])
@@ -6427,7 +6452,7 @@ async function renderCtrlTimeline(){
     t.setHours(h,m,s||0,0);
     if(t>now)t.setDate(t.getDate()-1);  // rolled past midnight
     const hoursAgo=(now-t)/3600000;
-    if(hoursAgo<=24)events.push({hoursAgo,type:'alert',label:a.message||a.type,time:a.time});
+    if(hoursAgo<=range)events.push({hoursAgo,type:'alert',label:a.message||a.type,time:a.time});
   });
 
   // automation_runs has a full IST datetime, so this one's exact.
@@ -6435,12 +6460,12 @@ async function renderCtrlTimeline(){
     const t=new Date((r.created_at||'').replace(' ','T'));
     if(isNaN(t))return;
     const hoursAgo=(now-t)/3600000;
-    if(hoursAgo>=0&&hoursAgo<=24)events.push({hoursAgo,type:'automation',label:r.rule_name,time:r.created_at?.slice(11,16)});
+    if(hoursAgo>=0&&hoursAgo<=range)events.push({hoursAgo,type:'automation',label:r.rule_name,time:r.created_at?.slice(11,16)});
   });
 
-  if(countEl)countEl.textContent=events.length?`${events.length} event${events.length===1?'':'s'} in 24h`:'';
+  if(countEl)countEl.textContent=events.length?`${events.length} event${events.length===1?'':'s'} in ${range}h`:'';
   if(!events.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;text-align:center;padding:30px 12px">✅ Quiet — nothing logged in the last 24 hours.</div>';
+    el.innerHTML=`<div style="color:var(--text3);font-size:12.5px;text-align:center;padding:30px 12px">✅ Quiet — nothing logged in the last ${range}h.</div>`;
     return;
   }
   const colors={alert:'var(--red)',automation:'var(--accent)'};
@@ -6449,7 +6474,7 @@ async function renderCtrlTimeline(){
   // Sort oldest→newest, then stack markers that land too close together
   // onto alternating rows so they don't visually merge into one blob.
   const sorted=events.slice().sort((a,b)=>b.hoursAgo-a.hoursAgo)
-    .map(e=>({...e,pct:Math.max(0,Math.min(100,(24-e.hoursAgo)/24*100))}));
+    .map(e=>({...e,pct:Math.max(0,Math.min(100,(range-e.hoursAgo)/range*100))}));
   const rows=[];       // rows[i] = pct of last marker placed on row i
   const minGapPct=6;   // markers closer than this (as % of width) stack
   const maxRows=3;
@@ -6468,7 +6493,7 @@ async function renderCtrlTimeline(){
     ${sorted.map(e=>{
       const lift=rowLift[e.row]||0;
       return`<div class="tl-marker" style="left:${e.pct}%;margin-bottom:${lift}px;background:${colors[e.type]};box-shadow:0 0 8px ${colors[e.type]}">
-        <div class="tl-tip"><b>${icons[e.type]} ${escapeHtml(e.label||'')}</b><br><span>${e.time||''} · ${e.hoursAgo<1?'<1h ago':Math.round(e.hoursAgo)+'h ago'}</span></div>
+        <div class="tl-tip"><b>${icons[e.type]} ${escapeHtml(e.label||'')}</b><br><span>${e.time||''} · ${tlTimeLabel(e.hoursAgo)} ago</span></div>
       </div>`;
     }).join('')}`;
 }
