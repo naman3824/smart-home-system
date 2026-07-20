@@ -7,6 +7,7 @@ Integrates: Climate Control, AQI Monitor, Smoke/Fire/Gas Detector,
 import os
 import csv
 import io
+import calendar
 import json
 import time
 import random
@@ -820,6 +821,15 @@ def simulate_sensors():
     _energy_today_kwh = 0.0
     _last_energy_flush = 0.0
 
+    # ── AQI daily accumulator (for the Insights page's 30-day trend) ──────
+    # Simple running average + max, sampled once per AQI update (~60s) —
+    # unlike energy this has no audit-log trail to backfill from, so it
+    # only starts accumulating real history from whenever this deploys.
+    _aqi_today_date = db.now_ist().strftime("%Y-%m-%d")
+    _aqi_today_sum = 0.0
+    _aqi_today_count = 0
+    _aqi_today_max = 0.0
+
     while True:
         try:
             now = time.time()
@@ -919,6 +929,21 @@ def simulate_sensors():
                     sensors["aqi_category"] = aqi_cat
                     sensors["co2_ppm"] = round(random.uniform(700, 1100), 0)
                     last_aqi_update = now
+
+                    aqi_today_str = db.now_ist().strftime("%Y-%m-%d")
+                    if aqi_today_str != _aqi_today_date:
+                        _aqi_today_date = aqi_today_str
+                        _aqi_today_sum = 0.0
+                        _aqi_today_count = 0
+                        _aqi_today_max = 0.0
+                    _aqi_today_sum += aqi_val
+                    _aqi_today_count += 1
+                    _aqi_today_max = max(_aqi_today_max, aqi_val)
+                    try:
+                        db.upsert_aqi_daily(_aqi_today_date, round(_aqi_today_sum / _aqi_today_count, 1),
+                                             _aqi_today_max, _aqi_today_count)
+                    except Exception as e:
+                        logger.warning("AQI daily flush failed: %s", e)
 
                 # ── Predictive AQI (hourly) ──────────────────────────────
                 # Exposes tomorrow's forecast AQI as a virtual sensor so
@@ -1935,6 +1960,21 @@ async def toggle_scheduled_guest(guest_id: int, request: Request, user: dict = D
     return db.get_scheduled_guest(guest_id)
 
 
+@app.post("/api/guests/{guest_id}/regenerate-token")
+@limiter.limit("10/minute")
+async def regenerate_guest_token(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
+    """Issues a fresh QR pass token, silently invalidating any previously
+    printed/shared one — for when a pass is lost, or access needs revoking
+    without deleting the guest's whole schedule."""
+    guest = db.get_scheduled_guest(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    updated = db.regenerate_guest_access_token(guest_id)
+    db.add_audit_entry(user["username"], "guest_token_regenerated",
+                       detail=guest["name"], ip_address=_client_ip(request))
+    return updated
+
+
 @app.delete("/api/guests/{guest_id}")
 @limiter.limit("10/minute")
 async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = Depends(get_current_user)):
@@ -1945,6 +1985,84 @@ async def delete_scheduled_guest(guest_id: int, request: Request, user: dict = D
     db.add_audit_entry(user["username"], "guest_schedule_removed",
                        detail=guest["name"], ip_address=_client_ip(request))
     return {"ok": True}
+
+
+def _verify_page_html(icon: str, heading: str, color: str, sub: str = "", detail: str = "") -> str:
+    """One shared HTML shell for every /verify/{token} outcome — this is
+    viewed on a random visitor's phone, not inside the dashboard, so it's
+    plain self-contained HTML/CSS rather than referencing the app's own
+    stylesheet or requiring any login."""
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Access Pass Verification</title>
+<style>
+  body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:#0d0f18;color:#eef1fb;font-family:-apple-system,'Segoe UI',sans-serif;padding:20px}}
+  .card{{max-width:380px;width:100%;background:#161928;border:1px solid #262b40;border-radius:18px;
+        padding:36px 28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}}
+  .icon{{font-size:52px;margin-bottom:14px}}
+  h1{{font-size:20px;margin:0 0 6px;color:{color}}}
+  .sub{{font-size:14px;color:#9099b8;margin-bottom:18px;line-height:1.5}}
+  .detail{{font-size:12.5px;color:#6b7391;border-top:1px solid #262b40;padding-top:14px;margin-top:6px;line-height:1.7}}
+</style></head>
+<body><div class="card">
+  <div class="icon">{icon}</div>
+  <h1>{heading}</h1>
+  {f'<div class="sub">{sub}</div>' if sub else ''}
+  {f'<div class="detail">{detail}</div>' if detail else ''}
+</div></body></html>"""
+
+
+@app.get("/verify/{token}")
+@limiter.limit("30/minute")
+async def verify_guest_pass(token: str, request: Request):
+    """Public — deliberately no login required. This is what a QR pass
+    actually resolves to when scanned by any phone's default camera app,
+    closing the loop from 'shareable-looking pass' to something that
+    genuinely checks the guest's window server-side. Every scan is logged
+    regardless of outcome, so a denied attempt still leaves a record."""
+    guest = db.get_scheduled_guest_by_token(token)
+
+    if not guest:
+        return Response(_verify_page_html("❓", "Invalid Pass", "#ef4444",
+            "This QR code doesn't match any access pass on file."), media_type="text/html", status_code=404)
+
+    now = db.now_ist()
+    today_name = automation._DAY_NAMES[now.weekday()]
+    now_min = now.hour * 60 + now.minute
+    start_min = guest["start_hour"] * 60 + guest["start_min"]
+    end_min = guest["end_hour"] * 60 + guest["end_min"]
+    window_str = f"{guest['start_hour']:02d}:{guest['start_min']:02d}\u2013{guest['end_hour']:02d}:{guest['end_min']:02d}"
+    days_str = "every day" if guest["days"] == "everyday" else guest["days"].replace(",", ", ")
+
+    if not guest["enabled"]:
+        reason = "pass deactivated"
+        granted = False
+    elif guest["days"] != "everyday" and today_name not in guest["days"].split(","):
+        reason = f"not scheduled for {today_name.title()} (allowed: {days_str})"
+        granted = False
+    elif not (start_min <= now_min <= end_min):
+        reason = f"outside allowed hours (window: {window_str} IST)"
+        granted = False
+    else:
+        reason = "within scheduled window"
+        granted = True
+
+    db.add_audit_entry("qr_scan", "guest_qr_scanned",
+                       detail=f"{guest['name']} ({guest['role']}) — {'GRANTED' if granted else 'DENIED'}: {reason}",
+                       ip_address=_client_ip(request))
+
+    role_label = guest["role"].replace("_", " ").title()
+    if granted:
+        return Response(_verify_page_html("\u2705", "Access Granted", "#22c55e",
+            f"{guest['name']} \u00b7 {role_label}",
+            f"Scheduled: {days_str}, {window_str} IST<br>Scanned {db.now_ist_str()} IST"),
+            media_type="text/html")
+    else:
+        return Response(_verify_page_html("\u274c", "Access Denied", "#ef4444",
+            f"{guest['name']} \u00b7 {role_label}",
+            f"Reason: {reason}<br>Scheduled: {days_str}, {window_str} IST"),
+            media_type="text/html")
 
 
 @app.post("/api/security/guest-detected")
@@ -2823,6 +2941,375 @@ async def devices_health(request: Request, user: dict = Depends(get_current_user
     return {
         "devices": results,
         "note": "Based on logged manual toggles — automation-fired changes aren't counted, so totals are a floor estimate.",
+    }
+
+
+# ── Anomaly detection ────────────────────────────────────────────────────
+# Deliberately simple statistics (ratio vs. historical average), not ML —
+# honest about what it is. Flags things that are unusual *for this
+# household*, not against some generic external benchmark.
+ENERGY_ANOMALY_RATIO = 1.5      # today's hourly rate vs 7-day average hourly rate
+DEVICE_ANOMALY_RATIO = 2.0      # today's runtime vs this device's historical daily average
+DEVICE_ANOMALY_MIN_MINUTES = 15  # ignore tiny/noisy baselines
+FAILED_LOGIN_THRESHOLD = 3        # flat threshold — a "how many is normal" baseline needs
+                                   # weeks of history to be meaningful; a hard floor is honest
+                                   # about not having that yet, rather than pretending precision
+
+# Human-readable labels for anomaly message text — a simpler, Python-side
+# equivalent of the frontend's ROOM_NAMES/formatDevName, since these
+# messages are generated server-side, not just displayed from raw data.
+_ANOMALY_ROOM_LABELS = {
+    "living_room": "Living Room", "aditya_room": "Aditya's Room", "diksha_room": "Diksha's Room",
+    "agrim_room": "Agrim's Room", "naman_room": "Naman's Room", "kamakshi_room": "Kamakshi's Room",
+    "kitchen": "Kitchen", "bathroom": "Bathroom", "security": "Security",
+}
+
+def _anomaly_room_label(room: str) -> str:
+    return _ANOMALY_ROOM_LABELS.get(room, room.replace("_", " ").title())
+
+def _anomaly_device_label(device: str) -> str:
+    # Same mapping as the frontend's formatDevName — kept in sync so
+    # "ac"/"tv" read as "AC"/"TV", not "Ac"/"Tv" (what .title() would do).
+    labels = {"light": "Light", "fan": "Fan", "tv": "TV", "ac": "AC", "exhaust": "Exhaust",
+              "air_purifier": "Air Purifier", "sprinkler": "Sprinkler", "window": "Window",
+              "siren": "Siren", "mains_power": "Mains Power", "door_lock": "Door Lock"}
+    return labels.get(device, device.replace("_", " ").title())
+
+@app.get("/api/insights/anomalies")
+@limiter.limit("20/minute")
+async def get_anomalies(request: Request, user: dict = Depends(get_current_user)):
+    anomalies = []
+    now = db.now_ist()
+    today_str = now.strftime("%Y-%m-%d")
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    hours_elapsed_today = max((now - midnight).total_seconds() / 3600, 0.1)
+
+    # ── Energy rate anomaly ──────────────────────────────────────────────
+    history = db.get_energy_daily_range(days=8)
+    today_row = next((r for r in history if r["date"] == today_str), None)
+    complete_days = [r for r in history if r["date"] != today_str]
+    if today_row and len(complete_days) >= 3 and hours_elapsed_today >= 1:
+        rate_today = today_row["kwh"] / hours_elapsed_today
+        avg_daily = sum(r["kwh"] for r in complete_days) / len(complete_days)
+        rate_avg = avg_daily / 24
+        if rate_avg > 0.05 and rate_today > rate_avg * ENERGY_ANOMALY_RATIO:
+            pct = round((rate_today / rate_avg - 1) * 100)
+            anomalies.append({
+                "type": "energy_rate", "severity": "info",
+                "title": f"Using power {pct}% faster than usual today",
+                "detail": f"~{round(rate_today,2)} kWh/hr so far vs a typical ~{round(rate_avg,2)} kWh/hr.",
+            })
+
+    # ── Device runtime anomaly (today vs this device's own historical average) ──
+    entries = db.get_audit_log(limit=5000)
+    toggle_events = []
+    for entry in entries:
+        if entry.get("action") != "device_toggle":
+            continue
+        parsed = _parse_toggle_detail(entry.get("detail", ""))
+        if not parsed:
+            continue
+        room, device, value = parsed
+        if "on" not in value:
+            continue
+        try:
+            ts = datetime.strptime(entry["created_at"], "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        toggle_events.append((ts, room, device, bool(value["on"])))
+    toggle_events.sort(key=lambda e: e[0])
+
+    if toggle_events:
+        first_seen = toggle_events[0][0]
+        # Baseline must be prior days only — including today's own runtime
+        # in its baseline would dilute the average with the very anomaly
+        # being measured, making genuine spikes look smaller than they are.
+        days_tracked = max((midnight - first_seen).total_seconds() / 86400, 1)
+
+        historical_runtime = {}  # prior days only — the baseline
+        today_runtime = {}       # just today, for comparison
+        open_since = {}
+        for ts, room, device, on in toggle_events:
+            key = (room, device)
+            if on:
+                open_since[key] = ts
+            else:
+                started = open_since.pop(key, None)
+                if started:
+                    # Split any interval that crosses midnight so each side
+                    # only counts toward the bucket it actually happened in.
+                    if started < midnight:
+                        hist_end = min(ts, midnight)
+                        historical_runtime[key] = historical_runtime.get(key, 0) + (hist_end - started).total_seconds()
+                    if ts > midnight:
+                        today_start = max(started, midnight)
+                        today_runtime[key] = today_runtime.get(key, 0) + (ts - today_start).total_seconds()
+
+        with state_lock:
+            for key, started in open_since.items():
+                room, device = key
+                if devices.get(room, {}).get(device, {}).get("on"):
+                    if started < midnight:
+                        historical_runtime[key] = historical_runtime.get(key, 0) + (midnight - started).total_seconds()
+                        today_runtime[key] = today_runtime.get(key, 0) + (now - midnight).total_seconds()
+                    else:
+                        today_runtime[key] = today_runtime.get(key, 0) + (now - started).total_seconds()
+
+        for key, today_secs in today_runtime.items():
+            if today_secs / 60 < DEVICE_ANOMALY_MIN_MINUTES:
+                continue
+            baseline_secs_per_day = historical_runtime.get(key, 0) / days_tracked
+            if baseline_secs_per_day / 60 < DEVICE_ANOMALY_MIN_MINUTES:
+                continue  # baseline itself too small/noisy to compare against meaningfully
+            if today_secs > baseline_secs_per_day * DEVICE_ANOMALY_RATIO:
+                room, device = key
+                ratio = round(today_secs / baseline_secs_per_day, 1)
+                anomalies.append({
+                    "type": "device_runtime", "severity": "info",
+                    "title": f"{_anomaly_device_label(device)} in {_anomaly_room_label(room)} has run {ratio}x longer than usual today",
+                    "detail": f"{round(today_secs/3600,1)}h today vs a typical ~{round(baseline_secs_per_day/3600,1)}h/day.",
+                })
+
+    # ── Failed login anomaly ─────────────────────────────────────────────
+    failed_today = [e for e in entries if e.get("action") == "login_failed" and e.get("created_at", "").startswith(today_str)]
+    if len(failed_today) >= FAILED_LOGIN_THRESHOLD:
+        usernames = {e.get("username") for e in failed_today if e.get("username")}
+        anomalies.append({
+            "type": "failed_logins", "severity": "warning",
+            "title": f"{len(failed_today)} failed login attempts today",
+            "detail": f"Account(s) involved: {', '.join(usernames) or 'unknown'}. Worth checking it was actually a household member.",
+        })
+
+    return {"anomalies": anomalies, "checked_at": db.now_ist_str()}
+
+
+# ── Monthly household report (PDF) ──────────────────────────────────────
+@app.get("/api/reports/monthly")
+@limiter.limit("10/minute")
+async def monthly_report(request: Request, month: Optional[str] = Query(default=None), user: dict = Depends(get_current_user)):
+    """A printable PDF summarizing one calendar month: energy usage, security
+    & automation activity, and rent/payment status. Reuses data already
+    being collected for other features (energy_daily, audit_log,
+    automation_runs, payments) — no new tracking needed for this."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    month = month or db.now_ist().strftime("%Y-%m")
+    try:
+        month_start = datetime.strptime(month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="month must be YYYY-MM")
+    month_label = month_start.strftime("%B %Y")
+    days_in_month = calendar.monthrange(month_start.year, month_start.month)[1]
+
+    # ── Energy section ────────────────────────────────────────────────────
+    all_energy = db.get_energy_daily_range(days=370)
+    month_energy = [r for r in all_energy if r["date"].startswith(month)]
+    total_kwh = round(sum(r["kwh"] for r in month_energy), 2)
+    total_cost = round(sum(r["cost"] for r in month_energy), 2)
+    avg_daily_kwh = round(total_kwh / len(month_energy), 2) if month_energy else 0
+
+    # ── Activity section (audit log, grouped) ────────────────────────────
+    entries = db.get_audit_log(limit=20000)
+    month_entries = [e for e in entries if (e.get("created_at") or "").startswith(month)]
+    action_counts = {}
+    for e in month_entries:
+        a = e.get("action", "unknown")
+        action_counts[a] = action_counts.get(a, 0) + 1
+    alert_actions = {"login_failed", "intruder_detected", "room_automation_paused"}
+    security_events = sum(v for k, v in action_counts.items() if k in alert_actions or "alert" in k)
+
+    runs = db.get_automation_runs(limit=20000)
+    month_runs = [r for r in runs if (r.get("created_at") or "").startswith(month)]
+
+    # ── Payments section ──────────────────────────────────────────────────
+    payments = db.get_payments(month=month)
+
+    # ── Build the PDF ─────────────────────────────────────────────────────
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.7*inch, bottomMargin=0.7*inch)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=20, spaceAfter=4)
+    sub_style = ParagraphStyle("ReportSub", parent=styles["Normal"], textColor=colors.grey, spaceAfter=18)
+    h2 = ParagraphStyle("H2", parent=styles["Heading2"], spaceBefore=16, spaceAfter=8)
+
+    story = [
+        Paragraph("Smart Home — Monthly Household Report", title_style),
+        Paragraph(f"{month_label} &nbsp;·&nbsp; Generated {db.now_ist_str()} IST &nbsp;·&nbsp; Gurugram, Haryana", sub_style),
+    ]
+
+    # Energy
+    story.append(Paragraph("Energy", h2))
+    if month_energy:
+        energy_table_data = [["Metric", "Value"],
+            ["Total usage", f"{total_kwh} kWh"],
+            ["Total cost (DHBVN slab estimate)", f"Rs {total_cost}"],
+            ["Average per day", f"{avg_daily_kwh} kWh"],
+            ["Days with recorded data", f"{len(month_energy)} of {days_in_month} days in the month"],
+        ]
+        t = Table(energy_table_data, colWidths=[3*inch, 3*inch])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1a1f2e")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#dddddd")),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7f7f9")]),
+            ("FONTSIZE", (0,0), (-1,-1), 9.5),
+            ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(t)
+    else:
+        story.append(Paragraph("No energy history recorded for this month yet.", styles["Normal"]))
+
+    # Security & automation activity
+    story.append(Paragraph("Security &amp; Automation Activity", h2))
+    activity_rows = [["Event type", "Count"]]
+    label_map = {"device_toggle": "Manual device toggles", "login": "Successful logins",
+                 "login_failed": "Failed login attempts", "automation_rule_created": "Rules created",
+                 "automation_rule_edited": "Rules edited", "guest_schedule_created": "Guests scheduled",
+                 "audit_log_exported": "Audit log exports"}
+    for action, count in sorted(action_counts.items(), key=lambda x: -x[1]):
+        activity_rows.append([label_map.get(action, action.replace("_", " ").title()), str(count)])
+    activity_rows.append(["Automation rule fires", str(len(month_runs))])
+    if len(activity_rows) > 1:
+        t2 = Table(activity_rows, colWidths=[4*inch, 2*inch])
+        t2.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1a1f2e")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#dddddd")),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7f7f9")]),
+            ("FONTSIZE", (0,0), (-1,-1), 9.5),
+            ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(t2)
+    else:
+        story.append(Paragraph("No activity logged this month.", styles["Normal"]))
+
+    # Payments / rent
+    story.append(Paragraph("Rent &amp; Payments", h2))
+    if payments:
+        pay_rows = [["Member", "Amount", "Status", "Paid at"]]
+        for p in payments:
+            pay_rows.append([p.get("member_name", ""), f"Rs {p.get('amount', 0)}",
+                              (p.get("status") or "").title(), p.get("paid_at") or "—"])
+        t3 = Table(pay_rows, colWidths=[2*inch, 1.3*inch, 1.3*inch, 1.9*inch])
+        t3.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1a1f2e")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#dddddd")),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f7f7f9")]),
+            ("FONTSIZE", (0,0), (-1,-1), 9.5),
+            ("TOPPADDING", (0,0), (-1,-1), 6), ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(t3)
+    else:
+        story.append(Paragraph("No rent configured or no payment records for this month.", styles["Normal"]))
+
+    story.append(Spacer(1, 24))
+    story.append(Paragraph(
+        "Generated automatically from live dashboard data. Energy figures use the DHBVN Haryana "
+        "domestic slab-rate estimate, not a metered bill. Activity counts reflect logged actions only.",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7.5, textColor=colors.grey)
+    ))
+
+    doc.build(story)
+    buffer.seek(0)
+    db.add_audit_entry(user["username"], "monthly_report_generated", detail=month, ip_address=_client_ip(request))
+    filename = f"household-report-{month}.pdf"
+    return StreamingResponse(
+        iter([buffer.getvalue()]), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/insights/trends")
+@limiter.limit("20/minute")
+async def get_trends(request: Request, user: dict = Depends(get_current_user)):
+    """30-day view for the Insights page: energy history (real, backfilled
+    from audit_log where possible), AQI history (real, but only from
+    whenever this feature was deployed — no way to backfill sensor
+    readings that were never recorded), automation fire activity per day,
+    and top devices by 30-day runtime (reusing the same audit-log-based
+    estimation as /api/devices/health)."""
+    energy_history = db.get_energy_daily_range(days=30)
+    aqi_history = db.get_aqi_daily_range(days=30)
+
+    # Monthly energy totals, grouped from the same daily rows — however
+    # much history exists, no fixed window assumption.
+    all_energy = db.get_energy_daily_range(days=370)
+    monthly_totals = {}
+    for r in all_energy:
+        month_key = r["date"][:7]
+        monthly_totals[month_key] = monthly_totals.get(month_key, 0) + r["kwh"]
+    monthly_energy = [{"month": k, "kwh": round(v, 2)} for k, v in sorted(monthly_totals.items())][-6:]
+
+    # Automation fires per day, last 30 days
+    now = db.now_ist()
+    cutoff = now - timedelta(days=30)
+    runs = db.get_automation_runs(limit=20000)
+    fires_per_day = {}
+    for r in runs:
+        created = r.get("created_at", "")
+        try:
+            ts = datetime.strptime(created, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        if ts >= cutoff:
+            day_key = created[:10]
+            fires_per_day[day_key] = fires_per_day.get(day_key, 0) + 1
+    automation_activity = [{"date": k, "fires": v} for k, v in sorted(fires_per_day.items())]
+
+    # Top devices by 30-day runtime — same estimation approach as device health,
+    # just windowed to the last 30 days instead of all-time.
+    entries = db.get_audit_log(limit=20000)
+    toggle_events = []
+    for entry in entries:
+        if entry.get("action") != "device_toggle":
+            continue
+        parsed = _parse_toggle_detail(entry.get("detail", ""))
+        if not parsed:
+            continue
+        room, device, value = parsed
+        if "on" not in value:
+            continue
+        try:
+            ts = datetime.strptime(entry["created_at"], "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        if ts >= cutoff:
+            toggle_events.append((ts, room, device, bool(value["on"])))
+    toggle_events.sort(key=lambda e: e[0])
+    runtime_30d = {}
+    open_since = {}
+    for ts, room, device, on in toggle_events:
+        key = (room, device)
+        if on:
+            open_since[key] = ts
+        else:
+            started = open_since.pop(key, None)
+            if started:
+                runtime_30d[key] = runtime_30d.get(key, 0) + (ts - started).total_seconds()
+    with state_lock:
+        for key, started in open_since.items():
+            room, device = key
+            if devices.get(room, {}).get(device, {}).get("on"):
+                runtime_30d[key] = runtime_30d.get(key, 0) + (now - started).total_seconds()
+    top_devices = sorted(
+        [{"room": r, "device": d, "hours": round(secs/3600, 1)} for (r, d), secs in runtime_30d.items()],
+        key=lambda x: -x["hours"]
+    )[:8]
+
+    return {
+        "energy_history": energy_history,
+        "aqi_history": aqi_history,
+        "monthly_energy": monthly_energy,
+        "automation_activity": automation_activity,
+        "top_devices_30d": top_devices,
     }
 
 

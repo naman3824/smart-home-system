@@ -174,17 +174,18 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS scheduled_guests (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                role        TEXT NOT NULL DEFAULT 'guest',
-                days        TEXT NOT NULL DEFAULT 'everyday',
-                start_hour  INTEGER NOT NULL DEFAULT 0,
-                start_min   INTEGER NOT NULL DEFAULT 0,
-                end_hour    INTEGER NOT NULL DEFAULT 23,
-                end_min     INTEGER NOT NULL DEFAULT 59,
-                enabled     INTEGER NOT NULL DEFAULT 1,
-                notes       TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                name          TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'guest',
+                days          TEXT NOT NULL DEFAULT 'everyday',
+                start_hour    INTEGER NOT NULL DEFAULT 0,
+                start_min     INTEGER NOT NULL DEFAULT 0,
+                end_hour      INTEGER NOT NULL DEFAULT 23,
+                end_min       INTEGER NOT NULL DEFAULT 59,
+                enabled       INTEGER NOT NULL DEFAULT 1,
+                notes         TEXT,
+                access_token  TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
 
             CREATE TABLE IF NOT EXISTS rent_config (
@@ -220,8 +221,73 @@ def init_db():
                 cost        REAL NOT NULL DEFAULT 0,
                 updated_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
             );
+
+            -- Same running-total-per-date pattern as energy_daily. AQI has
+            -- no audit-log trail the way device toggles do, so unlike
+            -- energy this can't be backfilled from history — it only
+            -- starts accumulating from whenever this table first exists.
+            CREATE TABLE IF NOT EXISTS aqi_daily (
+                date        TEXT PRIMARY KEY,
+                avg_aqi     REAL NOT NULL DEFAULT 0,
+                max_aqi     REAL NOT NULL DEFAULT 0,
+                samples     INTEGER NOT NULL DEFAULT 0,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+            );
             """
         )
+    _migrate_add_guest_access_tokens()
+    _migrate_fix_audit_log_timezone()
+
+
+def _migrate_fix_audit_log_timezone():
+    """One-time correction for databases created before add_audit_entry()
+    started passing an explicit IST timestamp: those rows were stamped via
+    the audit_log table's on-disk DEFAULT, which is stuck at whatever
+    offset (or lack of one) the table had when it was first created —
+    confirmed running exactly 5:30 behind real IST time here. Shifts every
+    existing row forward once and records that in schema_migrations so a
+    later restart never re-applies it and shifts things twice."""
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name        TEXT PRIMARY KEY,
+                applied_at  TEXT NOT NULL DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+            );
+            """
+        )
+        already_applied = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE name = ?",
+            ("audit_log_tz_fix_5h30m",),
+        ).fetchone()
+        if already_applied:
+            return
+        conn.execute(
+            "UPDATE audit_log SET created_at = datetime(created_at, '+5 hours', '+30 minutes')"
+        )
+        conn.execute(
+            "INSERT INTO schema_migrations (name) VALUES (?)",
+            ("audit_log_tz_fix_5h30m",),
+        )
+
+
+def _migrate_add_guest_access_tokens():
+    """Lightweight migration for databases created before QR verification
+    existed: adds the access_token column if missing (CREATE TABLE IF NOT
+    EXISTS doesn't retroactively add columns to an existing table), then
+    backfills a token for any guest row that doesn't have one yet — old
+    guest schedules stay usable instead of silently having dead QR passes."""
+    import secrets
+    with _db_lock, get_conn() as conn:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(scheduled_guests)")}
+        if "access_token" not in cols:
+            conn.execute("ALTER TABLE scheduled_guests ADD COLUMN access_token TEXT")
+        rows = conn.execute("SELECT id FROM scheduled_guests WHERE access_token IS NULL").fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE scheduled_guests SET access_token = ? WHERE id = ?",
+                (secrets.token_urlsafe(16), row["id"]),
+            )
 
 
 # ── Security logs ──────────────────────────────────────────────────────
@@ -429,8 +495,8 @@ def update_user_password(user_id, new_hash, new_salt):
 def add_audit_entry(username, action, detail=None, ip_address=None):
     with _db_lock, get_conn() as conn:
         conn.execute(
-            "INSERT INTO audit_log (username, action, detail, ip_address) VALUES (?, ?, ?, ?)",
-            (username, action, detail, ip_address),
+            "INSERT INTO audit_log (username, action, detail, ip_address, created_at) VALUES (?, ?, ?, ?, ?)",
+            (username, action, detail, ip_address, now_ist_str()),
         )
 
 
@@ -648,17 +714,41 @@ def get_scheduled_guest_by_name(name):
 
 
 def create_scheduled_guest(name, role, days, start_hour, start_min, end_hour, end_min, notes=None):
+    import secrets
+    token = secrets.token_urlsafe(16)
     with _db_lock, get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO scheduled_guests
-               (name, role, days, start_hour, start_min, end_hour, end_min, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (name, role, days, start_hour, start_min, end_hour, end_min, notes),
+               (name, role, days, start_hour, start_min, end_hour, end_min, notes, access_token)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (name, role, days, start_hour, start_min, end_hour, end_min, notes, token),
         )
         row = conn.execute(
             "SELECT * FROM scheduled_guests WHERE id = ?", (cur.lastrowid,)
         ).fetchone()
         return dict(row)
+
+
+def get_scheduled_guest_by_token(token):
+    """Looks up a guest by their QR pass token — used by the public /verify
+    endpoint, which has no login of its own (a security guard scanning a
+    pass at the door isn't a dashboard user)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_guests WHERE access_token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def regenerate_guest_access_token(guest_id):
+    """Issues a new token, invalidating any previously printed/shared QR
+    pass for this guest — the equivalent of re-keying a lock."""
+    import secrets
+    token = secrets.token_urlsafe(16)
+    with _db_lock, get_conn() as conn:
+        conn.execute("UPDATE scheduled_guests SET access_token = ? WHERE id = ?", (token, guest_id))
+        row = conn.execute("SELECT * FROM scheduled_guests WHERE id = ?", (guest_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def update_scheduled_guest_enabled(guest_id, enabled):
@@ -788,5 +878,24 @@ def get_energy_daily_range(days: int = 21):
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM energy_daily ORDER BY date DESC LIMIT ?", (days,)
+        ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+
+def upsert_aqi_daily(date_str, avg_aqi, max_aqi, samples):
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            """INSERT INTO aqi_daily (date, avg_aqi, max_aqi, samples, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now', '+5 hours', '+30 minutes'))
+               ON CONFLICT(date) DO UPDATE SET avg_aqi=excluded.avg_aqi, max_aqi=excluded.max_aqi,
+                   samples=excluded.samples, updated_at=excluded.updated_at""",
+            (date_str, avg_aqi, max_aqi, samples),
+        )
+
+
+def get_aqi_daily_range(days: int = 30):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM aqi_daily ORDER BY date DESC LIMIT ?", (days,)
         ).fetchall()
         return [dict(r) for r in reversed(rows)]

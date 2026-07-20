@@ -127,6 +127,7 @@
   .sparkline{display:flex;align-items:flex-end;gap:2px;height:24px;margin-top:8px}
   .spark-bar{flex:1;border-radius:1px 1px 0 0;min-height:2px;transition:height .4s ease}
 
+  /* LAYOUT */
   /* INCIDENT TIMELINE */
   .tl-legend{display:flex;align-items:center;gap:12px;font-size:10.5px;color:var(--text3);font-weight:600}
   .tl-legend-item{display:flex;align-items:center;gap:5px}
@@ -524,6 +525,9 @@
     </div>
     <div class="nav-item" onclick="showPage('energy')" id="nav-energy">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Energy</span>
+    </div>
+    <div class="nav-item" onclick="showPage('insights')" id="nav-insights">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg><span>Insights</span>
     </div>
     <div class="nav-item" onclick="showPage('safety')" id="nav-safety">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>Safety</span>
@@ -1415,6 +1419,11 @@
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:18px;display:none" id="ctrl-anomalies-card">
+      <div class="card-header"><span class="card-title">🔍 Unusual Today</span><span style="font-size:11px;color:var(--text3)">Compared to this household's own history — not a generic benchmark</span></div>
+      <div class="card-body" id="ctrl-anomalies"></div>
+    </div>
+
     <div class="card" style="margin-bottom:18px">
       <div class="card-header"><span class="card-title">🎛 Master Controls</span><span style="font-size:11px;color:var(--text3)">Affects every room instantly</span></div>
       <div class="card-body">
@@ -1642,6 +1651,10 @@
 
   <!-- ENERGY -->
   <div class="content page" id="page-energy">
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:14px">
+      <select id="reportMonthSelect" class="mv2-select" style="width:auto;padding:6px 10px;font-size:12px"></select>
+      <button class="btn btn-sm btn-primary" onclick="downloadMonthlyReport()">📄 Generate Monthly Report</button>
+    </div>
     <div class="sensor-grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="sensor-card pwr-card"><div class="sensor-label">Right now</div><div class="sensor-value" id="en-watts" style="color:var(--accent2)">--<span class="sensor-unit">W</span></div><div class="sensor-sub" id="en-rate">-- units/hr at this rate</div></div>
       <div class="sensor-card hum-card"><div class="sensor-label">Today's estimate</div><div class="sensor-value" id="en-kwh" style="color:var(--cyan)">--<span class="sensor-unit">units</span></div><div class="sensor-sub" id="en-cost">₹--</div></div>
@@ -1704,6 +1717,44 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- INSIGHTS -->
+  <div class="content page" id="page-insights">
+    <div style="background:linear-gradient(135deg,rgba(108,139,239,.1),rgba(139,92,246,.07));border:1px solid rgba(108,139,239,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px">
+      <span style="font-size:26px">📊</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">30-Day Insights</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Real history, not projections — trends build up the longer this runs. Energy is backfilled from device logs; AQI only starts from whenever this page first shipped, since sensor readings can't be reconstructed after the fact.</div>
+      </div>
+    </div>
+
+    <div class="two-col mb-18">
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚡ Energy — last 30 days</span></div>
+        <div class="card-body" id="insights-energy-chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🌫 AQI — last 30 days</span></div>
+        <div class="card-body" id="insights-aqi-chart"></div>
+      </div>
+    </div>
+
+    <div class="two-col mb-18">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📅 Monthly Energy Totals</span></div>
+        <div class="card-body" id="insights-monthly-energy"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚙️ Automation Activity — last 30 days</span></div>
+        <div class="card-body" id="insights-automation-activity"></div>
+      </div>
+    </div>
+
+    <div class="card mb-18">
+      <div class="card-header"><span class="card-title">🔌 Top Devices by 30-Day Runtime</span></div>
+      <div class="card-body" id="insights-top-devices"></div>
     </div>
   </div>
 
@@ -2766,6 +2817,7 @@
 </div>
 <div class="modal-backdrop mv2-backdrop" id="guestQrModal">
   <div class="mv2-modal mv2-acc-pink" style="text-align:center">
+    <input type="hidden" id="guestQrCurrentId"/>
     <div class="mv2-scroll">
       <div class="mv2-head" style="justify-content:center;text-align:center;flex-direction:column">
         <div class="mv2-avatar" style="margin:0 auto 10px">🪪</div>
@@ -2778,7 +2830,8 @@
       <div style="background:#fff;border-radius:14px;padding:14px;display:inline-block;margin-top:6px">
         <img id="guestQrImg" src="" alt="QR access pass" width="200" height="200" style="display:block"/>
       </div>
-      <div style="font-size:11.5px;color:var(--text3);margin-top:16px;line-height:1.6">Share this with the visitor, or print it for the door — scanning it shows their name and allowed window so security staff can confirm access at a glance.</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:16px;line-height:1.6">This scans to a real check — the day/time window is verified live, not just displayed. Share it with the visitor, or print it for the door.</div>
+      <button class="mv2-btn" style="margin-top:12px;font-size:11px" onclick="regenerateGuestQr()">🔄 Regenerate pass (invalidates the old one)</button>
     </div>
     <div class="mv2-foot" style="justify-content:center">
       <button class="mv2-btn" onclick="closeModal('guestQrModal')">Close</button>
@@ -2940,7 +2993,7 @@ function updateClock(){
 setInterval(updateClock,1000);updateClock();
 
 // NAVIGATION
-const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',control:'Control Room',climate:'Climate',aqi:'Air Quality',energy:'Energy',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
+const PAGE_TITLES={overview:'Overview',floorplan:'Floor Plan',devices:'Devices',control:'Control Room',climate:'Climate',aqi:'Air Quality',energy:'Energy',insights:'Insights',safety:'Safety',simulations:'Simulations',automation:'Automation',security:'Security',guestaccess:'Guest Access',family:'Family',routines:'Routines',payments:'Payments',audit:'Audit Log',systemlogs:'System Logs'};
 function showPage(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -2962,6 +3015,7 @@ function showPage(page){
   if(page==='audit')renderAuditLog();
   if(page==='systemlogs')renderSystemLogs();
   if(page==='control')renderControlRoom();
+  if(page==='insights')renderInsights();
 }
 
 // CONNECTION STATUS
@@ -3632,7 +3686,109 @@ async function turnOffPhantomDevice(room,device){
   renderEnergy();
 }
 
+async function renderInsights(){
+  const data=await apiFetch('/api/insights/trends').catch(()=>null);
+  if(!data){
+    document.getElementById('insights-energy-chart').innerHTML=emptyState('⚠️','Could not load insights','Try refreshing the page.');
+    return;
+  }
+  renderInsightsSparkline('insights-energy-chart',data.energy_history,'kwh','date','var(--accent)','kWh',
+    'No energy history yet — this builds up automatically as the dashboard runs.');
+  renderInsightsSparkline('insights-aqi-chart',data.aqi_history,'avg_aqi','date','var(--orange)','avg AQI',
+    'No AQI history yet — this only started tracking from when this feature shipped, so it needs a few days to build up.');
+  renderInsightsMonthlyEnergy(data.monthly_energy);
+  renderInsightsAutomationActivity(data.automation_activity);
+  renderInsightsTopDevices(data.top_devices_30d);
+}
+
+function renderInsightsSparkline(containerId,rows,valueKey,dateKey,color,unit,emptyMsg){
+  const el=document.getElementById(containerId);
+  if(!el)return;
+  if(!rows||!rows.length){
+    el.innerHTML=emptyState('📉','No data yet',emptyMsg);
+    return;
+  }
+  const max=Math.max(...rows.map(r=>r[valueKey]),0.01);
+  const latest=rows[rows.length-1];
+  el.innerHTML=`
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">
+      <span style="font-size:22px;font-weight:800">${latest[valueKey]}</span>
+      <span style="font-size:11px;color:var(--text3)">${unit} · latest (${latest[dateKey].slice(5)})</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:2px;height:80px">
+      ${rows.map(r=>{
+        const h=Math.max(4,Math.round((r[valueKey]/max)*80));
+        return `<div title="${r[dateKey]}: ${r[valueKey]} ${unit}" style="flex:1;height:${h}px;background:${color};border-radius:2px 2px 0 0;opacity:.85;min-width:2px"></div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--text3);margin-top:4px">
+      <span>${rows[0][dateKey].slice(5)}</span><span>${rows.length} day${rows.length===1?'':'s'} tracked</span><span>${latest[dateKey].slice(5)}</span>
+    </div>`;
+}
+
+function renderInsightsMonthlyEnergy(rows){
+  const el=document.getElementById('insights-monthly-energy');
+  if(!el)return;
+  if(!rows||!rows.length){
+    el.innerHTML=emptyState('📅','No monthly history yet','Complete a full month of tracked usage to see it compared here.');
+    return;
+  }
+  const max=Math.max(...rows.map(r=>r.kwh),0.01);
+  el.innerHTML=rows.map(r=>{
+    const d=new Date(r.month+'-01');
+    const label=d.toLocaleDateString('en-IN',{month:'short',year:'numeric'});
+    const pct=Math.round((r.kwh/max)*100);
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px">
+        <span style="color:var(--text2)">${label}</span><span style="font-weight:700">${r.kwh} kWh</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--accent)"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderInsightsAutomationActivity(rows){
+  const el=document.getElementById('insights-automation-activity');
+  if(!el)return;
+  if(!rows||!rows.length){
+    el.innerHTML=emptyState('⚙️','No fires in the last 30 days','Rules that fire will show up here as a daily trend.');
+    return;
+  }
+  const max=Math.max(...rows.map(r=>r.fires),1);
+  const total=rows.reduce((s,r)=>s+r.fires,0);
+  el.innerHTML=`
+    <div style="font-size:22px;font-weight:800;margin-bottom:2px">${total}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px">total automation fires, last 30 days</div>
+    <div style="display:flex;align-items:flex-end;gap:2px;height:70px">
+      ${rows.map(r=>{
+        const h=Math.max(4,Math.round((r.fires/max)*70));
+        return `<div title="${r.date}: ${r.fires} fire${r.fires===1?'':'s'}" style="flex:1;height:${h}px;background:var(--accent2);border-radius:2px 2px 0 0;opacity:.85;min-width:2px"></div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderInsightsTopDevices(rows){
+  const el=document.getElementById('insights-top-devices');
+  if(!el)return;
+  if(!rows||!rows.length){
+    el.innerHTML=emptyState('🔌','No device runtime logged','Runtime builds up from device toggles as the dashboard gets used.');
+    return;
+  }
+  const max=Math.max(...rows.map(r=>r.hours),0.01);
+  el.innerHTML=rows.map(r=>{
+    const pct=Math.round((r.hours/max)*100);
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px">
+        <span style="color:var(--text2)">${deviceEmoji(r.device)} ${formatDevName(r.device)} · ${ROOM_NAMES[r.room]||r.room}</span>
+        <span style="font-weight:700">${r.hours}h</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--accent)"></div></div>
+    </div>`;
+  }).join('');
+}
+
 async function renderEnergy(){
+  populateReportMonthSelect();
   // Always recompute watts from current local device state first (fixes 0W bug)
   let localWatts=Object.entries(devices).reduce((t,[,devs])=>t+Object.entries(devs).reduce((s,[dk,dv])=>s+(dv.on?effWatts(dk,dv):0),0),0);
   const [data,insights]=await Promise.all([apiFetch('/api/energy'),apiFetch('/api/energy/insights')]);
@@ -4862,6 +5018,27 @@ function downloadAuditLog(){
   showToast('Downloading audit log…','info');
 }
 
+function populateReportMonthSelect(){
+  const sel=document.getElementById('reportMonthSelect');
+  if(!sel||sel.options.length)return;  // only populate once
+  const now=new Date();
+  const opts=[];
+  for(let i=0;i<12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const val=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const label=d.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    opts.push(`<option value="${val}">${label}</option>`);
+  }
+  sel.innerHTML=opts.join('');
+}
+
+function downloadMonthlyReport(){
+  populateReportMonthSelect();
+  const month=document.getElementById('reportMonthSelect')?.value||'';
+  window.open(`/api/reports/monthly?month=${month}`,'_blank');
+  showToast('Generating report…','info');
+}
+
 async function renderAuditLog(){
   const listEl=document.getElementById('auditLogList');
   if(!listEl)return;
@@ -5643,17 +5820,31 @@ function showGuestQr(guestId){
   if(!g)return;
   const dayLabel=g.days==='everyday'?'Every day':g.days.replace(/,/g,', ');
   const window_=`${String(g.start_hour).padStart(2,'0')}:${String(g.start_min).padStart(2,'0')}–${String(g.end_hour).padStart(2,'0')}:${String(g.end_min).padStart(2,'0')}`;
-  // Compact payload a door-side scanner or security app could read — name,
-  // role and the exact allowed window, so it's self-contained on the pass
-  // itself rather than requiring a lookup.
-  const payload=`SMARTHOME-GUEST|${g.name}|${g.role}|${dayLabel}|${window_}|id:${g.id}`;
-  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(payload)}`;
+  // The QR now encodes a real verification URL — scanning it with any
+  // phone's default camera opens /verify/{token}, which checks the guest's
+  // day/time window server-side and shows Granted/Denied. Not just a
+  // shareable-looking pass anymore; the code itself is what's checked.
+  document.getElementById('guestQrCurrentId').value=g.id;
+  const verifyUrl=`${window.location.origin}/verify/${g.access_token}`;
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(verifyUrl)}`;
   document.getElementById('guestQrTitle').textContent=g.name;
   document.getElementById('guestQrSub').textContent=`${g.role} · ${dayLabel} · ${window_}`;
   document.getElementById('guestQrImg').src=qrUrl;
   document.getElementById('guestQrDownload').href=qrUrl;
   document.getElementById('guestQrDownload').download=`${g.name.replace(/\s+/g,'-').toLowerCase()}-pass.png`;
   document.getElementById('guestQrModal').classList.add('open');
+}
+
+async function regenerateGuestQr(){
+  const guestId=parseInt(document.getElementById('guestQrCurrentId').value);
+  if(!guestId)return;
+  if(!confirm('This invalidates the current pass — anyone with the old QR code (printed, saved, forwarded) will no longer be granted access. Continue?'))return;
+  const updated=await apiFetch(`/api/guests/${guestId}/regenerate-token`,{method:'POST'});
+  if(!updated){showToast('Could not regenerate pass','danger');return;}
+  const idx=guestListCache.findIndex(x=>x.id===guestId);
+  if(idx>=0)guestListCache[idx]=updated;
+  showToast('New pass generated — the old QR code no longer works','success');
+  showGuestQr(guestId);
 }
 
 function showAddGuestModal(){
@@ -6290,6 +6481,7 @@ async function renderControlRoom(){
   renderCtrlTimeline();
   renderCtrlExpectedVisitors();
   renderCtrlNextRoutine();
+  renderCtrlAnomalies();
   if(!_ctrlActivityLoaded){
     const log=await apiFetch('/api/audit-log');
     if(log)renderCtrlActivityFeed(log.slice(0,8));
@@ -6298,6 +6490,29 @@ async function renderControlRoom(){
   await pollEmergencyStatus();
 }
 let _ctrlActivityLoaded=false;
+
+async function renderCtrlAnomalies(){
+  const card=document.getElementById('ctrl-anomalies-card'),el=document.getElementById('ctrl-anomalies');
+  if(!card||!el)return;
+  const data=await apiFetch('/api/insights/anomalies').catch(()=>null);
+  const anomalies=data?.anomalies||[];
+  if(!anomalies.length){
+    card.style.display='none';
+    return;
+  }
+  card.style.display='';
+  const sevColor={info:'var(--orange)',warning:'var(--red)'};
+  const sevIcon={info:'📈',warning:'⚠️'};
+  el.innerHTML=anomalies.map(a=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:16px">${sevIcon[a.severity]||'ℹ️'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px;font-weight:700;color:${sevColor[a.severity]||'var(--text)'}">${a.title}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${a.detail}</div>
+      </div>
+    </div>`).join('');
+}
+setInterval(()=>{if(document.getElementById('page-control')?.classList.contains('active'))renderCtrlAnomalies();},120000);
 
 async function renderCtrlSummary(){
   const el=document.getElementById('ctrl-summary-grid');
