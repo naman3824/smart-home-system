@@ -7,7 +7,7 @@ on:
 jobs:
   lint-and-syntax:
     runs-on: ubuntu-latest
-    name: Syntax & import check
+    name: Syntax, import & test suite
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -15,9 +15,9 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-      - name: Install core dependencies
+      - name: Install core + dev dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
           if [ -f climate-control/requirements.txt ]; then
             pip install -r climate-control/requirements.txt
           fi
@@ -29,3 +29,25 @@ jobs:
       - name: Validate server imports and startup
         run: |
           python -c "import server; print('import: OK')"
+      - name: Run test suite
+        run: pytest -v
+
+  docker-build-smoke-test:
+    runs-on: ubuntu-latest
+    name: Docker image actually starts
+    # This job exists because of a real incident: a commit added a new
+    # module (alert_responses.py) that server.py imports, but the
+    # Dockerfile's COPY list wasn't updated to include it. The job above
+    # ran `import server` straight from the checked-out repo — where the
+    # file *was* present — so it passed clean, and the bug only showed up
+    # once the image was actually built and deployed, where it crashed on
+    # startup with ModuleNotFoundError. Building the real image and
+    # importing server *inside* it is the only way to catch that class of
+    # bug before it reaches production.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t smart-home-ci-test -f Dockerfile .
+      - name: Import server inside the built image
+        run: |
+          docker run --rm smart-home-ci-test python -c "import server; print('container import OK')"
