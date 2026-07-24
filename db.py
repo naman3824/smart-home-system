@@ -451,6 +451,41 @@ def count_users():
         return conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
 
 
+def find_users_with_malformed_credentials():
+    """Diagnostic for startup: flags any user row whose password_hash/salt
+    can't possibly be valid (NULL, or salt that isn't valid hex) — these
+    would crash login with a 500 rather than a clean 'wrong password',
+    since verify_password() can't even attempt the comparison. Surfacing
+    this at startup means it shows up in logs immediately on deploy,
+    instead of only being discovered when someone actually tries to log
+    in and hits the error blind."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id, username, password_hash, password_salt FROM users").fetchall()
+    bad = []
+    for r in rows:
+        if not r["password_hash"] or not r["password_salt"]:
+            bad.append(r["username"])
+            continue
+        try:
+            bytes.fromhex(r["password_salt"])
+        except (ValueError, TypeError):
+            bad.append(r["username"])
+    return bad
+
+
+def repair_malformed_user_credentials(username, password_hash, password_salt):
+    """Resets a corrupted account's credentials — used at startup to
+    actually fix (not just detect/log) an account that can never
+    successfully log in as-is. Whoever owns the account needs to be told
+    the temporary password this was reset to, same as first-run account
+    creation."""
+    with _db_lock, get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, password_salt = ? WHERE username = ?",
+            (password_hash, password_salt, username),
+        )
+
+
 # ── Sessions ────────────────────────────────────────────────────────────
 
 def create_session(token, user_id, expires_at_iso):

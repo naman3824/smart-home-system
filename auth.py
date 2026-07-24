@@ -22,6 +22,7 @@ import secrets
 from datetime import datetime, timedelta
 
 import db
+from applog import logger
 
 PBKDF2_ITERATIONS = 200_000
 SESSION_DURATION_HOURS = 24 * 7  # sessions last a week before re-login is required
@@ -37,9 +38,20 @@ def hash_password(password: str, salt: str = None) -> tuple[str, str]:
 
 
 def verify_password(password: str, password_hash: str, salt: str) -> bool:
-    """Constant-time comparison to avoid timing attacks."""
-    test_hash, _ = hash_password(password, salt)
-    return hmac.compare_digest(test_hash, password_hash)
+    """Constant-time comparison to avoid timing attacks.
+
+    Defensive: a corrupted or malformed stored credential (e.g. a NULL or
+    non-hex salt on some old/hand-edited row) must never crash the login
+    request — that would surface as a 500 to the person trying to sign in,
+    which is a much worse failure mode than just treating it as a login
+    failure. Logged as a warning either way, since a real user account
+    hitting this path means that row needs fixing (e.g. a password reset)."""
+    try:
+        test_hash, _ = hash_password(password, salt)
+        return hmac.compare_digest(test_hash, password_hash or "")
+    except Exception as e:
+        logger.warning("verify_password failed on malformed stored credentials: %s", e)
+        return False
 
 
 def create_user_account(username: str, password: str, display_name: str, role="member", member_id=None):

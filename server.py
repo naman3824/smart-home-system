@@ -8,6 +8,7 @@ import os
 import csv
 import io
 import calendar
+import secrets
 import json
 import time
 import random
@@ -3477,6 +3478,34 @@ async def startup_event():
     t.start()
     db.delete_expired_sessions()
     _backfill_energy_history_once()
+
+    bad_creds = db.find_users_with_malformed_credentials()
+    repaired_credentials = []
+    if bad_creds:
+        for username in bad_creds:
+            # Same convention as first-run account creation (username+123) —
+            # predictable on purpose so there's one pattern to remember/tell
+            # people, rather than digging a random password out of logs per account.
+            temp_password = f"{username}123"
+            password_hash, salt = auth.hash_password(temp_password)
+            db.repair_malformed_user_credentials(username, password_hash, salt)
+            repaired_credentials.append((username, temp_password))
+        logger.error(
+            "%d user account(s) had a corrupted password hash/salt (likely predating a "
+            "schema constraint) and could never log in — reset to a temporary password "
+            "each, shown below and in the logs. This does NOT happen on every restart, "
+            "only for accounts still in the broken state.", len(repaired_credentials)
+        )
+        print("\n" + "=" * 55)
+        print("  ACCOUNT(S) REPAIRED — CORRUPTED CREDENTIALS RESET")
+        print("  These could never log in before this fix. New temporary")
+        print("  password below — have them sign in and expect to change it.")
+        print("=" * 55)
+        for username, temp_password in repaired_credentials:
+            print(f"  {username:<12} {temp_password}")
+            logger.info("CREDENTIAL (repaired) | %s | %s", username, temp_password)
+        print("=" * 55 + "\n")
+
     logger.info("Server started — sensor simulation thread running")
     print("\n" + "="*55)
     print("  Smart Home Dashboard — Server Started")
